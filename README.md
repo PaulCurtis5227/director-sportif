@@ -71,6 +71,35 @@ Record (or record every event, or all the time) saves your ride to your Download
 names, power or heart rate. What's in it and the format: [`docs/RECORDING.md`](docs/RECORDING.md). The file stays on your
 computer unless you take it somewhere, for example to [caffecter.com](https://caffecter.com/report.html) for a ride report.
 
+## Race cards
+
+A race card is the course of one race, written down: where the scored sprints and KOMs are, the climbs, the arches
+and which power-up each gives, the finish. With a card, the director calls what's coming on that course: "sprint in
+70", "sprint line in 25", "use VAN in 35", "position only", your own notes. Without one, it still calls the road it
+can see (climbs, surfaces), just not the race's own segments.
+
+**Included:** the Zwift Racing League 2026/27 Round 1 races, weeks 3–6 (Urumaze, Figure 8 Reverse TTT, Green to
+Screen, Spiral Summit), from Zwift Insider's race guides. New cards come with new releases.
+
+**Using one:** nothing to do on race day. In an event, the Director Sportif window picks the card for the route
+you're on by itself (a card only speaks on its own route, since its distances are race distances on that route). The
+status line shows which card it's using.
+
+**Your plan** (the gear ▸ **Race card** tab): pick a card, then for each item:
+
+- a scored sprint or KOM: **contest** (called as a sprint, with "ease off" once your place is safe), **position**
+  (be up there, no sprint), or **skip** (called as "skip it");
+- an arch that gives a power-up: **use** or **keep** the one you hold;
+- a **note**, said shortly before you get there ("sit in, the KOM matters more").
+
+Your plan is saved on this computer only; the cards themselves hold only course facts. The title card and the
+YouTube chapters (OBS, below) use the card too.
+
+**Making a card:** a card is a JSON file in `pages/src/engine/race-cards/`, listed in `index.json` there. Each item
+has `km` (race distance from the start), `kind` (`sprint`, `kom`, `climb`, `arch` or `finish`), `name`, and where it
+applies `lengthKm`, `grade`, `scored` and `gives` (the power-up an arch gives). The included cards are the examples.
+Keep a card to course facts.
+
 ## OBS (if you record or stream your races)
 
 **Why:** the Director Sportif knows when the race starts and ends, so it can run OBS for you:
