@@ -106,7 +106,7 @@ h2 {
     font-size: 2vw;
     font-weight: 700;
 }
-.soon {
+.soon, .badge {
     margin-left: 1vw;
     padding: 0.3vh 0.8vw;
     border-radius: 0.6vw;
@@ -122,4 +122,10 @@ h2 {
     font-size: 1.35vw;
     color: var(--muted);
     max-width: 70vw;
+}
+/* where to get it: the site, readable from across a stream */
+.promo-url {
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
 }

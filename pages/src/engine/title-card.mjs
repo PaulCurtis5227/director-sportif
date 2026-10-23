@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Title card for Broadcast: the video opens on a page with the race (event, route, the race card's course facts)
- * and a "coming soon" note for this mod, then cuts to your normal OBS scene. The page (title.html) is served by
+ * and a note on where to get the Director Sportif (caffecter.com), then cuts to your normal OBS scene. The page (title.html) is served by
  * Sauce's web server, so OBS shows it as a Browser source; the mod creates that scene and source itself the first
  * time (obs-websocket v5: CreateScene / CreateInput), points it at this race, switches to it before StartRecord and
  * back to the scene you were on after TITLE_S. Your plan for the card is shown too (the user: the video is of the race
