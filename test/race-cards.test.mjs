@@ -54,3 +54,49 @@ test('card calls in words, with seconds; your plan and the power-up you hold', a
         directorCalls({card: {about: c.about, kind: c.item.kind, plan: c.plan, inS: 36, priority: c.priority, state: c.state}}));
     assert.equal(call.id, 'card');
 });
+
+// ----- imported cards (a file from caffecter.com's race card maker, or written by hand) -----
+
+const ownCard = (over = {}) => ({id: 'my-race-2026-11-03', name: 'My race', date: '2026-11-03', format: 'points',
+    route: 'Watopia Flat Route', distanceKm: 10.3,
+    items: [{km: 3.5, kind: 'sprint', name: 'Fuego Flats', lengthKm: 0.4, scored: true},
+            {km: 10.3, kind: 'finish', name: 'Finish', scored: true}], ...over});
+
+test('importing a card: checked like a shipped one, needs its route; the same id replaces the old one', async () => {
+    const {importCard} = await import('../pages/src/race-cards-live.mjs');
+    const [one, msg] = importCard(JSON.stringify(ownCard()), []);
+    assert.equal(one.length, 1);
+    assert.match(msg, /imported My race \(Watopia Flat Route\)/);
+    const [two, msg2] = importCard(JSON.stringify(ownCard({name: 'My race, fixed'})), one);
+    assert.equal(two.length, 1);
+    assert.equal(two[0].name, 'My race, fixed');
+    assert.match(msg2, /replaced/);
+    assert.throws(() => importCard('{not json', []), /not JSON/);
+    assert.throws(() => importCard(JSON.stringify(ownCard({route: undefined})), []), /no route/);
+    assert.throws(() => importCard(JSON.stringify(ownCard({items: [{km: 1, kind: 'wall', name: 'x'}]})), []), /bad kind/);
+});
+
+test('an imported card is used on its route like a shipped one, after a refresh', async () => {
+    let imported = [];
+    const cards = new RaceCards({fetchJSON, routeName: async () => 'Watopia Flat Route', imported: () => imported});
+    const s = edM => ({routeId: 2, eventDistance: edM, eventSubgroupId: 7});
+    cards.call(s(3000));
+    await settle();
+    assert.equal(cards.call(s(3000)), null, 'no card for this route yet');
+    imported = [ownCard()];
+    cards.refresh();
+    cards.call(s(3000));
+    await settle();
+    const c = cards.call(s(3000), {v: 11});
+    assert.equal(c.item.name, 'Fuego Flats');
+    assert.ok(Math.abs(c.toM - 500) < 1e-6);
+});
+
+test('the card list: shipped entries plus imported cards, each carrying its card', async () => {
+    const {cardEntries, loadEntry} = await import('../pages/src/race-cards-live.mjs');
+    const list = cardEntries([{id: 'a', name: 'A', route: 'R', file: 'a.json'}], [ownCard()]);
+    assert.deepEqual(list.map(e => [e.id, !!e.imported]), [['a', false], ['my-race-2026-11-03', true]]);
+    const card = await loadEntry(fetchJSON, list[1]);
+    assert.deepEqual(card.items.map(i => i.km), [3.5, 10.3]);
+    await assert.rejects(loadEntry(fetchJSON, cardEntries([], [ownCard({items: [{km: 'x', kind: 'sprint', name: 'bad'}]})])[0]), /bad km/);
+});

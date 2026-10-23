@@ -83,6 +83,12 @@
             <div id="race-card" class="section tab" data-id="race-card">
                 <div class="hint">The course facts of a race (scored sprints and KOMs, arches and what they give). The
                     one for the route you're racing is used by itself; here you set your plan for each.</div>
+                <div class="card-import">
+                    <button type="button" class="card-import-button" title="A race card file, e.g. from caffecter.com/race-card.html">Import a card</button>
+                    <input type="file" class="card-import-file" accept=".json,application/json" hidden/>
+                    <button type="button" class="card-remove" hidden title="Remove this imported card (your plan for it goes too)">Remove</button>
+                    <span class="hint card-import-status"></span>
+                </div>
                 <select class="card" title="Race card"></select>
                 <div class="hint card-info"></div>
                 <div class="card-items"></div>

@@ -3,7 +3,7 @@
     "id": "director-sportif",
     "name": "Director Sportif",
     "description": "Pack meters for Zwift: what your spot costs (Position), whether you are spending more than holding your place needs (Holding), the pack cost beyond Zwift's draft, and gap and left/right to the wheel. One tile per meter, in the order you choose.",
-    "version": "0.34.0",
+    "version": "0.35.0",
     "author": "PaulCurtis5227",
     "web_root": "pages",
     "windows": [

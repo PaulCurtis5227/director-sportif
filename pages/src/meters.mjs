@@ -51,6 +51,9 @@
  * (lost at the next arch, Sauce still shows it); "last wheel, be ready" (was "go first") timed by the road ahead's
  * seconds, 15–80 s (1000 m with a climb was 119 s); their wind-up is "jump now" (was "go wide", the passing cue's word);
  * the passing cue's "go wide" is no longer called (shown only): ~40 an hour on pack yo-yo, rarely before a hold; the sprint calls say "up the edge" (was "wide": the edge keeps the draft).
+ * v0.35.0: race cards can be imported (Race card tab: Import a card / Remove; race-cards-live.mjs importCard): a file
+ * from caffecter.com's race card maker or written by hand, kept in localStorage (IMPORTED_CARDS_KEY), used like the
+ * shipped cards; the main window hears an import at once (storage event -> RaceCards.refresh).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -64,7 +67,7 @@ import {engineCall, callWords, Announcer, CALL_TYPES, deliveryGridHTML, delivery
     from './calls.mjs';
 import {buildData, CHANNEL} from './ds-data.mjs';
 import {RouteAhead} from './route-ahead.mjs';
-import {RaceCards} from './race-cards-live.mjs';
+import {RaceCards, cardEntries, loadEntry, importCard} from './race-cards-live.mjs';
 import {CaptureRecorder} from './capture.mjs';
 import {Checkpoint, idbStore, leftovers, recoveredBlob, CHECKPOINT_S} from './engine/checkpoint.mjs';
 import {AutoRecord} from './engine/auto-record.mjs';
@@ -74,7 +77,7 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.34.0';
+export const DS_VERSION = '0.35.0';
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
 const OBS_RETRY_MS = 30_000;   // = manifest.json (test/capture.test.mjs)
@@ -106,13 +109,20 @@ const stamp = (ms = Date.now()) => {
     const d = new Date(ms), p = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 };
-import {loadIndex, loadCard, itemKey, planFor, powerFor, PLANS_SEGMENT, PLANS_ARCH} from './engine/race-card.mjs';
+import {loadIndex, itemKey, planFor, powerFor, PLANS_SEGMENT, PLANS_ARCH} from './engine/race-card.mjs';
 
 const fetchJSON = url => fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status} ${url}`))));
 const cardPlanKey = id => `raceCardPlan-${id}`;   // your plan per card: this computer only (the cards are facts)
 // The card last picked on the Race card tab (and rehearsed). Plain localStorage, like the bike check: Sauce's settings
 // store didn't bring it back after a Sauce restart (2026-10-19, cause not found; its store is per window id).
 const CARD_PICKED_KEY = 'director-sportif-race-card-picked';
+// Race cards the rider imported (race-cards-live.mjs importCard): plain localStorage for the same reason, shared by
+// both windows; the settings window imports, this window hears it (storage event) and looks for the card again
+const IMPORTED_CARDS_KEY = 'director-sportif-imported-cards';
+const importedCards = () => {
+    try { return JSON.parse(localStorage.getItem(IMPORTED_CARDS_KEY)) || []; } catch (e) { return []; }
+};
+const saveImportedCards = list => localStorage.setItem(IMPORTED_CARDS_KEY, JSON.stringify(list));
 
 const doc = document.documentElement;
 // The event the bike was last checked for (plain localStorage: picking a bike reloads the window)
@@ -256,7 +266,11 @@ export async function main() {
 
     const raceCards = new RaceCards({fetchJSON,
                                      routeName: routeId => Common.getRoute(routeId, {prelude: 'leadin'}).then(r => r && r.name),
-                                     planFor: id => Common.settingsStore.get(cardPlanKey(id)) || {}});
+                                     planFor: id => Common.settingsStore.get(cardPlanKey(id)) || {},
+                                     imported: importedCards});
+    window.addEventListener('storage', ev => {
+        if (ev.key === IMPORTED_CARDS_KEY) raceCards.refresh();
+    });
     // Race or not, per event (eventSubgroupId): looked up once; no event = not a race (free ride)
     const eventTypes = new Map();   // subgroup id -> eventType | 'pending' | null (lookup failed)
     const raceFor = me => {
@@ -721,25 +735,66 @@ async function initRaceCardEditor() {
     const list = document.querySelector('#race-card .card-items');
     const info = document.querySelector('#race-card .card-info');
     if (!sel || !list) return;
-    let entries = [];
+    let shipped = [];
     try {
-        entries = await loadIndex(fetchJSON);
+        shipped = await loadIndex(fetchJSON);
     } catch (e) {
-        info.textContent = 'No race cards found.';
-        return;
+        info.textContent = 'The shipped race cards could not be read.';
     }
-    sel.innerHTML = entries.map(c => `<option value="${Common.sanitizeAttr(c.id)}">${Common.sanitize(c.name)}</option>`).join('');
-    // the card you picked last (the user, 2026-10-19: it opened on the first card every time; Rehearse uses it)
-    let picked = null;
-    try { picked = localStorage.getItem(CARD_PICKED_KEY); } catch (e) { /* storage blocked: the first card */ }
-    if (picked && entries.some(c => c.id === picked)) sel.value = picked;
+    let entries = [];
+    const fill = (want = null) => {
+        entries = cardEntries(shipped, importedCards());
+        sel.innerHTML = entries.map(c => `<option value="${Common.sanitizeAttr(c.id)}">${Common.sanitize(c.name || c.id)}` +
+            `${c.imported ? ' (imported)' : ''}</option>`).join('');
+        // the card you picked last (the user, 2026-10-19: it opened on the first card every time; Rehearse uses it)
+        let picked = want;
+        if (!picked) try { picked = localStorage.getItem(CARD_PICKED_KEY); } catch (e) { /* storage blocked: the first card */ }
+        if (picked && entries.some(c => c.id === picked)) sel.value = picked;
+    };
+    fill();
+    // import / remove (race-cards-live.mjs importCard): a card file from caffecter.com's race card maker or by hand
+    const file = document.querySelector('#race-card .card-import-file');
+    const removeBtn = document.querySelector('#race-card .card-remove');
+    const importStatus = document.querySelector('#race-card .card-import-status');
+    const pick = id => {
+        try { localStorage.setItem(CARD_PICKED_KEY, id); } catch (e) { /* not kept */ }
+    };
+    document.querySelector('#race-card .card-import-button')?.addEventListener('click', () => file && file.click());
+    file?.addEventListener('change', async () => {
+        const f = file.files && file.files[0];
+        file.value = '';
+        if (!f) return;
+        try {
+            const [next, msg] = importCard(await f.text(), importedCards());
+            saveImportedCards(next);
+            const id = next.at(-1).id;
+            pick(id);
+            fill(id);
+            importStatus.textContent = msg;
+            await show();
+        } catch (e) {
+            importStatus.textContent = String(e.message || e);
+        }
+    });
+    removeBtn?.addEventListener('click', async () => {
+        const id = sel.value;
+        saveImportedCards(importedCards().filter(c => c.id !== id));
+        Common.settingsStore.set(cardPlanKey(id), null);
+        importStatus.textContent = 'removed';
+        fill();
+        await show();
+    });
     const show = async () => {
         const entry = entries.find(c => c.id === sel.value);
         list.replaceChildren();
-        if (!entry) return;
+        if (removeBtn) removeBtn.hidden = !(entry && entry.imported);
+        if (!entry) {
+            info.textContent = 'No race cards yet: import one.';
+            return;
+        }
         let card;
         try {
-            card = await loadCard(fetchJSON, entry);
+            card = await loadEntry(fetchJSON, entry);
         } catch (e) {
             info.textContent = String(e.message || e);
             return;

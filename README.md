@@ -95,7 +95,13 @@ status line shows which card it's using.
 Your plan is saved on this computer only; the cards themselves hold only course facts. The title card and the
 YouTube chapters (OBS, below) use the card too.
 
-**Making a card:** a card is a JSON file in `pages/src/engine/race-cards/`, listed in `index.json` there. Each item
+**A card for any race:** make one at [caffecter.com/race-card.html](https://www.caffecter.com/race-card.html) (pick the
+route and laps; every sprint, KOM, climb and arch comes at its race km; add which segments score and what each arch
+gives), then in the **Race card** tab press **Import a card** and pick the file. Imported cards are used like the
+included ones; **Remove** takes one out again.
+
+**Writing a card by hand:** a card is a JSON file (the included ones are in `pages/src/engine/race-cards/`) with an
+`id`, a `name`, the `route` (Zwift's exact route name: the card only speaks on that route) and `items`. Each item
 has `km` (race distance from the start), `kind` (`sprint`, `kom`, `climb`, `arch` or `finish`), `name`, and where it
 applies `lengthKm`, `grade`, `scored` and `gives` (the power-up an arch gives). The included cards are the examples.
 Keep a card to course facts.
