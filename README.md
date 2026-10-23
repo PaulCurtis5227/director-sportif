@@ -48,9 +48,6 @@ windows always show it. Times are in seconds, never meters.
 - **The road**: "dirt in 15 for 40"; "coast" when you're fast enough to supertuck.
 - **Habits**, now and then: "use edge", "sit in", "get in line", "ease off".
 
-If you record or stream with OBS, the Director Sportif can connect to it (settings: OBS): it notes when your recording
-and stream started, so a ride's moments can link into your video, and it can start and stop OBS recording with the race.
-
 When you join an event, the Director Sportif window asks whether its bike type is right (Sauce doesn't say which bike
 you ride); in a time trial a bike that isn't a TT bike turns it red.
 
@@ -73,6 +70,38 @@ Record (or record every event, or all the time) saves your ride to your Download
 `ds-capture-<date>.ndjson.gz`: you in full, other riders only as positions and draft under random ids, never their
 names, power or heart rate. What's in it and the format: [`docs/RECORDING.md`](docs/RECORDING.md). The file stays on your
 computer unless you take it somewhere, for example to [caffecter.com](https://caffecter.com/report.html) for a ride report.
+
+## OBS (if you record or stream your races)
+
+**Why:** the Director Sportif knows when the race starts and ends, so it can run OBS for you:
+
+- **Never miss the start.** OBS starts recording with the race and stops after it: no clicking OBS in the pen, no
+  three-hour file because you forgot to stop it. A recording you started yourself is never stopped.
+- **YouTube chapters, ready to paste.** When OBS stops, a `ds-video-<time>-youtube-chapters.txt` lands in your
+  Downloads: the start, each climb and sprint from the race card, 1.5 km to go, your jump, the finish, timed to
+  your video.
+- **A title card.** The video can open on a card (the event, the course, your plan) for 10–30 s in its own OBS scene,
+  then cut back to your scene.
+- **Moments in your video.** Your ride recording notes when OBS started recording or streaming, so a moment in the
+  ride (your sprint, a move up) can be found at the right second of your video.
+
+**Set up** (OBS 28 or newer has what's needed built in):
+
+1. In OBS: **Tools ▸ WebSocket Server Settings**: tick **Enable WebSocket server**, keep port 4455, and set a password.
+   **Show Connect Info** shows the address and password.
+2. In the Director Sportif window's settings (the gear), **OBS** tab: tick **Connect to OBS**, then fill in the
+   address (`ws://127.0.0.1:4455` when OBS runs on the same computer) and the password. The password stays in the
+   window's settings on your computer.
+3. Tick **Record OBS with the race** and pick a **Title card** length (or none). The title card needs Sauce's web
+   server on (Sauce's settings); its OBS scene and source are made the first time.
+4. Press **Rehearse** (outside an event, with OBS not recording): the window shows the title card, starts OBS, records
+   90 s and stops, and saves the chapters file. Check the video before race day.
+
+OBS can be closed or started later: the Director Sportif retries every 30 s and a missing OBS never breaks a ride.
+
+**On stream:** capture the **Director Sportif — Grid** window in OBS (its window title never changes, so a window
+capture keeps finding it). For a clean overlay, turn on **Solid background** in the Grid's Look settings and key out
+the color.
 
 ## Develop
 
