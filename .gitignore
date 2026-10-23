@@ -1,0 +1,11 @@
+# Director Sportif — a Sauce for Zwift mod. Copyright (C) 2026 Paul Curtis. SPDX-License-Identifier: GPL-3.0-or-later
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+CLAUDE.md
+# recordings stay on your computer
+*.ndjson
+*.ndjson.gz

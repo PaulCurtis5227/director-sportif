@@ -1,0 +1,21 @@
+{
+    "id": "zrl-2026-r1-w6-spiral-summit",
+    "name": "ZRL 2026/27 R1 W6: Spiral Summit (points race)",
+    "date": "2026-10-27",
+    "format": "points",
+    "route": "Spiral Summit",
+    "distanceKm": 24,
+    "source": "https://zwiftinsider.com/zrl-r20-w6/",
+    "notes": "km = race distance from the start, as in Zwift Insider's guide. A new route made for ZRL: the route name is the guide's, check it against Zwift's on the day. FAL and FTS on all six segments; the Volcano KOM's FAL counts as finish points. The guide gives no km for the Volcano's parts; the final item's km is its length (3.8 km) less the final 400 m.",
+    "items": [
+        {"km": 0, "kind": "arch", "name": "Start pens", "gives": "UNDRAFTABLE", "info": "burrito for everyone: no draft in a cone behind you for 20 s"},
+        {"km": 10.2, "kind": "sprint", "name": "Jarvis Lap", "lengthKm": 4.7, "grade": 0, "scored": true, "gives": "LIGHTNESS", "info": "a lap segment: FAL at its end (14.9 km), FTS over the lap; holds the first Jarvis KOM and Sprint"},
+        {"km": 10.9, "kind": "kom", "name": "Jarvis KOM (1st)", "lengthKm": 1.8, "grade": 0.018, "scored": true, "gives": "AERO", "info": "two parts: ~1 km push, 500 m flat or down, then a 300 m push; expect a big push, the dropped stay dropped"},
+        {"km": 14.0, "kind": "sprint", "name": "Jarvis Sprint (1st)", "lengthKm": 0.2, "grade": -0.001, "scored": true, "gives": "LIGHTNESS", "info": "at high speed off the descent after the KOM"},
+        {"km": 14.9, "kind": "arch", "name": "Jarvis Lap end", "gives": "LIGHTNESS"},
+        {"km": 15.7, "kind": "kom", "name": "Jarvis KOM (2nd)", "lengthKm": 1.8, "grade": 0.018, "scored": true, "gives": "AERO", "info": "the same climb; the guide expects it ridden slowly, saving for the Volcano"},
+        {"km": 18.8, "kind": "sprint", "name": "Jarvis Sprint (2nd)", "lengthKm": 0.2, "grade": -0.001, "scored": true, "gives": "LIGHTNESS", "info": "high speed: position matters"},
+        {"km": 20.2, "kind": "kom", "name": "Volcano KOM", "lengthKm": 3.8, "grade": 0.032, "scored": true, "gives": "XP", "info": "the finish: 1.3 km at 4-5% with short dips, 500 m flat, 1 km climb, 500 m climb, then 400 m flattish kicking to 10%; aero beats light, hold a wheel"},
+        {"km": 23.6, "kind": "finish", "name": "Finish: the last 400 m of the Volcano", "lengthKm": 0.4, "scored": true, "info": "flattish, kicking up to 10% at the line"}
+    ]
+}

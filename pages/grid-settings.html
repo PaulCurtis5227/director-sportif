@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!--
+  Director Sportif — a Sauce for Zwift mod. Copyright (C) 2026 Paul Curtis. SPDX-License-Identifier: GPL-3.0-or-later
+  The Grid's settings (a child window opened from its gear, not a manifest window).
+-->
+<html class="settings-page" tabindex="0" data-settings-key="director-sportif-grid-v1">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+        <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval';"/>
+
+        <title>Director Sportif - Grid - Settings</title>
+
+        <script src="/pages/src/preloads.js"></script>
+
+        <link id="favicon" rel="shortcut icon" href="/pages/images/favicon.png"/>
+        <link rel="stylesheet" href="/pages/css/common.css"/>
+        <link rel="stylesheet" href="meters.css"/>
+
+        <script type="module">
+            import {settingsMain} from './src/grid.mjs';
+            settingsMain();
+        </script>
+    </head>
+    <body>
+        <div id="titlebar">
+            <header>
+                <div class="logo"><img src="/pages/images/icon128.png"/></div>
+                <div class="title">DS Grid - Settings</div>
+                <div class="filler"></div>
+                <div class="buttons">
+                    <div title="Close this window" class="button close electron-only"><ms>close</ms></div>
+                </div>
+            </header>
+        </div>
+        <div id="settings" class="tabbed">
+            <header class="tabs">
+                <div class="title tab active" data-url-hash="slots-tab" data-id="slots">Slots</div>
+                <div class="title tab" data-url-hash="look-tab" data-id="look">Look</div>
+            </header>
+
+            <div id="tiles" class="section tab active" data-id="slots">
+                <div class="hint">One slot per meter, word or basic, in this order (left to right, then down, with more
+                    than one column). "word": the meter's word under the number. Yellow / red: the number turns that
+                    color at those values; empty = the meter's own colors. The Grid only shows what the Director
+                    Sportif window publishes: keep that window open (bike, CdA and calls are set there).</div>
+                <div class="tile-list"></div>
+                <label class="add-tile">
+                    <key>Add:</key>
+                    <select></select>
+                    <input type="button" value="Add"/>
+                </label>
+                <input type="button" class="reset-tiles" value="Back to the default slots"/>
+            </div>
+
+            <form id="look" class="section tab" data-id="look">
+                <div class="hint">Speeds and distances follow Sauce's metric / imperial setting.</div>
+                <label title="Unit for how far left or right of the wheel in front you sit">
+                    <key>Left / right in:</key>
+                    <select name="sideUnit">
+                        <option value="ft" selected>feet</option>
+                        <option value="m">meters</option>
+                    </select>
+                </label>
+                <label title="Slots side by side: 1 = one column, top to bottom">
+                    <key>Columns:</key>
+                    <input type="number" name="columns" min="1" max="8" step="1" value="1" style="--size: 3.5"/>
+                </label>
+                <label title="Show only the first slots of the list (0 = all of them)">
+                    <key>Slots shown:</key>
+                    <input type="number" name="maxTiles" min="0" max="30" step="1" value="0" style="--size: 3.5"/>
+                </label>
+                <label title="Size the window to the slots (a smaller text size gives a smaller window). Off: size it yourself.">
+                    <key>Fit window:</key>
+                    <input type="checkbox" name="fitWindow" checked/>
+                </label>
+                <label title="Text size of the slots">
+                    <key>Text size:</key>
+                    <input type="number" name="textScale" min="50" max="300" step="10" value="100" style="--size: 4.5"/>%
+                </label>
+                <label>
+                    <key>Theme override:</key>
+                    <select is="sauce-theme" override></select>
+                </label>
+                <label title="Mostly useful for streamers using OBS window and browser sources">
+                    <key>Solid background:</key>
+                    <input type="checkbox" name="solidBackground"/>
+                </label>
+                <label>
+                    <key>Background color:</key>
+                    <input type="color" name="backgroundColor" data-depends-on="solidBackground" value="#00ff00"/>
+                    <input type="text" name="backgroundColor" data-depends-on="solidBackground" size="7"/>
+                    <input type="number" title="Opacity" name="backgroundAlpha" data-depends-on="solidBackground"
+                           style="--size: 4.5" min="0" max="100" value="100"/>%
+                </label>
+            </form>
+        </div>
+    </body>
+</html>

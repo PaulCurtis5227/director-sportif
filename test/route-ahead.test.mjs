@@ -1,0 +1,97 @@
+/*
+ * Director Sportif — a Sauce for Zwift mod.
+ * Copyright (C) 2026 Paul Curtis
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {routeProfile, profileAhead, speedAt, withSpeeds, RouteAhead} from '../pages/src/route-ahead.mjs';
+import {nextClimb} from '../pages/src/engine/director.mjs';
+
+/*
+ * A route in Sauce's shape (common.mjs getRoute): nodes every 50 m; a 200 m lead-in (section 0), then a 3 km lap
+ * (section 1): flat for 2 km, a 1 km climb at 5%; a 100 m join between laps (lapWeldData) back down.
+ */
+function sauceRoute({laps = true} = {}) {
+    const distances = [], elevations = [], nodes = [];
+    for (let d = 0; d <= 3200; d += 50) {
+        distances.push(d);
+        const lap = d - 200;
+        elevations.push(lap <= 2000 ? 10 : 10 + (lap - 2000) * 0.05);
+        nodes.push({index: d < 200 ? 0 : 1});
+    }
+    return {
+        supportedLaps: laps, distances, elevations, curvePath: {nodes},
+        sections: [{leadin: true}, {}],
+        lapWeldData: {distances: [0, 50, 100], elevations: [60, 35, 10]},
+    };
+}
+
+test('route profile: lead-in + lap first, join + lap for the laps after', () => {
+    const p = routeProfile(sauceRoute());
+    assert.equal(p.first.at(-1).d, 3200);
+    assert.equal(p.cycle.at(-1).d, 3100, 'join 100 m + lap 3000 m');
+    assert.equal(p.cycle[0].alt, 60, 'the join starts at the top');
+    assert.equal(routeProfile(sauceRoute({laps: false})).cycle, null);
+    assert.equal(routeProfile(null), null);
+});
+
+test('placed by the distance left in the lap (routeEnd − routeDistance), as Sauce\'s elevation window does', () => {
+    const p = routeProfile(sauceRoute());
+    // first lap, 1000 m into the lap: 2200 m left of 3200
+    const a = profileAhead(p, {routeEnd: 3200, routeDistance: 1000, laps: 0}, 1500);
+    assert.ok(Math.abs(a[0].d - 50) < 1e-9 && a[0].alt === 10);
+    assert.equal(a.find(x => x.d >= 1500).alt, 10 + (2500 - 2200) * 0.05, 'the climb starts 1200 m ahead');
+    // past the lap's finish it runs into the next lap: the join, then the flat
+    const b = profileAhead(p, {routeEnd: 3200, routeDistance: 3100, laps: 0}, 400);
+    assert.equal(b.find(x => x.d >= 150).alt, 35, 'the join after the line');
+    // a later lap uses the join + lap sequence
+    const c = profileAhead(p, {routeEnd: 3100, routeDistance: 0, laps: 1}, 200);
+    assert.equal(c[0].alt, 35);
+    // doesn't fit (more left than the lap is long), or no position
+    assert.equal(profileAhead(p, {routeEnd: 9000, routeDistance: 0, laps: 0}), null);
+    assert.equal(profileAhead(p, {routeEnd: 3200, laps: 0}), null);
+});
+
+test('the climb ahead from the route: alone, no riders needed', () => {
+    const p = routeProfile(sauceRoute());
+    const s = {routeEnd: 3200, routeDistance: 1000, laps: 0};
+    const pts = withSpeeds(profileAhead(p, s, 3000), {vFlat: 11, power: 250, massKg: 85, cda: 0.3, crr: 0.0045, bodyKg: 77});
+    const c = nextClimb(pts, {vNow: 11, grade: 0});
+    assert.ok(c, 'found');
+    assert.ok(Math.abs(c.inM - 1200) <= 60, `foot ${c.inM} m ahead`);
+    assert.ok(Math.abs(c.secs - 1200 / 11) < 8, `${c.secs.toFixed(1)} s at 11 m/s on the flat`);
+    assert.ok(c.riseM >= 40, `rise ${c.riseM}`);
+});
+
+test('speeds ahead: your flat speed, slower on climbs at your effort, never faster; steady, not today\'s bump', () => {
+    const m = {massKg: 85, cda: 0.3, crr: 0.0045};
+    const flat = speedAt(250, 0, m), climb = speedAt(250, 0.06, m);
+    assert.ok(flat > 10 && flat < 13, `250 W flat ${flat.toFixed(2)} m/s`);
+    assert.ok(climb > 3.5 && climb < 5, `250 W at 6% ${climb.toFixed(2)} m/s`);
+    const pts = withSpeeds([{d: 50, alt: 0}, {d: 100, alt: 0}, {d: 150, alt: 3}, {d: 200, alt: 6}, {d: 250, alt: 9}],
+                           {vFlat: 11, power: 250, ...m, bodyKg: 77});
+    assert.equal(pts[0].v, 11);
+    assert.ok(pts.at(-1).v < 6, `on 6%: ${pts.at(-1).v.toFixed(2)} m/s`);
+    assert.ok(pts.every(p => p.v <= 11));
+    // no effort known (or coasting): the floor, 2 W/kg, not 0 W
+    const coast = withSpeeds([{d: 50, alt: 0}, {d: 100, alt: 3}, {d: 150, alt: 6}], {vFlat: 11, power: 0, ...m, bodyKg: 77});
+    assert.ok(coast.at(-1).v > 2, 'a climb still gets a speed');
+    // a gentle drag (≤ 2%) rides at the flat speed
+    const drag = withSpeeds([{d: 50, alt: 0}, {d: 100, alt: 0.75}, {d: 150, alt: 1.5}], {vFlat: 11, power: 250, ...m, bodyKg: 77});
+    assert.ok(drag.every(p => p.v === 11));
+});
+
+test('RouteAhead: loads a route once, null while it loads or off a route', async () => {
+    let loads = 0;
+    const ra = new RouteAhead(async () => { loads++; return sauceRoute(); });
+    const s = {routeId: 7, routeEnd: 3200, routeDistance: 1000, laps: 0};
+    assert.equal(ra.ahead(s), null, 'loading');
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+    assert.ok(ra.ahead(s).length > 10);
+    ra.ahead(s);
+    assert.equal(loads, 1);
+    assert.equal(ra.ahead({routeId: null}), null);
+    assert.equal(ra.ahead({routeId: 7}), null, 'no route distance (Sauce leaves it out before the start)');
+});

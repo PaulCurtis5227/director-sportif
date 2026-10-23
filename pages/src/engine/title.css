@@ -1,0 +1,125 @@
+/*
+ * Efficiency Meter — a Sauce for Zwift mod.
+ * Copyright (C) 2026 Paul Curtis
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Title card: sized in vw/vh so it fills any OBS canvas (1080p or 4K).
+ */
+:root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --text: #f0f3f6;
+    --muted: #9aa4af;
+    --accent: #ff7a1a;
+    --sprint: #3fb950;
+    --kom: #f85149;
+    --arch: #58a6ff;
+    --row: 1.4vw;   /* title.mjs shrinks it until the course fits */
+}
+* { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: radial-gradient(ellipse at top left, #1f2a38 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+}
+.card {
+    height: 100vh;
+    padding: 5vh 6vw;
+    display: flex;
+    flex-direction: column;
+    gap: 3vh;
+}
+.kicker {
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.3em;
+    font-size: 1.6vw;
+    font-weight: 600;
+}
+h1 {
+    margin: 1vh 0 0;
+    font-size: 4.4vw;
+    line-height: 1.1;
+}
+.sub {
+    margin-top: 1.5vh;
+    color: var(--muted);
+    font-size: 1.9vw;
+}
+.course {
+    flex: 1;
+    min-height: 0;
+    background: var(--panel);
+    border-radius: 1.2vw;
+    padding: 2.5vh 2.5vw;
+    overflow: hidden;
+}
+h2 {
+    margin: 0 0 1.5vh;
+    font-size: 1.5vw;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+}
+.items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4vh;
+}
+.items li {
+    display: grid;
+    grid-template-columns: 6.5em 5em 1fr 13em 7em;
+    align-items: baseline;
+    font-size: var(--row);
+    padding: 0.35em 0.8vw;
+    white-space: nowrap;
+    border-left: 0.35vw solid var(--muted);
+}
+.items li[data-kind="sprint"], .items li[data-kind="finish"] { border-color: var(--sprint); }
+.items li[data-kind="kom"], .items li[data-kind="climb"] { border-color: var(--kom); }
+.items li[data-kind="arch"] { border-color: var(--arch); }
+.km { color: var(--muted); font-variant-numeric: tabular-nums; }
+.kind { color: var(--muted); }
+.name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.detail, .gives { color: var(--muted); }
+.gives { color: var(--accent); }
+.plan { display: none; color: var(--text); font-style: italic; overflow: hidden; text-overflow: ellipsis; }
+.has-plan .items li { grid-template-columns: 6em 4.5em 1fr 11em 6em 16em; }
+.has-plan .plan { display: block; }
+.source {
+    margin: 1.5vh 0 0;
+    font-size: 1vw;
+    color: var(--muted);
+}
+.promo {
+    margin-top: auto;
+    border-top: 0.2vh solid #30363d;
+    padding-top: 2vh;
+}
+.promo-name {
+    font-size: 2vw;
+    font-weight: 700;
+}
+.soon {
+    margin-left: 1vw;
+    padding: 0.3vh 0.8vw;
+    border-radius: 0.6vw;
+    background: var(--accent);
+    color: #111;
+    font-size: 1.1vw;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    vertical-align: middle;
+}
+.promo-text {
+    margin-top: 0.8vh;
+    font-size: 1.35vw;
+    color: var(--muted);
+    max-width: 70vw;
+}

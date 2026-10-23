@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<!--
+  Director Sportif — a Sauce for Zwift mod. Copyright (C) 2026 Paul Curtis. SPDX-License-Identifier: GPL-3.0-or-later
+  The meter window's settings (a child window opened from its gear, not a manifest window).
+-->
+<html class="settings-page" tabindex="0" data-settings-key="director-sportif-meters-v2">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+        <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval';"/>
+
+        <title>Director Sportif - Meters - Settings</title>
+
+        <script src="/pages/src/preloads.js"></script>
+
+        <link id="favicon" rel="shortcut icon" href="/pages/images/favicon.png"/>
+        <link rel="stylesheet" href="/pages/css/common.css"/>
+        <link rel="stylesheet" href="meters.css"/>
+
+        <script type="module">
+            import {settingsMain} from './src/meters.mjs';
+            settingsMain();
+        </script>
+    </head>
+    <body>
+        <div id="titlebar">
+            <header>
+                <div class="logo"><img src="/pages/images/icon128.png"/></div>
+                <div class="title">Director Sportif - Settings</div>
+                <div class="filler"></div>
+                <div class="buttons">
+                    <div title="Close this window" class="button close electron-only"><ms>close</ms></div>
+                </div>
+            </header>
+        </div>
+        <div id="settings" class="tabbed">
+            <header class="tabs">
+                <div class="title tab active" data-url-hash="you-tab" data-id="you">You</div>
+                <div class="title tab" data-url-hash="calls-tab" data-id="calls">Calls</div>
+                <div class="title tab" data-url-hash="race-card-tab" data-id="race-card">Race card</div>
+                <div class="title tab" data-url-hash="record-tab" data-id="record">Record</div>
+                <div class="title tab" data-url-hash="obs-tab" data-id="obs">OBS</div>
+                <div class="title tab" data-url-hash="look-tab" data-id="look">Look</div>
+            </header>
+
+            <form id="you" class="section tab active" data-id="you">
+                <div class="title">Your bike</div>
+                <label title="Your bike type sets the air drag (CdA) for Position and Holding, scaled to your height and weight from the Zwift profile">
+                    <key>Bike:</key>
+                    <select name="bike"></select>
+                </label>
+                <label title="Deeper wheels cut air drag up to ~4%">
+                    <key>Wheels:</key>
+                    <select name="wheels"></select>
+                </label>
+                <label title="Aero Lightning socks cut air drag ~1%">
+                    <key>Aero socks:</key>
+                    <input type="checkbox" name="aeroSocks"/>
+                </label>
+                <label title="Your own CdA (m², e.g. 0.290), from a ride report: replaces the bike, wheels and socks estimate. Leave empty to use them.">
+                    <key>My CdA:</key>
+                    <input type="number" name="myCda" min="0.15" max="0.6" step="0.001" placeholder="from bike" style="--size: 6"/>
+                </label>
+
+                <div class="title">Your fitness</div>
+                <label title="Your FTP (W) for the FRC meter. Empty: the FTP in your Zwift profile">
+                    <key>FTP:</key>
+                    <input type="number" name="myFtpW" min="80" max="600" step="1" placeholder="from Zwift" style="--size: 5"/> W
+                </label>
+                <label title="Your FRC (W′, kJ) from WKO or similar: the reserve above FTP">
+                    <key>FRC:</key>
+                    <input type="number" name="myFrcKJ" min="5" max="40" step="0.5" value="15" style="--size: 5"/> kJ
+                </label>
+            </form>
+
+            <form id="calls" class="section tab" data-id="calls">
+                <div class="hint">How each call reaches you: a chime (each type has its own), your computer's voice, or
+                    both; none = only the windows (the Director Sportif window, the Grid's Director tile). One type sounds
+                    at most every 30 s.</div>
+                <div class="call-delivery"></div>
+            </form>
+
+            <div id="race-card" class="section tab" data-id="race-card">
+                <div class="hint">The course facts of a race (scored sprints and KOMs, arches and what they give). The
+                    one for the route you're racing is used by itself; here you set your plan for each.</div>
+                <select class="card" title="Race card"></select>
+                <div class="hint card-info"></div>
+                <div class="card-items"></div>
+            </div>
+
+            <form id="record" class="section tab" data-id="record">
+                <div class="hint">Recordings go to Downloads as ds-capture-….ndjson.gz. For other riders only where they
+                    were and the draft they got, under a random id that's new for every recording (no names, power,
+                    heart rate or body data); for you, everything. They're stored every 30 s while recording, so a crash
+                    or a closed window loses at most 30 s: the next time this window opens, it saves them.</div>
+                <label title="Start recording when you join an event, stop 2 minutes after the finish (or when Zwift is gone). Record / Stop still work any time.">
+                    <key>Record every event:</key>
+                    <input type="checkbox" name="autoRecordEvents"/>
+                </label>
+                <label title="Record whenever Zwift data comes, a file per free ride (an event still gets its own file when Record every event is on). Stops when Zwift is gone. A Stop you press holds until you join or leave an event.">
+                    <key>Record all the time:</key>
+                    <input type="checkbox" name="recordAlways"/>
+                </label>
+            </form>
+
+            <form id="obs" class="section tab" data-id="obs">
+                <div class="hint">If you record or stream your rides with OBS: the Director Sportif writes when your
+                    recording and your stream started into its recording, so a report can link each moment to your
+                    video (and, later, to everyone's videos that had you in view). In OBS: Tools ▸ WebSocket Server
+                    Settings ▸ enable it. The password stays in this window's settings on this computer.</div>
+                <label title="Connect to OBS (it retries every 30 s; OBS closed never breaks a ride)">
+                    <key>Connect to OBS:</key>
+                    <input type="checkbox" name="obsEnabled"/>
+                </label>
+                <label title="OBS's WebSocket server address">
+                    <key>Address:</key>
+                    <input type="text" name="obsUrl" data-depends-on="obsEnabled" value="ws://127.0.0.1:4455" size="22"/>
+                </label>
+                <label title="OBS's WebSocket password (Tools ▸ WebSocket Server Settings ▸ Show Connect Info)">
+                    <key>Password:</key>
+                    <input type="password" name="obsPassword" data-depends-on="obsEnabled" size="18"/>
+                </label>
+                <label title="Start OBS recording when the Director Sportif starts recording in an event (by itself if set, or your Record press), and stop it after. A Record in a free ride leaves OBS alone; an OBS recording you started yourself is never stopped.">
+                    <key>Record OBS with the race:</key>
+                    <input type="checkbox" name="obsRecordWithRace" data-depends-on="obsEnabled"/>
+                </label>
+                <label title="When the Director Sportif starts OBS, the video opens on a title card (the event, the course from the race card, your plan) in its own OBS scene, then cuts back to your scene. The scene and its Browser source are made the first time; Sauce's web server must be on.">
+                    <key>Title card:</key>
+                    <select name="obsTitleS" data-depends-on="obsEnabled">
+                        <option value="0">none</option>
+                        <option value="10">10 s</option>
+                        <option value="15" selected>15 s</option>
+                        <option value="20">20 s</option>
+                        <option value="30">30 s</option>
+                    </select>
+                </label>
+                <div class="hint">Rehearse: with no race (not in an event, OBS not recording), the Director Sportif window shows
+                    the title card, starts OBS, records 90 s and stops OBS, so you can check it all in your video. The
+                    title uses the card picked on the Race card tab. Keep the Director Sportif window open.</div>
+                <div class="obs-rehearse-row">
+                    <button type="button" class="obs-rehearse">Rehearse</button>
+                    <span class="obs-rehearse-status"></span>
+                </div>
+            </form>
+
+            <form id="look" class="section tab" data-id="look">
+                <div class="hint">This window: the call now and a short status. The meters, their layout and colors are set on the Grid (its own gear).</div>
+                <label title="Size the window to the status (a smaller text size gives a smaller window). Off: size it yourself.">
+                    <key>Fit window:</key>
+                    <input type="checkbox" name="fitWindow" checked/>
+                </label>
+                <label title="Text size of the status">
+                    <key>Text size:</key>
+                    <input type="number" name="textScale" min="50" max="300" step="10" value="100" style="--size: 4.5"/>%
+                </label>
+                <label>
+                    <key>Theme override:</key>
+                    <select is="sauce-theme" override></select>
+                </label>
+                <label title="Mostly useful for streamers using OBS window and browser sources">
+                    <key>Solid background:</key>
+                    <input type="checkbox" name="solidBackground"/>
+                </label>
+                <label>
+                    <key>Background color:</key>
+                    <input type="color" name="backgroundColor" data-depends-on="solidBackground" value="#00ff00"/>
+                    <input type="text" name="backgroundColor" data-depends-on="solidBackground" size="7"/>
+                    <input type="number" title="Opacity" name="backgroundAlpha" data-depends-on="solidBackground"
+                           style="--size: 4.5" min="0" max="100" value="100"/>%
+                </label>
+            </form>
+        </div>
+    </body>
+</html>

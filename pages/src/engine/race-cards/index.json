@@ -1,0 +1,8 @@
+{
+    "cards": [
+        {"id": "zrl-2026-r1-w3-c-urumaze", "name": "ZRL 2026/27 R1 W3 C/D: Urumaze (points race)", "route": "Urumaze", "date": "2026-10-06", "file": "zrl-2026-r1-w3-c-urumaze.json"},
+        {"id": "zrl-2026-r1-w4-ttt-figure8-reverse", "name": "ZRL 2026/27 R1 W4: Figure 8 Reverse (TTT)", "route": "Figure 8 Reverse", "date": "2026-10-13", "file": "zrl-2026-r1-w4-ttt-figure8-reverse.json"},
+        {"id": "zrl-2026-r1-w5-green-to-screen", "name": "ZRL 2026/27 R1 W5: Green to Screen (scratch race)", "route": "Green to Screen", "date": "2026-10-20", "file": "zrl-2026-r1-w5-green-to-screen.json"},
+        {"id": "zrl-2026-r1-w6-spiral-summit", "name": "ZRL 2026/27 R1 W6: Spiral Summit (points race)", "route": "Spiral Summit", "date": "2026-10-27", "file": "zrl-2026-r1-w6-spiral-summit.json"}
+    ]
+}

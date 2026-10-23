@@ -1,0 +1,18 @@
+{
+    "name": "director-sportif",
+    "version": "0.34.0",
+    "private": true,
+    "license": "GPL-3.0-or-later",
+    "author": "PaulCurtis5227",
+    "description": "Dev and release tooling for the Director Sportif Sauce4Zwift mod (the mod itself is plain HTML/JS under pages/).",
+    "type": "module",
+    "engines": {
+        "node": ">=20"
+    },
+    "scripts": {
+        "test": "node --test \"test/*.test.mjs\"",
+        "dev-link": "node scripts/dev-link.mjs",
+        "build": "node scripts/build.mjs",
+        "release": "node scripts/release.mjs"
+    }
+}

@@ -1,0 +1,22 @@
+{
+    "id": "zrl-2026-r1-w3-c-urumaze",
+    "name": "ZRL 2026/27 R1 W3 C/D: Urumaze (points race)",
+    "date": "2026-10-06",
+    "format": "points",
+    "route": "Urumaze",
+    "distanceKm": 26.8,
+    "source": "https://zwiftinsider.com/zrl-r20-w3-cd/",
+    "notes": "km = race distance from the start, as in Zwift Insider's guide. The first Mech Isle virtual start/finish arch has no km in the guide, so it gets no warning.",
+    "items": [
+        {"km": 0, "kind": "arch", "name": "Start pens", "gives": "AERO"},
+        {"km": 1.7, "kind": "sprint", "name": "Tidepool Sprint Reverse", "lengthKm": 0.31, "grade": 0, "scored": true, "gives": "XP"},
+        {"km": 3.2, "kind": "climb", "name": "Pain Cavern", "lengthKm": 2.1, "grade": 0.03, "scored": false, "info": "riders get dropped here; three ramps"},
+        {"km": 7.7, "kind": "sprint", "name": "Tower Sprint", "lengthKm": 0.32, "grade": 0.004, "scored": true, "gives": "RANDOM"},
+        {"km": 9.3, "kind": "arch", "name": "Castle to Castle virtual arch", "gives": "AERO"},
+        {"km": 15, "kind": "sprint", "name": "Tidepool Sprint Reverse", "lengthKm": 0.31, "grade": 0, "scored": true, "gives": "XP"},
+        {"km": 18.5, "kind": "climb", "name": "Festival Harbor Climb CW", "lengthKm": 2.5, "grade": 0.021, "scored": false},
+        {"km": 20.2, "kind": "sprint", "name": "Shisa Sprint Reverse", "lengthKm": 0.28, "grade": 0, "scored": true, "gives": "RANDOM"},
+        {"km": 22.5, "kind": "arch", "name": "Mech Isle virtual start/finish", "gives": "AERO"},
+        {"km": 26.4, "kind": "finish", "name": "Tidepool Sprint Reverse (finish)", "lengthKm": 0.31, "grade": 0, "scored": true, "gives": "XP"}
+    ]
+}

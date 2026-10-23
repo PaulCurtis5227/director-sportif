@@ -1,0 +1,306 @@
+/*
+ * Director Sportif — a Sauce for Zwift mod.
+ * Copyright (C) 2026 Paul Curtis
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * The data object the Director Sportif publishes (docs/DS-DATA.md, v1): one per tick, the only thing a display
+ * reads. Values are numbers (metric), states are short codes, words come from VOCAB; no sentences, numbers or names
+ * in a word. Pure (no Sauce imports), so it is tested headless.
+ *
+ *   {v, ts, self, meters: {<key>: {value, state, level, ...extra}}, basics: {...}, call: {...} | null}
+ */
+
+import {rangeLevel, DEFAULT_RANGES} from './tiles.mjs';
+
+export const DATA_VERSION = 1;
+export const CHANNEL = 'director-sportif/v1';
+
+/*
+ * Every meter's states: the word a display shows (active words for advice; '' = nothing to show) and a one-line
+ * help for tooltips (the long explanation, no numbers). The common states (alone, settling, coasting, warming, none)
+ * show no word.
+ */
+const COMMON = {
+    alone: {word: '', help: 'Not in a group.'},
+    settling: {word: '', help: 'You just teleported: power and speed don\'t match for a few seconds.'},
+    coasting: {word: '', help: 'Coasting: the draft only adds speed, it saves no pedaling watts.'},
+    warming: {word: '', help: 'Filling the averaging window.'},
+    none: {word: '', help: ''},
+};
+
+export const VOCAB = {
+    position: {
+        ...COMMON,
+        good: {word: 'stay', help: 'Good spot: the best-placed rider in your group saves little more than you.'},
+        'sit-in': {word: 'sit in', help: 'You are on the front: sitting in behind a wheel saves this much.'},
+        gapping: {word: 'gap opening', help: 'A hole is opening in front of your wheel (or the next one): close it or go round, or you are gapped.'},
+        'too-close': {word: 'back off', help: 'Too close to the wheel: ease back to the best gap (or drift to the back of the bunch).'},
+        boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
+        'close-up': {word: 'close up', help: 'Too far off the wheel: close up to the best gap.'},
+        'find-wheel': {word: 'find a wheel', help: 'Get on a wheel at the best gap.'},
+        'no-draft': {word: 'change wheel', help: 'This wheel gives no draft (a hand cycle or recumbent?): find another.'},
+    },
+    holding: {
+        ...COMMON,
+        hold: {word: 'hold', help: 'You spend what keeping your place needs.'},
+        easy: {word: 'easy', help: 'You push more than keeping your place needs: ease off.'},
+        blocked: {word: 'ease off', help: 'The extra watts go into the wheel in front: ease off or steer to space.'},
+        'moving-up': {word: 'moving up', help: 'Moving up through the group: the extra watts are the price of the move.'},
+        drifting: {word: 'drifting', help: 'You spend less than keeping your place needs: you drift back.'},
+    },
+    pack: {
+        ...COMMON,
+        pair: {word: '', help: 'With one rider: no pack cost.'},
+        front: {word: 'front', help: 'Front of the group.'},
+        room: {word: 'room', help: 'Room around you, at the best gap: the cheapest spot.'},
+        tight: {word: 'tight', help: 'Close to the wheel: it costs more than the draft says.'},
+        crowded: {word: 'crowded', help: 'Several riders close ahead: it costs more than the draft says.'},
+        boxed: {word: 'boxed', help: 'Boxed in: riders close behind and beside you.'},
+        group: {word: '', help: 'In the group.'},
+    },
+    blocked: {
+        ...COMMON,
+        clear: {word: '', help: 'Not blocked.'},
+        blocked: {word: 'ease off', help: 'Pushing into the wheel: the watts vanish. Ease off or steer to space.'},
+        'blocked-left': {word: 'drop back', help: 'Stuck alongside a rider on your left: drop back, pass where there is room.'},
+        'blocked-right': {word: 'drop back', help: 'Stuck alongside a rider on your right: drop back, pass where there is room.'},
+    },
+    passing: {
+        ...COMMON,
+        'too-slow': {word: 'go harder', help: 'Closing on a rider too slowly gets you held: go with 5+ km/h more, or wait.'},
+        'go-wide': {word: 'go wide', help: 'In line with the rider you are closing on: go wide (1.5 m+) or with 5+ km/h more.'},
+        'drop-back': {word: 'drop back', help: 'Glued to their wheel: pulling out here gets you held. Drop to 3–5 m, pull out to the edge, come by fast.'},
+        'rider-left': {word: 'block left', help: 'A rider creeping up on your left: staying in their way costs them far more than you.'},
+        'rider-right': {word: 'block right', help: 'A rider creeping up on your right: staying in their way costs them far more than you.'},
+        'rider-behind': {word: 'hold line', help: 'A rider creeping up behind you: staying in their way costs them far more than you.'},
+    },
+    gap: {
+        ...COMMON,
+        wheel: {word: '', help: 'To the wheel in line in front of you.'},
+        beside: {word: 'beside', help: 'No rider in line: the nearest is beside you.'},
+        'no-wheel': {word: '', help: 'No wheel within 25 m.'},
+        'no-draft': {word: 'no draft', help: 'This wheel gives no draft (a hand cycle or recumbent?).'},
+    },
+    side: {
+        ...COMMON,
+        inline: {word: '', help: 'Left or right of the wheel in front.'},
+        beside: {word: 'beside', help: 'Left or right of the nearest rider beside you (none in line).'},
+        'no-wheel': {word: '', help: 'No wheel within 25 m.'},
+    },
+    tuck: {
+        ...COMMON,
+        build: {word: 'pedal on', help: 'Speed still needed to supertuck (58 km/h on −3% or steeper, out of the draft).'},
+        stop: {word: 'coast', help: 'Fast enough to supertuck: stop pedaling. In a race the tuck is about as aero as the AERO power-up.'},
+        rest: {word: 'rest', help: 'Fast enough to supertuck, but not in a race: outside races the tuck saves your legs, not time (pedaling is faster).'},
+        tuck: {word: 'tuck', help: 'In the supertuck.'},
+        draft: {word: 'in draft', help: 'No supertuck in the draft.'},
+        frame: {word: 'no tuck', help: 'No supertuck on a TT or MTB frame.'},
+    },
+    group: {...COMMON},
+    surface: {
+        ...COMMON,
+        pavement: {word: '', help: 'Pavement.'},
+        wood: {word: 'wood', help: 'Wood: it rolls slower than pavement on road tyres.'},
+        brick: {word: 'brick', help: 'Brick: it rolls slower than pavement on road tyres.'},
+        cobbles: {word: 'cobbles', help: 'Cobbles: they roll slower than pavement on road tyres.'},
+        dirt: {word: 'dirt', help: 'Dirt: road tyres pay a lot here; a gravel bike is faster.'},
+        gravel: {word: 'gravel', help: 'Gravel: road tyres pay a lot here; a gravel bike is faster.'},
+        grass: {word: 'grass', help: 'Grass: the slowest surface.'},
+        sand: {word: 'sand', help: 'Sand (rolls like pavement in Zwift).'},
+        snow: {word: 'ice', help: 'Ice / snow.'},
+    },
+    frc: {
+        ...COMMON,
+        ok: {word: '', help: 'Your reserve above FTP (FRC), from your power: it drains above FTP, refills below.'},
+        low: {word: 'low', help: 'Under 30% of your reserve left: save it for what matters.'},
+        empty: {word: 'empty', help: 'Under 10% left: above FTP you have only seconds.'},
+    },
+    demand: {
+        ...COMMON,
+        ok: {word: '', help: 'The power the ideal spot needs to stay with your group over 30 s: what the pack asks of anyone.'},
+    },
+    cda: {
+        ...COMMON,
+        model: {word: '', help: 'Your bike type × your size from the Zwift profile.'},
+        yours: {word: '', help: 'The CdA you entered in settings.'},
+        guessed: {word: '', help: 'Your bike type × a guessed size (height or weight hidden in your profile).'},
+    },
+};
+
+/*
+ * The director's calls (from the Data Tap, docs/DS-DISPLAY.md step 4): their words per state. Seconds ride beside
+ * the word (`in`) only where the time is the point ("climb in 90"); "move up" means now, not in 60 s.
+ */
+export const CALL_WORDS = {
+    moveUp: {prep: 'climb', move: 'move up', hold: 'hold spot', late: 'stay in line'},
+    sprint: {position: 'top ten', good: 'good spot', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
+             'keep-going': 'keep going', ease: 'ease off', 'ease-ftp': 'ease to FTP', window: 'you can go', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
+    nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line'},
+};
+
+/*
+ * Power-ups by the names Zwift shows (Sauce's ids -> the word), and when each is best fired at the finish
+ * (engine/director.mjs SprintCoach: AERO on your jump or 15 s to go, the van 40 s, the burrito 20 s from the front,
+ * the ghost just before 400 m, the arrows and the feather on your jump). Advice only: never fired for you.
+ * PROVISIONAL (the user, 2026-10-16): "after I jump my hands are busy": a call on your jump comes too late (the
+ * recorded presses came 1–10 s into the sprint). To come: "AERO, go go go" your reaction + press time BEFORE the
+ * launch, the launch from the pack getting jumpy, the race card or your learned launch distance (docs/PLAN.md §6).
+ */
+export const POWERUP_NAMES = {AERO: 'AERO', DRAFTBOOST: 'VAN', NINJA: 'GHOST', UNDRAFTABLE: 'BURRITO', BOOST: 'ARROWS',
+                              LIGHTNESS: 'FEATHER'};
+const FIRE_AT_S = {AERO: 15, DRAFTBOOST: 40, UNDRAFTABLE: 20};
+const GHOST_AT_M = 400;
+
+export const SURFACE_CALL_S = 45;
+
+/* Seconds for a call: to 5 s above 20 s, whole seconds below (docs/DS-DATA.md). */
+export function roundIn(secs) {
+    if (!Number.isFinite(secs) || secs < 0) return null;
+    return secs > 20 ? Math.round(secs / 5) * 5 : Math.round(secs);
+}
+
+/* The director's call candidates from the engine's reading, in the data object's call form. */
+export function directorCalls(ds) {
+    const out = [];
+    const m = ds && ds.moveUp;
+    if (m && CALL_WORDS.moveUp[m.state]) {
+        out.push({id: 'moveUp', state: m.state, word: CALL_WORDS.moveUp[m.state],
+                  in: m.state === 'prep' ? roundIn(m.secs) : null, for: null, priority: m.priority});
+    }
+    const c = ds && ds.card;
+    if (c && c.about) {
+        let word = null, inS = c.inS;
+        if (c.about === 'segment') {
+            word = c.plan === 'skip' ? 'skip it' : c.plan === 'position' ? 'position' : c.kind === 'kom' ? 'KOM' : 'sprint';
+        } else if (c.about === 'line') {
+            word = c.kind === 'kom' ? 'KOM line' : 'sprint line';
+            inS = c.endS;
+        } else if (c.about === 'arch') {
+            word = `${c.power === 'keep' ? 'keep' : 'use'} ${POWERUP_NAMES[c.held] || c.held || 'it'}`;
+        } else if (c.about === 'note') {
+            word = String(c.note || '').trim() || null;   // your own words, as you wrote them
+        }
+        if (word) out.push({id: 'card', state: c.state, word, in: roundIn(inS), for: null, priority: c.priority});
+    }
+    // a rough surface: called within SURFACE_CALL_S of it (600 m ahead was ~2 min at group-ride speed: "wood in 105
+    // for 10" for a bridge, 2026-10-12 replay); the Surface meter shows its cost once you're on it
+    const sa = ds && ds.surfaceAhead;
+    if (sa && sa.inS != null && sa.inS <= SURFACE_CALL_S && VOCAB.surface[sa.surface] && VOCAB.surface[sa.surface].word) {
+        out.push({id: 'surface', state: sa.surface, word: VOCAB.surface[sa.surface].word, in: roundIn(sa.inS),
+                  for: roundIn(sa.forS), priority: 20});
+    }
+    const pc = ds && ds.pacing;
+    if (pc && (pc.state === 'steep' || pc.state === 'top')) {
+        out.push({id: 'pacing', state: pc.state, word: pc.state === 'steep' ? 'steep' : 'over top', in: roundIn(pc.inS),
+                  for: pc.state === 'steep' ? roundIn(pc.forS) : null, priority: 35});
+    }
+    const n = ds && ds.nudge;
+    if (n && CALL_WORDS.nudge[n.state]) {
+        out.push({id: 'nudge', state: n.state, word: CALL_WORDS.nudge[n.state], in: null, for: null, priority: n.priority});
+    }
+    const sp = ds && ds.sprint;
+    if (sp) {
+        const toLine = Number.isFinite(sp.toLineS) ? sp.toLineS : null;
+        if (CALL_WORDS.sprint[sp.state]) {
+            // the line's seconds only 1.5 km out: inside 1 km the bunch winds up and a cruising estimate runs long
+            // (Urumaze 2026-10-06: +13 s median), and "get a wheel" means now anyway ("last wheel, be ready" is timed by the engine)
+            const timed = ['position', 'good'].includes(sp.state);
+            // "take the wheel" is its own call type (v0.26.0: turned off without the rest of the finish)
+            out.push({id: /^take-wheel/.test(sp.state) ? 'wheel' : 'sprint', state: sp.state, word: CALL_WORDS.sprint[sp.state],
+                      in: timed ? roundIn(toLine) : null, for: null, priority: sp.priority});
+        } else if (/^fire-/.test(sp.state)) {
+            const name = sp.state.slice(5);   // SprintCoach's own names: AERO, VAN, GHOST, BURRITO, ARROWS
+            out.push({id: 'powerup', state: `fire-${name.toLowerCase()}`, word: `${name} now`, in: null, for: null,
+                      priority: sp.priority});
+        } else if (sp.state === 'prep' && sp.held && POWERUP_NAMES[sp.held]) {
+            // holding one for the finish: when to fire it (the arrows and the feather: on your jump, no seconds)
+            const name = POWERUP_NAMES[sp.held];
+            const at = FIRE_AT_S[sp.held];
+            const inS = at != null && toLine != null ? toLine - at :
+                sp.held === 'NINJA' && Number.isFinite(sp.remainingM) && toLine != null && sp.remainingM > 0 ?
+                    toLine * (sp.remainingM - GHOST_AT_M) / sp.remainingM : null;
+            out.push({id: 'powerup', state: `hold-${name.toLowerCase()}`, word: `hold ${name}`,
+                      in: roundIn(inS), for: null, priority: sp.priority});
+        }
+    }
+    return out;
+}
+
+/* The word / help for a meter's state ('' when unknown). */
+export const wordOf = (key, state) => VOCAB[key]?.[state]?.word ?? '';
+export const helpOf = (key, state) => VOCAB[key]?.[state]?.help ?? '';
+
+const WATT_METERS = new Set(['position', 'holding', 'pack', 'blocked', 'surface']);
+const fin = x => (Number.isFinite(x) ? x : null);
+
+/* One meter entry: watt meters read 0 with nothing to read, the rest null (docs/DS-DATA.md). */
+function meter(key, value, state, extra = {}) {
+    const v = fin(value);
+    const shown = v == null && WATT_METERS.has(key) ? 0 : v;
+    const [warn, alarm] = DEFAULT_RANGES[`ds-${key}`] || [null, null];
+    return {value: shown, state, level: v == null ? null : rangeLevel(v, warn, alarm) || null, ...extra};
+}
+
+const DEFEND_STATE = {'on your left': 'rider-left', 'on your right': 'rider-right', behind: 'rider-behind'};
+
+/*
+ * The data object from one engine tick (meter-engine.mjs update -> {me, ds}). The call is added by the caller
+ * (calls.mjs dsCall(data)), so it reads the same states as the meters.
+ */
+export function buildData({me, ds}, {now = Date.now()} = {}) {
+    const s = (me && me.state) || {};
+    const settling = !!ds.settling;
+    const alone = !(ds.groupSize >= 2);
+    const common = settling ? 'settling' : alone ? 'alone' : null;
+
+    const blockedState = common || (ds.blocked ? (ds.blockedSide ? `blocked-${ds.blockedSide}` : 'blocked') : 'clear');
+    let passState = 'none';
+    if (ds.passKind === 'attack') passState = ds.passAtWheel ? 'drop-back' : ds.passWide ? 'too-slow' : 'go-wide';
+    else if (ds.passKind === 'defend') passState = DEFEND_STATE[ds.passWhere] || 'none';
+    const gapState = ds.noDraftWheel ? 'no-draft' : Number.isFinite(ds.gapM) ? 'wheel' : ds.beside ? 'beside' : 'no-wheel';
+    const sideState = !Number.isFinite(ds.sideM) ? 'no-wheel' : ds.beside ? 'beside' : 'inline';
+    const t = ds.tuck;
+    // fast enough, still pedaling: in a race (or not known yet) stop pedaling; outside races the tuck is only a rest
+    const ready = t && t.race === false ? 'rest' : 'stop';
+    const tuckState = !t ? 'none' : {build: 'build', ready, tucked: 'tuck', draft: 'draft', frame: 'frame'}[t.state] || 'none';
+    const tuckValue = !t ? null : t.state === 'build' ? t.needKmh : t.state === 'ready' || t.state === 'tucked' ? 0 : null;
+    const drag = t && t.drag && t.drag.tucked ? {
+        tuck: t.drag.tucked.cda, coast: t.drag.coast ? t.drag.coast.cda : null,
+        tuckS: t.drag.tucked.s, coastS: t.drag.coast ? t.drag.coast.s : null,
+    } : null;
+
+    return {
+        v: DATA_VERSION,
+        ts: now,
+        self: !!(me && me.self),
+        meters: {
+            position: meter('position', ds.positionW, common || ds.positionState || 'none'),
+            holding: meter('holding', ds.holdingW, common || ds.holdingState || 'warming'),
+            pack: meter('pack', ds.packW, ds.packState || common || 'none'),
+            blocked: meter('blocked', ds.blockedW, blockedState),
+            passing: meter('passing', ds.passKmh ?? (common ? null : 0), passState),
+            gap: meter('gap', ds.gapM, gapState, ds.gapApprox ? {approx: true} : {}),
+            side: meter('side', ds.sideM, sideState),
+            tuck: meter('tuck', tuckValue, tuckState, drag ? {drag} : {}),
+            group: meter('group', ds.groupSize, 'none'),
+            cda: meter('cda', ds.cda, ds.cdaState || 'model'),
+            surface: meter('surface', ds.surfaceW, ds.surfaceId || 'none'),
+            // the pack's demand (30 s): no level, it only reports; pctFtp for the note
+            demand: Number.isFinite(ds.demandW) ? {value: ds.demandW, state: 'ok', level: null,
+                pctFtp: ds.demandFtpW > 0 ? Math.round(ds.demandW / ds.demandFtpW * 100) : null} :
+                {value: null, state: common || 'none', level: null},
+            frc: ds.frc ? {value: Math.max(0, ds.frc.leftJ) / 1000,
+                           state: ds.frc.frac < 0.1 ? 'empty' : ds.frc.frac < 0.3 ? 'low' : 'ok',
+                           level: ds.frc.frac < 0.1 ? 'alarm' : ds.frc.frac < 0.3 ? 'warn' : null,
+                           frac: ds.frc.frac, lowKJ: Math.max(0, ds.frc.lowJ) / 1000} :
+                {value: null, state: 'none', level: null},
+        },
+        basics: {
+            power: fin(s.power), speed: fin(s.speed), draft: fin(s.draft), cadence: fin(s.cadence),
+            // health data: your own only, never a rider you watch
+            heartrate: me && me.self ? fin(s.heartrate) : null,
+            grade: fin(s.grade),
+        },
+        call: null,
+    };
+}

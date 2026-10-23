@@ -1,0 +1,47 @@
+/*
+ * Director Sportif — a Sauce for Zwift mod.
+ * Copyright (C) 2026 Paul Curtis
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * The Grid: on top of meters.css (the same tiles). Words are a word or two, so one line, not the meter window's two.
+ */
+
+html.grid .tile .label {
+    height: 1.25em;
+    -webkit-line-clamp: 1;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+
+/* a word slot (Words group): the word is the value, big; it can be longer than a number */
+html.grid .tile .value {
+    white-space: nowrap;
+}
+
+/* All words: up to two lines of a fixed width, so the window doesn't jump as words come and go */
+html.grid .tile.wrap .value {
+    display: inline-block;
+    width: 9em;
+    white-space: normal;
+    line-height: 1.1;
+    min-height: 2.2em;
+}
+
+html.grid .tile.wrap .reading {
+    font-size: 0.6em;
+}
+
+/* no data: the Director Sportif window isn't open (or its rider is gone) */
+html.grid #status {
+    margin: 0.3em 0.5em 0;
+    padding: 0.25em 0.5em;
+    border-radius: 0.3em;
+    background: #0006;
+    font-size: calc(0.75rem * var(--text-scale, 1));
+    opacity: 0.9;
+}
+
+html.grid #status[hidden] {
+    display: none;
+}

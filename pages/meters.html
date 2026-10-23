@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!--
+  Director Sportif — a Sauce for Zwift mod. Copyright (C) 2026 Paul Curtis. SPDX-License-Identifier: GPL-3.0-or-later
+  The Director Sportif window: runs the engine, gives the calls, shows a small status (the meters are on the Grid).
+  Settings: the gear in the title bar; right-click the window to show it.
+-->
+<html tabindex="0" data-settings-key="director-sportif-meters-v2">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+        <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval';"/>
+
+        <title>Director Sportif - Meters</title>
+
+        <script src="/pages/src/preloads.js"></script>
+
+        <link id="favicon" rel="shortcut icon" href="/pages/images/favicon.png"/>
+        <link rel="stylesheet" href="/pages/css/common.css"/>
+        <link rel="stylesheet" href="meters.css"/>
+
+        <script type="module">
+            import {main} from './src/meters.mjs';
+            main();
+        </script>
+    </head>
+    <body>
+        <div id="titlebar">
+            <header>
+                <div class="logo"><img src="/pages/images/icon128.png"/></div>
+                <div class="title">Director Sportif</div>
+                <div class="filler"></div>
+                <div class="buttons">
+                    <a class="button open-settings" href="meters-settings.html?width=460&height=780&child-window"
+                       title="Open settings window" target="director-sportif-meters-settings"><ms>settings</ms></a>
+                    <div title="Minimize" class="button minimize electron-only"><ms>minimize</ms></div>
+                    <div title="Close this window" class="button close electron-only"><ms>close</ms></div>
+                </div>
+            </header>
+        </div>
+        <div id="bike-check" hidden title="Sauce doesn't say which bike you ride: the meters use the one set here">
+            <div class="text"></div>
+            <div class="row"><select title="Your bike type"></select><button class="ok">Right</button></div>
+        </div>
+        <div id="content" class="control">
+            <div class="call-word" title="The call now: the same words the voice says">—</div>
+            <div class="status-line state">starting…</div>
+            <div class="status-line route"></div>
+            <div class="record-row">
+                <button class="rec" title="Record this ride (capture format: others' positions and draft, everything about you)">Record</button>
+                <button class="mark" title="Mark this moment: something worth a look later" disabled>Mark</button>
+                <span class="status-line rec-state">not recording</span>
+            </div>
+            <div class="status-line obs-state" hidden></div>
+            <div class="status-line hint">Meters: open "Director Sportif — Grid". Keep this window open: it runs them.</div>
+        </div>
+    </body>
+</html>

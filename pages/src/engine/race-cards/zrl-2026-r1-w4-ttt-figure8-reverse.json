@@ -1,0 +1,22 @@
+{
+    "id": "zrl-2026-r1-w4-ttt-figure8-reverse",
+    "name": "ZRL 2026/27 R1 W4: Figure 8 Reverse (TTT)",
+    "date": "2026-10-13",
+    "format": "ttt",
+    "route": "Figure 8 Reverse",
+    "distanceKm": 29.9,
+    "source": "https://zwiftinsider.com/zrl-r20-w4/",
+    "notes": "Team time trial: 5-rider teams, the team's time is its 4th rider across the line (you can lose one rider). Steering enabled. No scored segments. Power-up arches give a van or an AERO, 50/50. km = race distance from the start, as in Zwift Insider's guide.",
+    "items": [
+        {"km": 2.8, "kind": "arch", "name": "JWB Sprint arch", "gives": "RANDOM", "info": "van or AERO, 50/50"},
+        {"km": 5.0, "kind": "climb", "name": "Hilly KOM Reverse", "lengthKm": 2.5, "grade": 0.02, "scored": false, "info": "stair-step climb, steeper first section"},
+        {"km": 7.5, "kind": "arch", "name": "KOM arch (top of the Hilly KOM Reverse)", "gives": "RANDOM", "info": "van or AERO, 50/50; short steep descent next"},
+        {"km": 11.4, "kind": "climb", "name": "Marina dirt / snaking climb", "lengthKm": 3.1, "scored": false, "info": "ramp, dirt sections, climb to the villas"},
+        {"km": 15.7, "kind": "arch", "name": "JWB Sprint arch", "gives": "RANDOM", "info": "van or AERO, 50/50"},
+        {"km": 16.0, "kind": "climb", "name": "The Esses kicker", "lengthKm": 1.5, "scored": false, "info": "steepish kicker, then rollers"},
+        {"km": 19.3, "kind": "climb", "name": "Hilly KOM", "lengthKm": 0.9, "grade": 0.055, "scored": false, "info": "the shorter, steeper side"},
+        {"km": 20.2, "kind": "arch", "name": "KOM arch (top of the Hilly KOM)", "gives": "RANDOM", "info": "van or AERO, 50/50; longest descent next"},
+        {"km": 21.4, "kind": "climb", "name": "Kicker on the KOM descent", "scored": false},
+        {"km": 29.9, "kind": "finish", "name": "Finish (Ocean Boulevard, glass tunnel)", "scored": false}
+    ]
+}

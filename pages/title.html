@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  Director Sportif — a Sauce for Zwift mod.
+  Copyright (C) 2026 Paul Curtis
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  Broadcast title card, shown by OBS as a Browser source (engine/title-card.mjs; the same page as the Efficiency
+  Meter's, with this mod's footer). A plain page: no Sauce scripts.
+-->
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';"/>
+    <title>Race title card</title>
+    <link rel="stylesheet" href="src/engine/title.css"/>
+    <script type="module">
+        import {main} from './src/engine/title.mjs';
+        main();
+    </script>
+</head>
+<body>
+    <main class="card">
+        <header>
+            <div class="kicker" id="kicker">Race</div>
+            <h1 id="event">—</h1>
+            <div class="sub" id="sub"></div>
+        </header>
+        <section class="course" id="course">
+            <h2>The course</h2>
+            <ol class="items" id="items"></ol>
+            <p class="source" id="source"></p>
+        </section>
+        <footer class="promo">
+            <div class="promo-name">Director Sportif <span class="soon">coming soon</span></div>
+            <div class="promo-text">A Sauce for Zwift mod: race calls from the team car in your ear (when to move up,
+                when to go, whose wheel to take) and the meters behind them, live while you ride.</div>
+        </footer>
+    </main>
+</body>
+</html>

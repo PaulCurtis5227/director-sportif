@@ -1,0 +1,39 @@
+{
+    "manifest_version": 1,
+    "id": "director-sportif",
+    "name": "Director Sportif",
+    "description": "Pack meters for Zwift: what your spot costs (Position), whether you are spending more than holding your place needs (Holding), the pack cost beyond Zwift's draft, and gap and left/right to the wheel. One tile per meter, in the order you choose.",
+    "version": "0.34.0",
+    "author": "PaulCurtis5227",
+    "web_root": "pages",
+    "windows": [
+        {
+            "file": "pages/meters.html",
+            "id": "director-sportif-meters",
+            "name": "Director Sportif",
+            "description": "Runs the Director Sportif and gives its calls; a small status. Keep it open: the Grid shows its meters (settings: the gear; right-click the window to show it)",
+            "overlay": true,
+            "frame": false,
+            "default_bounds": {
+                "width": 260,
+                "height": 110,
+                "x": 0.06,
+                "y": 0.06
+            }
+        },
+        {
+            "file": "pages/grid.html",
+            "id": "director-sportif-grid",
+            "name": "Director Sportif — Grid",
+            "description": "The meters: shows what the Director Sportif window publishes (meters, their words, the call, power and speed). Keep the Director Sportif window open (settings: the gear; right-click the window to show it)",
+            "overlay": true,
+            "frame": false,
+            "default_bounds": {
+                "width": 260,
+                "height": 420,
+                "x": 0.24,
+                "y": 0.06
+            }
+        }
+    ]
+}

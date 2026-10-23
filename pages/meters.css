@@ -1,0 +1,449 @@
+/*
+ * Director Sportif — a Sauce for Zwift mod.
+ * Copyright (C) 2026 Paul Curtis
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * The meter window (one tile per meter) and its settings window.
+ */
+
+html.solid-background {
+    background: var(--background-color);
+}
+
+html.solid-background body {
+    background: transparent !important;
+}
+
+/*
+ * Sauce sizes the text by the window's width (common.scss html font-size: 7vw). A window fitted to its tiles must
+ * not: a wider window means bigger text means a wider window... (two columns grew without end). Fixed size then.
+ */
+html.fit-window {
+    font-size: 4.2mm;
+}
+
+/*
+ * Mouse over: the window's edge, so the rider can find its top to drag it or right-click it. Sauce draws this
+ * itself (common.scss), but not on a solid background.
+ */
+html.electron-mode.solid-background:hover body {
+    outline: 1.5px solid rgb(160 160 160 / 0.9);
+    outline-offset: -1.5px;
+}
+
+/* ----- meter window ----- */
+
+#content.tiles {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(var(--columns, 1), minmax(0, 1fr));
+    align-content: start;
+    gap: 0.35em 0.8em;
+    padding: 0.3em 0.5em;
+    font-size: calc(1rem * var(--text-scale, 1));
+}
+
+/* meters.mjs windowFitter: the tiles at their natural size, for one measurement */
+html.measuring #content.tiles {
+    position: absolute;
+    left: 0;
+    top: 0;
+    flex: none;
+    width: max-content;
+    height: auto;
+    overflow: visible;
+}
+
+/* A tile reads top down, like the Data Tap: the meter's name, the reading under it, the note under that. */
+.tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.15em 0.35em 0.2em;
+    border-radius: 0.3em;
+    background: #0003;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A solid background is the window's own color (fully transparent for OBS too): no shaded boxes on top of it */
+html.solid-background .tile,
+html[data-theme="transparent-dark"] .tile,
+html[data-theme="transparent-light"] .tile {
+    background: none;
+}
+
+/* see-through: a shadow keeps the numbers readable over the game, like Sauce's grid */
+html[data-theme="transparent-dark"] .tile {
+    text-shadow: 0 0 2px #000, 0 0 4px #000a;
+}
+
+.tile .key {
+    font-size: 0.7em;
+    font-weight: 600;
+    line-height: 1.2;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+.tile .reading {
+    display: flex;
+    align-items: baseline;
+    gap: 0.2em;
+    line-height: 1;
+    /* room for "+123 W", so the fitted window holds as the numbers change */
+    min-width: 4.4em;
+}
+
+.tile .value {
+    font-weight: 800;
+    font-size: 2em;
+}
+
+.tile .value:empty::after {
+    content: '-';
+    opacity: 0.6;
+}
+
+.tile .unit {
+    font-size: 0.65em;
+    opacity: 0.8;
+}
+
+.tile.large .value {
+    font-size: 3.2em;
+}
+
+.tile.large .reading {
+    min-width: 6.8em;
+}
+
+.tile.small .value {
+    font-size: 1.4em;
+}
+
+.tile.small .reading {
+    min-width: 3.2em;
+    justify-content: flex-end;
+}
+
+.tile .label,
+.tile .sub-label {
+    font-size: 0.62em;
+    line-height: 1.2;
+    opacity: 0.85;
+    /* notes wrap to the tile's width instead of widening it */
+    width: 0;
+    min-width: 100%;
+}
+
+/*
+ * Exactly two lines, longer notes cut with "…": a note going from 1 to 3 lines made its grid row taller and every
+ * row below jump (group ride 2026-10-16: "bouncing up and down"). The tile never changes height.
+ */
+.tile .label {
+    height: 2.4em;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+/* an empty note keeps its room (the fitted window holds); a tile without notes has none */
+.tile .label:empty {
+    visibility: hidden;
+}
+
+.tile .sub-label:empty,
+.tile.no-note .label,
+.tile.no-note .sub-label {
+    display: none;
+}
+
+.tile.small {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.tile.small .label,
+.tile.small .sub-label {
+    display: none;
+}
+
+#content .empty {
+    padding: 1em;
+    text-align: center;
+    opacity: 0.7;
+}
+
+/* ----- settings window ----- */
+
+.settings-page #tiles .hint {
+    font-size: 0.8em;
+    opacity: 0.75;
+    margin-bottom: 0.4em;
+}
+
+.settings-page .tile-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0.2em 0;
+    border-bottom: 1px solid #7774;
+}
+
+.settings-page .tile-row select[name="field"] {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.settings-page .tile-row .note {
+    display: flex;
+    align-items: center;
+    gap: 0.2em;
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+
+.settings-page .button-group {
+    display: flex;
+    border-radius: 0.26em;
+    overflow: hidden;
+    background-image: linear-gradient(to bottom, #0003, #0006);
+}
+
+.settings-page .button-group .button {
+    padding: 0.2em 0.35em;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.settings-page .button-group .button:not(.disabled):hover {
+    background-color: #0006;
+}
+
+.settings-page .button-group .button.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.settings-page .add-tile {
+    margin-top: 0.5em;
+}
+
+.settings-page .reset-tiles {
+    margin-top: 0.4em;
+}
+
+.settings-page .tile-list .empty {
+    padding: 0.5em;
+    opacity: 0.7;
+}
+
+/* ----- color ranges (tiles.mjs rangeLevel) ----- */
+
+.tile.warn .value {
+    color: #f9c74f;
+}
+
+.tile.alarm .value {
+    color: #f94144;
+}
+
+.tile.alarm {
+    box-shadow: inset 0 0 0 2px #f9414488;
+}
+
+.settings-page .tile-row {
+    flex-wrap: wrap;
+}
+
+.settings-page .tile-row input.range {
+    width: 4.2em;
+}
+
+.settings-page .tile-row input.range.warn {
+    border-color: #f9c74f;
+}
+
+.settings-page .tile-row input.range.alarm {
+    border-color: #f94144;
+}
+
+/* OBS tab: Rehearse and what the Director Sportif window answered */
+.settings-page .obs-rehearse-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.3em 0 0.6em;
+}
+
+.settings-page .obs-rehearse-status {
+    font-size: 0.8em;
+    opacity: 0.8;
+}
+
+/* ----- call delivery grid (calls.mjs CALL_TYPES × DELIVERY) ----- */
+
+.settings-page #settings .hint {
+    font-size: 0.8em;
+    opacity: 0.75;
+    margin: 0.2em 0 0.4em;
+}
+
+.settings-page .call-delivery {
+    display: grid;
+    grid-template-columns: auto repeat(2, 4em);
+    align-items: center;
+    justify-items: center;
+    row-gap: 0.25em;
+    margin-bottom: 0.4em;
+}
+
+/* the label only carries Sauce's save (calls.mjs deliveryGridHTML): it takes no room in the grid */
+.settings-page .call-delivery label.how {
+    display: contents;
+}
+
+.settings-page .call-delivery .type {
+    justify-self: start;
+    padding-right: 1em;
+}
+
+.settings-page .call-delivery .head {
+    font-size: 0.8em;
+    opacity: 0.75;
+}
+
+/* ----- the bike check on joining an event (meters.mjs bikeChecker) ----- */
+
+#bike-check {
+    margin: 0.3em 0.4em 0;
+    padding: 0.3em 0.5em;
+    border-radius: 0.3em;
+    background: #8ecae6;
+    color: #04121f;
+    font-size: calc(0.8rem * var(--text-scale, 1));
+}
+
+#bike-check.warn {
+    background: #f94144;
+    color: #fff;
+}
+
+#bike-check[hidden] {
+    display: none;
+}
+
+#bike-check .text {
+    font-weight: 600;
+    margin-bottom: 0.25em;
+}
+
+#bike-check .row {
+    display: flex;
+    gap: 0.3em;
+}
+
+#bike-check select {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* ----- the race card plan (meters.mjs initRaceCardEditor) ----- */
+
+.settings-page #race-card select.card {
+    width: 100%;
+    margin: 0.2em 0;
+}
+
+.settings-page #race-card .card-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0.25em 0;
+    border-bottom: 1px solid #7774;
+}
+
+.settings-page #race-card .card-row .what {
+    flex: 1 1 100%;
+    font-size: 0.85em;
+}
+
+.settings-page #race-card .card-row input[type="text"] {
+    flex: 1 1 8em;
+    min-width: 0;
+}
+
+/* ----- the control window (meters.html, v0.20.0): the call now and a short status ----- */
+
+#content.control {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0.3em 0.6em 0.4em;
+    font-size: calc(1rem * var(--text-scale, 1));
+    font-variant-numeric: tabular-nums;
+}
+
+html.measuring #content.control {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: max-content;
+    min-width: 14em;
+}
+
+#content.control .call-word {
+    font-size: 1.6em;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+#content.control .status-line {
+    font-size: 0.7em;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+#content.control .status-line.hint {
+    opacity: 0.6;
+    margin-top: 0.2em;
+}
+
+html[data-theme="transparent-dark"] #content.control {
+    text-shadow: 0 0 2px #000, 0 0 4px #000a;
+}
+
+/* ----- the record row (meters.mjs, v0.21.0) ----- */
+
+#content.control .record-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    margin-top: 0.3em;
+}
+
+#content.control .record-row button {
+    font-size: 0.8em;
+    padding: 0.25em 0.8em;
+    cursor: pointer;
+}
+
+#content.control .record-row button.rec.on {
+    background: #c0392b;
+    color: #fff;
+}
+
+#content.control .record-row button.mark.flash {
+    animation: ds-mark-flash 600ms;
+}
+
+@keyframes ds-mark-flash {
+    from { background: #f9c74f; }
+}

@@ -1,0 +1,22 @@
+{
+    "id": "zrl-2026-r1-w5-green-to-screen",
+    "name": "ZRL 2026/27 R1 W5: Green to Screen (scratch race)",
+    "date": "2026-10-20",
+    "format": "scratch",
+    "route": "Green to Screen",
+    "distanceKm": 28.5,
+    "source": "https://zwiftinsider.com/zrl-r20-w5/",
+    "notes": "km = race distance from the start, as in Zwift Insider's guide. Scratch race: only the finish counts; the sprint and KOM segments are not scored, they matter for their power-up arches (feather, van or AERO, 1/3 each). Grades of the Manhattan climb and the Rise to circle, and the escalators' places, from the route's own profile (Sauce route data). The escalators are boosted ~20% subway ramps of about 5 s each (km 8.2, 14.1, 20.4, 27.0); the boost scales with W/kg since Zwift 1.104.",
+    "items": [
+        {"km": 2.6, "kind": "arch", "name": "Peristyle Sprint arch", "gives": "RANDOM", "info": "feather, van or AERO, 1/3 each"},
+        {"km": 4.2, "kind": "climb", "name": "The Hill", "lengthKm": 0.5, "grade": 0.037, "scored": false},
+        {"km": 4.7, "kind": "arch", "name": "The Hill KOM arch", "gives": "RANDOM", "info": "feather, van or AERO, 1/3 each"},
+        {"km": 9.1, "kind": "climb", "name": "Manhattan climb", "lengthKm": 1.1, "grade": 0.022, "scored": false, "info": "draggy"},
+        {"km": 10.2, "kind": "arch", "name": "Manhattan Sprint arch", "gives": "RANDOM", "info": "feather, van or AERO, 1/3 each"},
+        {"km": 18, "kind": "arch", "name": "Times Square lap arch", "gives": "XP", "info": "250 XP if you hold no power-up"},
+        {"km": 21.5, "kind": "climb", "name": "Brooklyn Bridge", "lengthKm": 1.4, "grade": 0.035, "scored": false, "info": "the longest climb"},
+        {"km": 22.9, "kind": "arch", "name": "Brooklyn Bridge KOM arch", "gives": "RANDOM", "info": "feather, van or AERO, 1/3 each"},
+        {"km": 26.9, "kind": "climb", "name": "Rise to circle", "lengthKm": 0.4, "grade": 0.02, "scored": false, "info": "with the last escalator at 27.0; then the flat final 1.2 km"},
+        {"km": 28.5, "kind": "finish", "name": "Finish (very flat final 1.2 km)", "scored": true}
+    ]
+}

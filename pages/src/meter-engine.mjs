@@ -1,0 +1,443 @@
+/*
+ * Director Sportif — a Sauce for Zwift mod.
+ * Copyright (C) 2026 Paul Curtis
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * The meters from one `nearby` tick: the same reading of the pack as the Efficiency Meter Data Tap (tap.mjs onNearby,
+ * renderGap / renderSide / renderPackCost / renderPosition / renderHolding), with the simple rider model
+ * (rider-model.mjs) in place of the Data Tap's equipment table. Pure: no Sauce imports, so it runs headless in tests.
+ *
+ *   gapM          m to the wheel in line in front (aligned gaps, wheels.mjs); null with no wheel in line within GAP_MAX_M
+ *   gapApprox     that gap came from positions, not Sauce's time gap (can be meters off)
+ *   noDraftWheel  the wheel in line gives no draft and is the only rider within 20 m ahead (a hand cycle or recumbent
+ *                 trike: riders-live.mjs DraftClassifier, learned from everyone's draft behind it). Position is
+ *                 blank then: no gap off that wheel saves anything (group ride 2026-10-16: "too close: ease to
+ *                 4.5–5.5 m, save ~54 W" for minutes behind a hand cycle, with 0 W of draft at any gap)
+ *   sideM         you, to the right (+) or left (−) of the wheel in line, else of the nearest rider ahead beside you
+ *                 (both within GAP_MAX_M)
+ *   beside        sideM is measured to a rider beside you (no wheel in line)
+ *   packW         watts your spot costs beyond Zwift's draft (pack-cost.mjs); null alone, in a pair or settling
+ *   packNote      one line: what makes the spot cost that
+ *   positionW     what your spot costs against the best-placed rider in your group (position.mjs), 10 s; null alone,
+ *                 coasting or settling
+ *   positionNote  the move that saves the most from where you sit
+ *   holdingW      watts beyond what keeping your place needed, energy balance over 10 s (pair) / 20 s (3+)
+ *                 (holding.mjs); null alone, settling or until the window is 80% full
+ *   holdingBandW  ± band within which Holding reads as holding
+ *   holdingNote   moving up / drifting back / holding place
+ *   passWhere     the rider in the passing cue: 'ahead' | 'behind' | 'on your left' | 'on your right'
+ *   passAtWheel   your pass starts glued to their wheel (attack)
+ *   passWide      you are already 1.5 m+ out from them (attack)
+ *   blockedSide   blocked alongside a rider on your 'left' | 'right', else null
+ *   surface       the road surface under you from Zwift's map (engine/road-map.mjs), null until the map loads; dirt,
+ *                 wood, brick… add their rolling resistance to every meter (2026-10-12 group ride: dirt and wooden
+ *                 bridges on the front read +45 W Holding as if pavement)
+ *   tuck          the supertuck (engine/supertuck.mjs): {state: 'tucked' | 'ready' | 'build' | 'draft' | 'frame', needKmh,
+ *                 race (raceFor: true / false / null),
+ *                 drag: TuckDrag result (CdA in the tuck vs coasting, this session)} or null off a descent / settling
+ *   moveUp        the climb ahead (engine/director.mjs MoveUpCoach, from the Data Tap): {state: 'prep' | 'move' |
+ *                 'hold' | 'late', secs (to the foot), priority, source: 'route' | 'riders'} or null; in a group of
+ *                 6+. The road ahead: your route (route-ahead.mjs, Sauce's route data: works alone, from the start,
+ *                 2026-10-16 checks: the rise over the next km within ~0.7 m median) when you're on one, else the
+ *                 road learned from where the riders around you rode (engine/bend-live.mjs BendMap)
+ *   ahead         where the road ahead came from: 'route' | 'riders' | null
+ *   sprint        the finish (engine/director.mjs SprintCoach, from the Data Tap; distance events, from 1.5 km out):
+ *                 {state, priority, held (the power-up you hold), toLineS (seconds to the line along the road ahead),
+ *                 remainingM, targetW (the power you can hold from here to the line leaving 3 kJ: sprintBudget)} or
+ *                 null. States: position / good (1.5 km), windup (they're going), last / last-go (last wheel of a small
+ *                 group), window (you can go from here), take-wheel (a rider coming past before the window), closer
+ *                 (dig in), keep-going (after your jump, easing inside 200 m), shake-left / -right
+ *                 (drift to shake a follower), fire-<NAME> / prep (your power-up). Advice only: never fired for you.
+ *   draftQ        your draft as a share of the most you can get (engine/draft-live.mjs predictedCap), or null
+ *   card          the race card's call (race-cards-live.mjs RaceCards; the card for this route, your plan): {about:
+ *                 'segment' | 'line' | 'arch' | 'note', kind (sprint / kom / …), plan, power, held, note, inS (seconds to
+ *                 the item), endS (to a segment's line), priority, state} or null
+ *   surfaceW      watts the surface under you costs your tyres beyond pavement (0 on pavement), surfaceId
+ *   surfaceAhead  the next non-pavement stretch on this road within 600 m: {surface, inS, forS} or null
+ *   pacing        the climb ahead (engine/pacing-cue.mjs, from the Data Tap): {state: 'steep' (a steep part ahead:
+ *                 inS to it, forS how long it lasts, grade) | 'top' (the crest close while climbing: inS)} or null
+ *   frc           your anaerobic reserve (engine/frc-live.mjs, the Data Tap's model): {leftJ, frac, lowJ} or null
+ *                 (needs your FTP: the settings', else your Zwift profile's)
+ *   nudge         a habit worth changing (engine/director.mjs NudgeCoach, from the Data Tap): {state: 'wheel' (pushing
+ *                 into the wheel for nothing, 30 s) | 'middle' (moving up through the middle, 10 s) | 'front' (on the
+ *                 front of a group of 6+, 20 s) | 'line' (off the wheel in a small group, 15 s), priority} or null;
+ *                 each kind then rests 5 min, all nudges 1 min; quiet before a climb, in the finish, under a power-up
+ *   cda           the CdA in use; cdaSource says where it comes from
+ *   groupSize     riders in your group (chained ≤ 1 s apart), you included
+ *   settling      you just teleported (group hop): power and speed don't match for ~15 s
+ */
+
+import {freshEntries, DraftClassifier} from './engine/riders-live.mjs';
+import {wheelsAhead} from './engine/wheels.mjs';
+import {GapCurve, groupLayout} from './engine/gap-curve.mjs';
+import {packSituation, packCostW, packCostNote, packCostState, foreAftW, UNIT_PER_M} from './engine/pack-cost.mjs';
+import {TeleportGuard} from './engine/teleport.mjs';
+import {powerComponents} from './engine/physics.mjs';
+import {spotCost, PositionSmoother, positionAdvice, positionState, noDraftSpot, GapWatch, DemandMeter, packDemandW, COAST_W, NO_DRAFT_NOTE}
+    from './engine/position.mjs';
+export {NO_DRAFT_NOTE};
+import {HoldingMeter, holdingW, GroupMotion, HOLD_PAIR_S, HOLD_PACK_S, MOTION_MS} from './engine/holding.mjs';
+import {BlockWatch, blockedNote, besideRider, passSituation, passNote, PassWatch, WIDE_M} from './engine/blocking.mjs';
+import {surfaceExtraCrr} from './engine/road-map.mjs';
+import {tuckState, TuckDrag} from './engine/supertuck.mjs';
+import {BendMap} from './engine/bend-live.mjs';
+import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, KEEP_GOING_M, lateralDepth}
+    from './engine/director.mjs';
+import {predictedCap} from './engine/draft-live.mjs';
+import {withSpeeds, secsAlong} from './route-ahead.mjs';
+import {pacingCue, climbAhead} from './engine/pacing-cue.mjs';
+import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
+import {remainingOnSurface} from './engine/road-map.mjs';
+import {SURFACES} from './engine/surfaces.mjs';
+import {riderModel} from './rider-model.mjs';
+
+export const SETTLING_NOTE = 'teleported: settling';
+export const COASTING_NOTE = 'coasting: draft only adds speed';
+export const ALONE_NOTE = 'not in a group';
+// Beyond this there is no wheel to speak of (no draft left; pack-cost.mjs reads the wheel in line within 25 m too).
+export const GAP_MAX_M = 25;
+
+/* The rider the meters are for: you when Sauce knows you, else the rider being watched. */
+export function meterRider(all) {
+    return all.find(x => x && x.self) || all.find(x => x && x.watching) || null;
+}
+
+/*
+ * Holding's state follows the cause (docs/DS-DATA.md, the user 2026-10-16): over the band because you're blocked ->
+ * 'blocked' (never "easy": the fix is to steer out), while moving up -> 'moving-up' (the price of the move), else
+ * 'easy'; within the band 'hold'; under it 'drifting'. null value -> 'warming'.
+ */
+export function holdingStateOf(w, bandW, blocked, rel) {
+    if (w == null) return 'warming';
+    if (w > bandW) return blocked ? 'blocked' : rel != null && rel > MOTION_MS ? 'moving-up' : 'easy';
+    if (w < -bandW) return 'drifting';
+    return 'hold';
+}
+
+export class MeterEngine {
+    /*
+     * gapCurve: the draft-by-gap curve (gap-curve.mjs: crude steps, no learning).
+     * modelFor(entry): the rider model for the meter rider (default: a road bike × their profile size).
+     * roadMap: Zwift's road surfaces (engine/road-map.mjs RoadMap); none = everything is pavement.
+     * routeAhead: your route's profile (route-ahead.mjs RouteAhead); none = the road learned from the riders only.
+     * raceCards: the race card for your event's route (race-cards-live.mjs RaceCards); none = no card calls.
+     * fitnessFor(me): {ftpW, frcJ} for the FRC meter (default: the Zwift profile's FTP, 15 kJ).
+     * raceFor(me): true in a race event (Zwift's race physics), false outside one, null not known yet. The supertuck
+     * pays only in races (Zwift Insider: about as aero as the AERO power-up there; outside races no drag cut, measured).
+     */
+    constructor({gapCurve = new GapCurve(), modelFor = me => riderModel({athlete: me.athlete}), roadMap = null,
+                 routeAhead = null, raceCards = null,
+                 fitnessFor = me => ({ftpW: me.athlete && me.athlete.ftp, frcJ: FRC_DEFAULT_KJ * 1000}),
+                 raceFor = () => null} = {}) {
+        this.interCoach = new IntermediateCoach();   // ease off / to FTP at a contested intermediate sprint (race card)
+        this.fitnessFor = fitnessFor;
+        this.raceFor = raceFor;
+        this.frcBalance = new FrcBalance();   // yours (a camera change doesn't touch it: it reads your ticks only)
+        this.raceCards = raceCards;
+        this.gapCurve = gapCurve;
+        this.modelFor = modelFor;
+        this.roadMap = roadMap;
+        this.routeAhead = routeAhead;
+        this.athleteId = null;
+        this.draftClass = new DraftClassifier();   // about the other riders: kept across camera changes
+        this.tuckDrag = new TuckDrag();             // your tucks this session (a camera change doesn't matter: own ticks only)
+        this.bendMap = new BendMap();               // the road, learned from where every rider rode: kept across camera changes
+        this.startRider();
+    }
+
+    /* A different rider (a camera change): their teleports, windows and smoothing start over. */
+    startRider() {
+        this.teleport = new TeleportGuard({newcomers: false});
+        this.position = new PositionSmoother();
+        this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
+        this.gapFor = null;               // whose (a camera change starts it fresh)
+        this.demand = new DemandMeter();  // the pack's demand: the ideal spot's power to hold your group, 30 s
+        this.holding = new HoldingMeter();
+        this.motion = new GroupMotion();
+        this.block = new BlockWatch();
+        this.pass = new PassWatch();
+        this.moveUpCoach = new MoveUpCoach();
+        this.sprintCoach = new SprintCoach();
+        this.nudgeCoach = new NudgeCoach();
+        this.pace = null;     // {wt, vFlat, power}: your flat speed and effort, smoothed, for the seconds ahead
+        this.holdClass = 0;   // 1 = alone, 2 = with one rider, 3 = group of 3+: Holding restarts when it changes
+    }
+
+    /* One tick: the meter rider's entry and their meters, or null with nobody to read. */
+    update(all) {
+        if (!Array.isArray(all)) return null;
+        const me = meterRider(all);
+        if (!me || !me.state) return null;
+        if (me.athleteId !== this.athleteId) {
+            this.athleteId = me.athleteId;
+            this.startRider();
+        }
+        const s = me.state;
+        const v = (s.speed || 0) / 3.6;
+        const power = s.power || 0;
+        const entries = freshEntries(all, me);   // frozen avatars stay in the list ~15 s: read current states only
+        const aheadMap = wheelsAhead(entries);
+        this.draftClass.update(entries, aheadMap);
+        const ahead = aheadMap.get(me.athleteId) || null;
+        const near = w => (w && w.gap <= GAP_MAX_M ? w : null);
+        const inline = near(ahead && ahead.inline);
+        const layout = groupLayout(entries);
+        this.gapCurve.ingest(entries, layout);
+        const L = layout.get(me.athleteId) || {size: 1, ahead: 0, vGroup: null, gapAhead: null};
+        const settling = this.teleport.settling(me.athleteId, {wt: s.worldTime, x: s.x, y: s.y, v});
+        this.bendMap.ingest(all);
+
+        const noDraft = noDraftSpot(this.draftClass, {ahead, L, layout, entries, me, maxGapM: GAP_MAX_M});
+        const noDraftWheel = noDraft.wheel;
+        const wheel = inline || near(ahead);
+        const sideM = wheel && Number.isFinite(wheel.lane) ?
+            -wheel.lane / UNIT_PER_M * (s.reverse ? -1 : 1) : null;
+
+        const sit = packSituation(entries, me);
+        if (this.roadMap) this.roadMap.ensure(s.courseId);
+        const surface = this.roadMap ? this.roadMap.at(s)?.surface ?? null : null;
+        const base = this.modelFor(me);
+        const model = {...base, crr: base.crr + (surface ? surfaceExtraCrr(surface, base.tyre || 'road') : 0)};
+        const packW = packCostW(sit, L, v, {massKg: model.massKg, cda: model.cda, crr: model.crr});
+        const c = powerComponents({v, grade: s.grade || 0, massKg: model.massKg, cda: model.cda, crr: model.crr,
+                                   draftW: s.draft || 0});
+        const spot = spotCost(this.gapCurve, L, c, s, v, me.athleteId, packW);   // the same pack cost as Holding
+        if (this.gapFor !== me.athleteId) {
+            this.gapFor = me.athleteId;
+            this.gapWatch.reset();
+            this.demand.reset();
+        }
+        const demandW = this.demand.update(s.worldTime, !settling && L.size >= 2 ? packDemandW(c, spot) : null, {v, massKg: model.massKg});
+        const gapping = settling ? null : this.gapWatch.update(entries, me, s.worldTime);
+        const pos = this.readPosition(s, spot, L, settling, power, noDraft.spot, gapping);
+        if (settling) this.block.reset();
+        const blk = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
+                                       massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
+                                       behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
+                                       powerUp: s.activePowerUp, coffee: s.coffeeStop});
+        const hold = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
+        const pass = settling || L.size < 2 ? this.pass.update(null) : this.pass.update(passSituation(entries, me));
+        // the road ahead (yours only: the learned road follows your own track, the route is yours). Its seconds use
+        // steady inputs: your flat speed (smoothed ~30 s while the road is within ±2%) and effort (power, ~60 s)
+        const pc = this.pace;
+        const dtA = pc && Number.isFinite(s.worldTime) ? (s.worldTime - pc.wt) / 1000 : null;
+        const ok = dtA > 0 && dtA < 10;
+        const flatNow = Math.abs(s.grade || 0) <= 0.02 && v > 2;
+        this.pace = {
+            wt: s.worldTime,
+            vFlat: !pc || pc.vFlat == null ? (flatNow ? v : null) :
+                ok && flatNow ? pc.vFlat + (1 - Math.exp(-dtA / 30)) * (v - pc.vFlat) : pc.vFlat,
+            power: !ok ? (pc ? pc.power : power) : pc.power + (1 - Math.exp(-dtA / 60)) * (power - pc.power),
+        };
+        const vA = this.pace.vFlat ?? v;
+        let roadAhead = null, aheadFrom = null;
+        if (me.self) {
+            const route = this.routeAhead ? this.routeAhead.ahead(s, 3000) : null;
+            if (route && route.length >= 4) {
+                roadAhead = withSpeeds(route, {vFlat: vA, power: this.pace.power, massKg: model.massKg, cda: model.cda,
+                                           crr: model.crr, bodyKg: me.athlete?.weight});
+                aheadFrom = 'route';
+            } else {
+                const road = this.bendMap.roadAhead(s, 800);
+                if (road && road.pts && road.pts.length) {
+                    roadAhead = road.pts;
+                    aheadFrom = 'riders';
+                }
+            }
+        }
+        // your FRC balance (the sprint coach plans the finish on it)
+        let frc = null;
+        const fit = me.self ? this.fitnessFor(me) || {} : {};
+        if (me.self && fit.ftpW > 0 && fit.frcJ > 0) frc = this.frcBalance.update(s.worldTime, power, fit);
+        // the finish: your draft quality (share of your cap), then the sprint coach (distance events only)
+        const cap = me.athlete && me.athlete.height > 0 && me.athlete.weight > 0 ?
+            predictedCap({heightCm: me.athlete.height, weightKg: me.athlete.weight}) : null;
+        const draftQ = cap && v > 3 ? (s.draft || 0) / (cap * 0.5 * 1.225 * v ** 3) : null;
+        // settled while you ride FTP: you slow by what FTP leaves short of your drag (AERO: CdA × 0.75)
+        const easeModel = {cda: model.cda * (s.activePowerUp === 'AERO' ? 0.75 : 1), crr: model.crr, massKg: model.massKg};
+        const settledFtp = (toLineM, near) => near && fit.ftpW > 0 &&
+            sprintSettled(entries, me, toLineM, {decelMs2: decelAt(fit.ftpW, v, easeModel), kickKmh: ftpKick});
+        // seconds to the line along the road ahead (its climbs and descents): the last-wheel call is timed by it
+        const inEventFinish = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 3000;
+        const toLineS = inEventFinish ? secsAlong(roadAhead, me.remaining, this.pace.vFlat ?? v) : null;
+        // TT bikes lose the power-up at the next arch while Sauce still shows it (2026-10-23): no power-up advice
+        const held = base.bike === 'tt' ? null : me.gameState ? me.gameState.availablePowerUp || null : null;
+        const finish = settling || !me.self ? null : this.sprintCoach.update({
+            wt: s.worldTime, remaining: me.remaining, remainingMetric: me.remainingMetric, remainingType: me.remainingType,
+            v, power, held, bike: base.bike, toLineS,
+            group: {size: L.size, ahead: L.ahead, vGroup: L.vGroup}, wheels: sprintWheels(entries, me),
+            canSteer: !!s.canSteer, q: draftQ, closer: fastCloser(entries, me), frc, ftpW: fit.ftpW, model: easeModel,
+            settled: me.remaining < KEEP_GOING_M * 2 && sprintSettled(entries, me, me.remaining),
+            settledFtp: settledFtp(me.remaining, me.remainingMetric === 'distance' && me.remaining < KEEP_GOING_M * 2)});
+        // an intermediate sprint on the race card: the same ease calls (the finish's own calls win)
+        const line = settling || !me.self || !this.raceCards ? null : this.raceCards.sprintLine(s);
+        const inter = settling || !me.self ? null : this.interCoach.update({
+            wt: s.worldTime, toLineM: line ? line.toLineM : null, lineKey: line ? line.key : null, v, power, ftpW: fit.ftpW,
+            settled: !!line && line.toLineM < KEEP_GOING_M * 2 && sprintSettled(entries, me, line.toLineM),
+            settledFtp: !!line && settledFtp(line.toLineM, line.toLineM < KEEP_GOING_M * 2)});
+        const climb = settling || !me.self ? null :
+            // the coach rescales the speeds ahead by v / (speed at the first point): right for the riders' speeds, but
+            // the route's are already yours, so v = that first speed (scale 1). With your flat speed instead, a ramp
+            // right ahead doubled the scale and halved the seconds (Urumaze 2026-10-06: 149 -> 72 s in 2 s).
+            this.moveUpCoach.update({profile: roadAhead, v: aheadFrom === 'route' && roadAhead[0] ? roadAhead[0].v : vA,
+                                     grade: s.grade || 0, group: L, exactFoot: aheadFrom === 'route'});
+        const tuckIn = {kmh: s.speed, grade: s.grade, power, draft: s.draft || 0, bike: base.bike, powerUp: s.activePowerUp};
+        const tuck = settling ? null : tuckState(tuckIn);
+        if (me.self) {
+            this.tuckDrag.update({wt: s.worldTime, v, alt: s.altitude, dist: s.distance, power, massKg: model.massKg,
+                                  crr: model.crr, kind: settling ? null : TuckDrag.kind(tuck, tuckIn), powerUp: s.activePowerUp});
+        }
+
+        // habits (yours only): quiet before a climb, in the finish (2 km) and under a power-up, as in the Data Tap
+        const finale = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 2000;
+        const nudge = settling || !me.self ? null : this.nudgeCoach.update({
+            wt: s.worldTime, size: L.size, ahead: L.ahead, holdW: hold.w, relMs: Number.isFinite(L.vGroup) ? v - L.vGroup : 0,
+            depthM: lateralDepth(entries, me), q: draftQ, gapAhead: L.gapAhead ?? null, positionW: pos.w,
+            quiet: !!(climb && climb.state) || finale || !!s.activePowerUp});
+        // the race card for this route (yours only, in an event)
+        const cardCall = settling || !me.self || !this.raceCards ? null :
+            this.raceCards.call(s, {held, v});
+        // ride warnings (yours only): the surface here and ahead, the climb's pacing, your reserve
+        const vAhead = this.pace.vFlat ?? v;
+        const crrOf = id => {
+            const x = SURFACES.find(y => y.id === id);
+            return x ? x.crr[base.tyre || 'road'] ?? x.crr.road : null;
+        };
+        const pave = crrOf('pavement');
+        const surfaceW = surface && surface !== 'pavement' && crrOf(surface) != null ?
+            Math.max(0, (crrOf(surface) - pave) * model.massKg * 9.80665 * Math.max(v, 1)) : 0;
+        let surfaceAhead = null;
+        if (this.roadMap && me.self && !settling && (!surface || surface === 'pavement' || surface === 'sand')) {
+            const ah = this.roadMap.ahead(s, 600);
+            if (ah) {
+                const inS = secsAlong(roadAhead, ah.inM, vAhead);
+                const outS = secsAlong(roadAhead, ah.inM + ah.lengthM, vAhead);
+                surfaceAhead = {surface: ah.surface, inS, forS: inS != null && outS != null ? outS - inS : null};
+            }
+        }
+        let pacing = null;
+        if (me.self && !settling && roadAhead) {
+            const pv = aheadFrom === 'route' && roadAhead[0] ? roadAhead[0].v : vAhead;   // no rescale on the route's speeds
+            const pc = pacingCue({profile: roadAhead, v: pv, grade: s.grade || 0});
+            if (pc.state === 'ready') {
+                const st = (climbAhead(roadAhead, {vNow: pv, grade: s.grade || 0}) || {}).steep;
+                const inS = secsAlong(roadAhead, pc.startM, vAhead);
+                const endS = st ? secsAlong(roadAhead, st.endM, vAhead) : null;
+                pacing = {state: 'steep', inS, forS: inS != null && endS != null ? endS - inS : null, grade: pc.grade};
+            } else if (pc.state === 'top') {
+                pacing = {state: 'top', inS: secsAlong(roadAhead, pc.crestM, vAhead)};
+            }
+        }
+        const ds = {
+            ts: s.worldTime,
+            gapM: inline ? inline.gap : null,
+            gapApprox: !!(inline && inline.gapSource === 'distance'),
+            noDraftWheel,
+            sideM,
+            beside: !!(wheel && !inline),
+            packW: !settling && L.size >= 3 ? packW : null,
+            packNote: settling ? SETTLING_NOTE : packCostNote(sit, L),
+            positionW: pos.w,
+            positionNote: pos.note,
+            holdingW: hold.w,
+            holdingBandW: hold.bandW,
+            holdingNote: hold.note,
+            blockedW: settling || L.size < 2 ? null : blk.lostW,
+            blockedNote: settling ? SETTLING_NOTE : L.size < 2 ? ALONE_NOTE : blockedNote(blk),
+            blocked: !settling && L.size >= 2 && blk.blocked,
+            passKmh: pass.attack ? pass.attack.closeKmh : pass.defend ? pass.defend.closeKmh : null,
+            passKind: pass.attack ? 'attack' : pass.defend ? 'defend' : null,
+            passNote: passNote(pass),
+            passWhere: (pass.attack || pass.defend)?.where ?? null,
+            passAtWheel: !!pass.attack?.atWheel,
+            passWide: !!pass.attack && Math.abs(pass.attack.latM ?? 0) >= WIDE_M,
+            blockedSide: !settling && L.size >= 2 && blk.blocked && blk.beside ? blk.beside.side : null,
+            surface,
+            tuck: tuck && {...tuck, race: this.raceFor(me) ?? null, drag: this.tuckDrag.result()},
+            moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
+            ahead: aheadFrom,
+            nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
+            surfaceW, surfaceId: surface || null, surfaceAhead, pacing,
+            frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
+            card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
+                              power: cardCall.power || null, held: cardCall.held || null, note: cardCall.note || null,
+                              inS: Number.isFinite(cardCall.toM) && cardCall.toM > 0 ? secsAlong(roadAhead, cardCall.toM, this.pace.vFlat ?? v) : null,
+                              endS: Number.isFinite(cardCall.toEndM) && cardCall.toEndM > 0 ? secsAlong(roadAhead, cardCall.toEndM, this.pace.vFlat ?? v) : null,
+                              priority: cardCall.priority, state: cardCall.state} : null,
+            sprint: !(finish && finish.state) && inter && inter.state ? {state: inter.state, priority: inter.priority, held: null,
+                toLineS: null, targetW: null, remainingM: line ? line.toLineM : null, intermediate: true} :
+                finish && finish.state ? {state: finish.state, priority: finish.priority,
+                held, toLineS: finish && finish.state ? toLineS : null,
+                targetW: this.sprintCoach.budget ? Math.round(this.sprintCoach.budget.targetW) : null,
+                remainingM: Number.isFinite(me.remaining) ? me.remaining : null} : null,
+            draftQ,
+            cda: model.cda,
+            cdaSource: model.source,
+            groupSize: L.size,
+            settling,
+            // state codes for the data object (ds-data.mjs buildData; docs/DS-DATA.md)
+            positionState: pos.state,
+            demandW,
+            demandFtpW: (me.self ? (this.fitnessFor(me) || {}).ftpW : null) || (me.athlete && me.athlete.ftp) || null,
+            packState: settling ? 'settling' : packCostState(sit, L),
+            holdingState: hold.state,
+            cdaState: model.source === 'your CdA' ? 'yours' : model.hidden && model.hidden.length ? 'guessed' : 'model',
+        };
+        return {me, ds};
+    }
+
+    readPosition(s, spot, L, settling, power, noDraftWheel = false, gapping = null) {
+        if (settling) {
+            this.position.reset();
+            return {w: null, note: SETTLING_NOTE, state: 'settling'};
+        }
+        // a gap opening ahead beats any advice about your own gap ("back off" while the wheel drifts off the group)
+        if (gapping) {
+            const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
+            return {w: L.size < 2 ? null : w, state: 'gapping',
+                    note: `gap opening ${gapping.which === 'wheel' ? 'in front of your wheel' : 'two wheels up'} (${Math.round(gapping.holeM)} m): close it or go round`};
+        }
+        if (noDraftWheel && L.size >= 2) {
+            this.position.reset();
+            return {w: null, note: NO_DRAFT_NOTE, state: 'no-draft'};
+        }
+        // Coasting (super tuck too): draft then only adds speed, it saves no pedaling watts, so there is nothing to show.
+        if (L.size >= 2 && power < COAST_W) {
+            this.position.reset();
+            return {w: null, note: COASTING_NOTE, state: 'coasting'};
+        }
+        const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
+        return {w: L.size < 2 ? null : w, note: positionAdvice(w, spot.best, L, spot.boxed),
+                state: positionState(w, spot.best, L, spot.boxed)};
+    }
+
+    /*
+     * Holding is about keeping your place, so it is blank alone, and starts fresh when your group changes size class
+     * (alone / with one rider / 3+), so a chase doesn't bleed into it. The steady need is air + rolling − Zwift's draft
+     * + the pack cost of your spot + matching your group's speed (holding.mjs HoldingMeter).
+     */
+    readHolding(s, c, spot, L, v, packW, power, model, settling, blk) {
+        const cls = Math.min(3, L.size);
+        if (cls !== this.holdClass) {
+            this.holdClass = cls;
+            this.holding.reset();
+        }
+        if (settling) this.holding.reset();
+        const w = this.holding.update({wt: s.worldTime, v, alt: s.altitude, power, massKg: model.massKg,
+                                       steadyW: c.aero + c.roll - (s.draft || 0) + packW + spot.groupW +
+                                           (L.size >= 3 ? foreAftW(v, L.vGroup) : 0),
+                                       powerUp: s.activePowerUp || (settling ? 'TELEPORT' : null), coffee: s.coffeeStop},
+                                      L.size >= 3 ? HOLD_PACK_S : HOLD_PAIR_S);
+        if (settling) return {w: null, bandW: w.bandW, note: SETTLING_NOTE, state: 'settling'};
+        if (L.size < 2) {
+            this.motion.reset();
+            return {w: null, bandW: w.bandW, note: ALONE_NOTE, state: 'alone'};
+        }
+        const hold = holdingW(w.wastedW, 0, power);
+        const motion = this.motion.update(v, L.vGroup);
+        const note = blk && blk.blocked ? blockedNote(blk) : motion;   // blocked says where the waste comes from
+        const value = hold == null || !w.warmedUp ? null : hold;
+        return {w: value, bandW: w.bandW, note: w.warmedUp ? note : 'filling the window…',
+                state: holdingStateOf(value, w.bandW, !!(blk && blk.blocked), this.motion.rel)};
+    }
+}
