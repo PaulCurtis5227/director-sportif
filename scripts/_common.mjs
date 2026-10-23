@@ -20,7 +20,7 @@ export const modId = manifest.id;
 
 // Files/dirs that are dev tooling or VCS — never shipped in a release copy.
 const EXCLUDE = new Set([
-    '.git', '.gitignore', 'node_modules', 'dist', 'scripts', 'test', 'package.json', 'package-lock.json',
+    '.git', '.gitignore', '.gitattributes', 'node_modules', 'dist', 'scripts', 'test', 'package.json', 'package-lock.json',
     'CLAUDE.md', '.idea', 'docs',
 ]);
 
