@@ -227,6 +227,7 @@ export class MeterEngine {
         if (settling) this.block.reset();
         const blk = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
                                        massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
+                                       wheelGapM: sit ? sit.wheelGap : null,
                                        behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
                                        powerUp: s.activePowerUp, coffee: s.coffeeStop});
         const hold = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);

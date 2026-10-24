@@ -24,6 +24,11 @@
  * v0.68.2 (DS 0.39.0): no spikes on fast descents (FAST_DESCENT_KMH, FAST_DESCENT_GRADE). There Zwift's draft swings
  * 0–340 W tick to tick and the balance can't tell that from blocking: 45+ km/h downhill read 11–35 W blocked on three
  * rides vs 1–8 W under 45 km/h (docs/FINDINGS.md "BLOCKED AT SPEED"). Fast flat finishes still count.
+ * v0.68.5 (DS 0.42.0): mostly wrong. The spikes on descents follow the gap to the wheel (research/2026-10-24/
+ * pack-speed.mjs, 2 races + 6 group rides; docs/FINDINGS.md "PACK COST AND HOLDING AT SPEED"): at 52+ km/h downhill
+ * 77–78% of windows 0–3.5 m off the wheel have a spike (85–87 W left over) vs 26% / 17 W at 5.5–10 m: the cost of
+ * sitting close, real and avoidable. So on a fast descent spikes count within FAST_DESCENT_CLOSE_M of the wheel in line
+ * (or alongside a rider), and only further back, where the gap doesn't explain them, are they taken as the draft swinging.
  */
 
 import {leads} from './wheels.mjs';
@@ -32,7 +37,8 @@ import {UNIT_PER_M} from './pack-cost.mjs';
 export const SPIKE_W = 80;          // a tick whose balance exceeds this lost power to blocking
 export const BLOCK_WINDOW_S = 10;   // what the lost watts are averaged over
 export const FAST_DESCENT_KMH = 45;      // a tick this fast...
-export const FAST_DESCENT_GRADE = -0.01; // ...on a road this steep down or steeper has no spikes (the draft swings)
+export const FAST_DESCENT_GRADE = -0.01; // ...on a road this steep down or steeper counts spikes only...
+export const FAST_DESCENT_CLOSE_M = 5.5;  // ...this close to the wheel in line (further back: the draft swinging)
 export const BLOCK_CUE_W = 10;      // the cue: this many watts lost over the window...
 export const BLOCK_CUE_N = 2;       // ...in at least this many spike ticks
 export const BESIDE_ALONG_M = 1;    // a rider overlapping you along the road (wheels level within a meter)...
@@ -91,7 +97,8 @@ export class BlockWatch {
 
     /*
      * tick: {wt (ms), v (m/s), alt (m), power, draft (W), massKg, bodyKg (optional: your weight, for the feather), cda,
-     * crr, packW (the steady pack cost now), behind (true when someone is ahead of you in your group), beside
+     * crr, packW (the steady pack cost now), wheelGapM (m to the wheel in line, pack-cost.mjs packSituation; null =
+     * none within 25 m), behind (true when someone is ahead of you in your group), beside
      * (besideRider() or null), powerUp (applied through POWER_UPS; an unknown one restarts the watch), coffee}.
      * Returns {lostW (W lost to spikes over BLOCK_WINDOW_S, null until there is a window), spikes (count in the
      * window), blocked (the cue), beside (the rider level with you now, or null), tickW (this tick's balance or null)}.
@@ -119,8 +126,10 @@ export class BlockWatch {
         const res = (a.p + this.last.p) / 2 + (a.d + this.last.d) / 2 -
             0.5 * RHO * (e0.cda * a.v ** 3 + e1.cda * tick.v ** 3) / 2 - G * (e0.crr * e0.m * a.v + e1.crr * e1.m * tick.v) / 2 -
             (0.5 * m * (tick.v ** 2 - a.v ** 2) + m * G * (tick.alt - a.alt)) / dt;
+        // a fast descent: only close to the wheel (or alongside) is a spike the cost of where you are
         const fastDescent = (a.v + tick.v) / 2 * 3.6 >= FAST_DESCENT_KMH && grade <= FAST_DESCENT_GRADE;
-        if ((tick.behind || tick.beside) && !fastDescent && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
+        const close = !!tick.beside || (Number.isFinite(tick.wheelGapM) && tick.wheelGapM < FAST_DESCENT_CLOSE_M);
+        if ((tick.behind || tick.beside) && (!fastDescent || close) && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
         return this.read(tick.wt, res);
     }
 
