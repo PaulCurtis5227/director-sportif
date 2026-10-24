@@ -62,6 +62,9 @@
  * v0.42.0: Blocked counts spikes on fast descents again within 5.5 m of the wheel (engine/blocking.mjs FAST_DESCENT_CLOSE_M):
  * there they are the cost of sitting close (research/2026-10-24/pack-speed.mjs), not the draft swinging.
  * v0.43.0: a fresh install speaks the main calls (calls.mjs FRESH_VOICE); existing riders keep their own choices.
+ * v0.44.0: the window's big line is All words (the call and each meter's advice, grid-fields.mjs allWords, yellow /
+ * red when urgent): one place to look (the user: words spread over many meters "aren't where you are looking"); the
+ * "open the Grid" hint goes once a Grid has said hello (GRID_SEEN_KEY).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -71,9 +74,10 @@ import {riderModel, BIKES, DEFAULT_BIKE, WHEELS, DEFAULT_WHEELS} from './rider-m
 import {setStyles, windowFitter, options} from './window-ui.mjs';
 import {Speaker} from './engine/speech.mjs';
 import {bikeCheckText} from './engine/bike-check.mjs';
-import {engineCall, callWords, Announcer, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor}
+import {engineCall, Announcer, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor}
     from './calls.mjs';
 import {buildData, CHANNEL} from './ds-data.mjs';
+import {allWords} from './grid-fields.mjs';
 import {RouteAhead} from './route-ahead.mjs';
 import {RaceCards, cardEntries, loadEntry, importCard} from './race-cards-live.mjs';
 import {CaptureRecorder} from './capture.mjs';
@@ -85,7 +89,7 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.43.0';
+export const DS_VERSION = '0.44.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -348,6 +352,18 @@ export async function main() {
     } catch (e) {
         console.warn('data channel', e);
     }
+    // the "open the Grid" hint: gone once a Grid has said hello (grid.mjs posts it as it opens), and from then on
+    const hint = content.querySelector('.hint');
+    const GRID_SEEN_KEY = 'director-sportif-grid-seen';
+    try { if (localStorage.getItem(GRID_SEEN_KEY)) hint.hidden = true; } catch (e) { /* no storage: shown */ }
+    if (channel) {
+        channel.addEventListener('message', ev => {
+            if (!ev.data || ev.data.type !== 'hello' || hint.hidden) return;
+            hint.hidden = true;
+            try { localStorage.setItem(GRID_SEEN_KEY, '1'); } catch (e) { /* this session only */ }
+        });
+    }
+    const wordsHold = new Map();   // All words: a word stays WORDS_HOLD_S after it goes (grid-fields.mjs allWords)
     // The status panel: what the engine is doing, the route and card, the call now (the meters are on the Grid)
     let lastTick = 0, routeId = null, routeName = null;
     const setText = (node, text) => {
@@ -764,7 +780,10 @@ export async function main() {
                     .catch(e => console.warn('route name', e));
             }
         }
-        setText(el.word, data.call ? callWords(data.call) : '—');
+        const said = allWords(data, wordsHold);
+        setText(el.word, said.text || '—');
+        el.word.classList.toggle('warn', said.level === 'warn');
+        el.word.classList.toggle('alarm', said.level === 'alarm');
         setText(el.state, `${data.self ? 'you' : 'watching'} · group ${data.meters.group.value ?? '-'} · ` +
             `${r.ds.ahead === 'route' ? 'route ahead' : r.ds.ahead === 'riders' ? 'road from the riders' : 'no road ahead'}`);
         const card = raceCards.card;

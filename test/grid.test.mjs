@@ -27,7 +27,9 @@ test('grid fields: meters, a word per meter, the basics; ids unique', () => {
     // the default slots are all real fields
     const known = new Set(ids);
     assert.equal(cleanTiles(GRID_DEFAULT_TILES, known, GRID_DEFAULT_TILES).length, GRID_DEFAULT_TILES.length);
-    assert.equal(cleanTiles(undefined, known, GRID_DEFAULT_TILES)[0].field, 'ds-director');
+    assert.deepEqual(cleanTiles(undefined, known, GRID_DEFAULT_TILES).map(t => t.field), ['ds-position', 'ds-holding', 'ds-blocked', 'ds-gap', 'ds-side'],
+        'a fresh Grid: the five that matter');
+    assert.ok(GRID_DEFAULT_TILES.every(t => t.note === false), 'numbers only: the words are on the Director Sportif window');
     assert.ok(fieldCatalog(groups).length === 3);
 });
 

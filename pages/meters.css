@@ -398,11 +398,22 @@ html.measuring #content.control {
     min-width: 14em;
 }
 
+/* All words: up to two lines of a fixed width, so the window doesn't jump as words come and go */
 #content.control .call-word {
     font-size: 1.6em;
     font-weight: 800;
     line-height: 1.2;
-    white-space: nowrap;
+    width: 11em;
+    min-height: 2.4em;
+    white-space: normal;
+}
+
+#content.control .call-word.warn {
+    color: #f9c74f;
+}
+
+#content.control .call-word.alarm {
+    color: #f94144;
 }
 
 #content.control .status-line {

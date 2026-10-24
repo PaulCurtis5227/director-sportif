@@ -7,7 +7,8 @@ from Sauce and tells you, in a word or two, what to do now. Its meters show on a
 ## Two windows (open both)
 
 - **Director Sportif**: the director, the part that thinks. It reads Sauce's data, works out the meters and makes the
-  calls, and shows a short status (the call now, your route and race card, whether data is coming). **Keep it open
+  calls. Its big line is **what to do now**: the call and each meter's advice in one place, yellow or red when
+  urgent; under it a short status (your route and race card, whether data is coming, recording). **Keep it open
   while you ride** (it can sit behind Zwift): close it and the meters and calls stop. Its gear holds your bike, CdA,
   FTP and FRC, how each call reaches you, your race card plan, recording and OBS.
 - **Director Sportif — Grid**: the display. The slots, sizes and yellow / red thresholds you set with its gear. It
@@ -79,8 +80,9 @@ Sauce quit.
 2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
    use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
    Zwift profile's FTP and 15 kJ).
-3. **Lay out the Grid.** It starts with Position, Holding, Blocked, Passing, Pack cost, Gap, L/R and Tuck. Its gear
-   adds, removes and orders slots and sets their yellow / red ranges. Place it over Zwift, or capture it in OBS.
+3. **Lay out the Grid.** It starts with Position, Holding, Blocked, Gap and L/R, numbers only (the words are on the
+   Director Sportif window). Its gear adds, removes and orders slots, shows a meter's word under it if you want it
+   there, and sets the yellow / red ranges. Place it over Zwift, or capture it in OBS.
 
 Then ride: the meters fill once you're in a group, and the Grid says "waiting for the Director Sportif window" whenever
 that window is closed.

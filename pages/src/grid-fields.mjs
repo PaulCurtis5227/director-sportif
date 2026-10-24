@@ -144,14 +144,17 @@ export function gridGroups(opts = {}) {
 }
 
 /* The Grid's starting slots (a new install; the rider changes them in the settings window). */
+/*
+ * A fresh Grid (v0.44.0, the user): the five that matter, numbers only. The words are in one place, the Director
+ * Sportif window's All words line ("spread over a lot of meters they aren't where you are looking"); a slot shows its
+ * meter's word only when you switch it on (note).
+ */
 export const GRID_DEFAULT_TILES = [
-    {id: 'grid-director', field: 'ds-director', size: 'normal', note: false},
-    {id: 'grid-position', field: 'ds-position', size: 'large', note: true},
-    {id: 'grid-holding', field: 'ds-holding', size: 'large', note: true},
-    {id: 'grid-blocked', field: 'ds-blocked', size: 'normal', note: true},
-    {id: 'grid-pass', field: 'ds-pass', size: 'normal', note: true},
-    {id: 'grid-pack', field: 'ds-pack', size: 'normal', note: true},
-    {id: 'grid-tuck', field: 'ds-tuck', size: 'normal', note: true},
+    {id: 'grid-position', field: 'ds-position', size: 'large', note: false},
+    {id: 'grid-holding', field: 'ds-holding', size: 'large', note: false},
+    {id: 'grid-blocked', field: 'ds-blocked', size: 'normal', note: false},
+    {id: 'grid-gap', field: 'ds-gap', size: 'normal', note: false},
+    {id: 'grid-side', field: 'ds-side', size: 'normal', note: false},
 ].map(t => ({...t, warn: null, alarm: null}));   // null: the meter's own level from the data object
 
 const fget = (v, x) => (typeof v === 'function' ? v(x) : v);
