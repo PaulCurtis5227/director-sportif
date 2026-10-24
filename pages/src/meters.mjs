@@ -55,6 +55,8 @@
  * from caffecter.com's race card maker or written by hand, kept in localStorage (IMPORTED_CARDS_KEY), used like the
  * shipped cards; the main window hears an import at once (storage event -> RaceCards.refresh).
  * v0.36.0: the OBS title card advertises the Director Sportif as free, with caffecter.com (race cards, ride reports).
+ * v0.40.0: auto-record remembers across a window reopen which events it recorded and which you finished (AUTO_STATE_KEY):
+ * no second recording of a finished event, and "Record OBS with the race" never starts OBS for one (2026-10-24).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -78,7 +80,7 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.39.0';
+export const DS_VERSION = '0.40.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -558,6 +560,16 @@ export async function main() {
     // ----- recording (capture format) -----
     const store = idbStore(CAPTURE_STORE);
     const auto = new AutoRecord();
+    // which events were recorded and which you finished, kept across a window reopen (auto-record.mjs state())
+    const AUTO_STATE_KEY = 'director-sportif-auto-record';
+    try { auto.restore(JSON.parse(localStorage.getItem(AUTO_STATE_KEY) || 'null')); } catch (e) { /* none kept */ }
+    let autoSaved = null;
+    const autoSave = () => {
+        try {
+            const st = JSON.stringify(auto.state());
+            if (st !== autoSaved) localStorage.setItem(AUTO_STATE_KEY, autoSaved = st);
+        } catch (e) { /* storage blocked: this window only */ }
+    };
     const recBtn = content.querySelector('button.rec');
     const markBtn = content.querySelector('button.mark');
     const recState = content.querySelector('.rec-state');
@@ -580,8 +592,10 @@ export async function main() {
             if (clock.starts[kind] != null) rec.video(Date.now(), {kind, event: 'start', startMs: clock.starts[kind]});
         }
         // record OBS with the race (only stopped later if we started it): only when you're in an event (the user,
-        // 2026-10-19: a Record pressed in the warm-up free ride started OBS too)
-        if ((rehearsing || (Common.settingsStore.get('obsRecordWithRace') && mySg)) && obs && obs.connected && clock.starts.record == null) {
+        // 2026-10-19: a Record pressed in the warm-up free ride started OBS too), and not one you've finished (2026-10-24:
+        // a recording 2 min after the finish, still in the event, started OBS again)
+        const raceOn = mySg && !auto.hasEnded(mySg);
+        if ((rehearsing || (Common.settingsStore.get('obsRecordWithRace') && raceOn)) && obs && obs.connected && clock.starts.record == null) {
             obsStartWithTitle({rehearsing}).catch(e => console.warn('OBS record', e));
         }
         flushTimer = setInterval(() => cp && cp.flush().catch(e => console.warn('capture checkpoint', e)), CHECKPOINT_S * 1000);
@@ -680,12 +694,13 @@ export async function main() {
             const what = auto.check(Date.now(), !!rec);
             if (what === 'start') {
                 autoBusy = true;
-                startRec().then(() => auto.started()).catch(e => console.error('auto record', e)).finally(() => { autoBusy = false; });
+                startRec().then(() => { auto.started(); autoSave(); }).catch(e => console.error('auto record', e)).finally(() => { autoBusy = false; });
             } else if (what === 'stop') {
                 autoBusy = true;
                 stopRec().then(() => auto.stopped()).catch(e => console.error('auto record', e)).finally(() => { autoBusy = false; });
             }
         }
+        autoSave();
         showRec();
     };
     setInterval(autoCheck, 5000);

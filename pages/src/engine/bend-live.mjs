@@ -154,7 +154,10 @@ export class BendMap {
         }
         const dir = [(b.x - a.x) / L, (b.y - a.y) / L];
         const bin0 = Math.floor(s.roadCompletion / BEND_BIN);
-        const step = s.reverse ? -1 : 1;
+        // ahead = a higher roadCompletion, in reverse too: Sauce flips it for reverse riders (zwift.mjs 1005000 −
+        // roadTime), so it rises the way you ride. Walking down in reverse read the road behind you (v0.68.3: "steep
+        // in 16" at 59 km/h on a descent, no climb for 13 min)
+        const step = 1;
         const pts = [];
         let prev = {x: b.x, y: b.y};
         let d = 0;

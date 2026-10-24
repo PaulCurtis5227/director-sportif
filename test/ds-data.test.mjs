@@ -128,3 +128,14 @@ test('ride warnings: the surface meter and the FRC meter; surface and pacing cal
     assert.equal(directorCalls({surfaceAhead: {surface: 'pavement', inS: 5}}).length, 0, 'no call for pavement');
     assert.equal(directorCalls({surfaceAhead: {surface: 'wood', inS: 105, forS: 10}}).length, 0, 'not 2 minutes ahead');
 });
+
+test('bend call: "inside left / right" when the inside is open, "stay close" on the outside, with the seconds to it', async () => {
+    const {directorCalls} = await import('../pages/src/ds-data.mjs');
+    const {callWords} = await import('../pages/src/calls.mjs');
+    const [open] = directorCalls({bend: {state: 'open', side: 'left', inS: 6.2}});
+    assert.deepEqual([open.id, open.state, open.word, open.in], ['bend', 'open-left', 'inside left', 6]);
+    assert.equal(callWords(open), 'inside left in 6');
+    const [out] = directorCalls({bend: {state: 'outside', side: 'right', inS: 4}});
+    assert.equal(callWords(out), 'stay close', 'now, not at the bend');
+    assert.deepEqual(directorCalls({bend: null}), []);
+});

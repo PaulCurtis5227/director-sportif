@@ -54,6 +54,9 @@
  *                 the item), endS (to a segment's line), priority, state} or null
  *   surfaceW      watts the surface under you costs your tyres beyond pavement (0 on pavement), surfaceId
  *   surfaceAhead  the next non-pavement stretch on this road within 600 m: {surface, inS, forS} or null
+ *   bend          a bend ahead (engine/bend-live.mjs bendCue, from the Data Tap; v0.40.0): {state: 'open' (the inside
+ *                 is open: moving over gains ground) | 'outside' (you're on the outside: stay close), side ('left' |
+ *                 'right', the bend's way), inS, moveM, gainM, lossM} or null; the same state two ticks running
  *   pacing        the climb ahead (engine/pacing-cue.mjs, from the Data Tap): {state: 'steep' (a steep part ahead:
  *                 inS to it, forS how long it lasts, grade) | 'top' (the crest close while climbing: inS)} or null
  *   frc           your anaerobic reserve (engine/frc-live.mjs, the Data Tap's model): {leftJ, frac, lowJ} or null
@@ -64,6 +67,8 @@
  *                 each kind then rests 5 min, all nudges 1 min; quiet before a climb, in the finish, under a power-up
  *   cda           the CdA in use; cdaSource says where it comes from
  *   groupSize     riders in your group (chained ≤ 1 s apart), you included
+ *   draftless     you get no draft at all (draftless.mjs: 0 W on a wheel for 20 s; a TT bike, a time trial): the pack
+ *                 meters read 'no-draft' and their calls stop (ds-data.mjs)
  *   settling      you just teleported (group hop): power and speed don't match for ~15 s
  */
 
@@ -80,12 +85,13 @@ import {HoldingMeter, holdingW, GroupMotion, HOLD_PAIR_S, HOLD_PACK_S, MOTION_MS
 import {BlockWatch, blockedNote, besideRider, passSituation, passNote, PassWatch, WIDE_M} from './engine/blocking.mjs';
 import {surfaceExtraCrr} from './engine/road-map.mjs';
 import {tuckState, TuckDrag} from './engine/supertuck.mjs';
-import {BendMap} from './engine/bend-live.mjs';
+import {BendMap, lateralSituation, bendCue} from './engine/bend-live.mjs';
 import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
 import {predictedCap} from './engine/draft-live.mjs';
 import {withSpeeds, secsAlong} from './route-ahead.mjs';
-import {pacingCue, climbAhead} from './engine/pacing-cue.mjs';
+import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
+import {DraftlessWatch} from './draftless.mjs';
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
 import {remainingOnSurface} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
@@ -157,6 +163,9 @@ export class MeterEngine {
         this.block = new BlockWatch();
         this.pass = new PassWatch();
         this.moveUpCoach = new MoveUpCoach();
+        this.climbClock = new ClimbClock();   // how long you've been climbing ("over top" only after a real climb)
+        this.draftlessWatch = new DraftlessWatch();   // you get no draft at all (a TT bike, a time trial): pack calls off
+        this.bendLast = null;                 // the bend cue's state last tick (called once it holds two ticks)
         this.sprintCoach = new SprintCoach();
         this.nudgeCoach = new NudgeCoach();
         this.pace = null;     // {wt, vFlat, power}: your flat speed and effort, smoothed, for the seconds ahead
@@ -189,6 +198,8 @@ export class MeterEngine {
 
         const noDraft = noDraftSpot(this.draftClass, {ahead, L, layout, entries, me, maxGapM: GAP_MAX_M});
         const noDraftWheel = noDraft.wheel;
+        const draftless = me.self && this.draftlessWatch.update({wt: s.worldTime, draft: s.draft, gapM: inline ? inline.gap : null,
+                                                                 noDraftWheel: !!noDraftWheel});
         const wheel = inline || near(ahead);
         const sideM = wheel && Number.isFinite(wheel.lane) ?
             -wheel.lane / UNIT_PER_M * (s.reverse ? -1 : 1) : null;
@@ -235,7 +246,7 @@ export class MeterEngine {
             const route = this.routeAhead ? this.routeAhead.ahead(s, 3000) : null;
             if (route && route.length >= 4) {
                 roadAhead = withSpeeds(route, {vFlat: vA, power: this.pace.power, massKg: model.massKg, cda: model.cda,
-                                           crr: model.crr, bodyKg: me.athlete?.weight});
+                                           crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
                 aheadFrom = 'route';
             } else {
                 const road = this.bendMap.roadAhead(s, 800);
@@ -316,9 +327,10 @@ export class MeterEngine {
             }
         }
         let pacing = null;
+        const climbedS = me.self ? this.climbClock.update(s.worldTime, s.grade || 0) : 0;
         if (me.self && !settling && roadAhead) {
             const pv = aheadFrom === 'route' && roadAhead[0] ? roadAhead[0].v : vAhead;   // no rescale on the route's speeds
-            const pc = pacingCue({profile: roadAhead, v: pv, grade: s.grade || 0});
+            const pc = pacingCue({profile: roadAhead, v: pv, grade: s.grade || 0, climbedS});
             if (pc.state === 'ready') {
                 const st = (climbAhead(roadAhead, {vNow: pv, grade: s.grade || 0}) || {}).steep;
                 const inS = secsAlong(roadAhead, pc.startM, vAhead);
@@ -326,6 +338,28 @@ export class MeterEngine {
                 pacing = {state: 'steep', inS, forS: inS != null && endS != null ? endS - inS : null, grade: pc.grade};
             } else if (pc.state === 'top') {
                 pacing = {state: 'top', inS: secsAlong(roadAhead, pc.crestM, vAhead)};
+            }
+        }
+        // a bend ahead (yours only): take the inside when it pays, stay close on the outside (bend-live.mjs bendCue)
+        let bend = null;
+        const self3 = this.bendMap.self;
+        if (me.self && !settling && v > 5 && self3.length >= 3) {
+            const [p0, p1, p2] = self3;
+            const L0 = Math.hypot(p1.x - p0.x, p1.y - p0.y), L1 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            if (L0 > 100 && L1 > 100) {
+                const dir = [(p2.x - p1.x) / L1, (p2.y - p1.y) / L1];
+                let turn = Math.atan2(p2.y - p1.y, p2.x - p1.x) - Math.atan2(p1.y - p0.y, p1.x - p0.x);
+                turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+                const b = this.bendMap.nextBend(s);
+                const lat = b ? lateralSituation(entries, me, dir, Math.sign(b.angleDeg), turn / ((L0 + L1) / 200)) : null;
+                const cue = bendCue(b, lat, {v, q: draftQ ?? 0, cap: cap ?? 0.14, cda: model.cda,
+                                             fRollN: model.crr * model.massKg * 9.80665});
+                const key = cue.state ? `${cue.state}-${b.right ? 'right' : 'left'}` : null;
+                if (key && key === this.bendLast) {
+                    bend = {state: cue.state, side: b.right ? 'right' : 'left', inS: b.startM / v,
+                            moveM: cue.moveM, gainM: cue.gainM, lossM: cue.lossM};
+                }
+                this.bendLast = key;
             }
         }
         const ds = {
@@ -357,7 +391,7 @@ export class MeterEngine {
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
-            surfaceW, surfaceId: surface || null, surfaceAhead, pacing,
+            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
             card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
                               power: cardCall.power || null, held: cardCall.held || null, note: cardCall.note || null,
@@ -375,6 +409,7 @@ export class MeterEngine {
             cdaSource: model.source,
             groupSize: L.size,
             settling,
+            draftless,
             // state codes for the data object (ds-data.mjs buildData; docs/DS-DATA.md)
             positionState: pos.state,
             demandW,

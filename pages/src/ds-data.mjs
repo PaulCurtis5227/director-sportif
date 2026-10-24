@@ -17,7 +17,7 @@ export const CHANNEL = 'director-sportif/v1';
 
 /*
  * Every meter's states: the word a display shows (active words for advice; '' = nothing to show) and a one-line
- * help for tooltips (the long explanation, no numbers). The common states (alone, settling, coasting, warming, none)
+ * help for tooltips (the long explanation, no numbers). The common states (alone, settling, coasting, warming, no-draft, none)
  * show no word.
  */
 const COMMON = {
@@ -25,6 +25,7 @@ const COMMON = {
     settling: {word: '', help: 'You just teleported: power and speed don\'t match for a few seconds.'},
     coasting: {word: '', help: 'Coasting: the draft only adds speed, it saves no pedaling watts.'},
     warming: {word: '', help: 'Filling the averaging window.'},
+    'no-draft': {word: '', help: 'You get no draft (a TT bike in a group, or a time trial): the pack meters and their calls are off.'},
     none: {word: '', help: ''},
 };
 
@@ -161,9 +162,14 @@ export function roundIn(secs) {
 }
 
 /* The director's call candidates from the engine's reading, in the data object's call form. */
+// the finish calls about wheels: nothing to take or shake with no draft
+const WHEEL_SPRINT = new Set(['windup', 'last', 'last-go', 'take-wheel', 'take-wheel-light', 'take-wheel-medium',
+                              'take-wheel-hard', 'shake-left', 'shake-right', 'closer']);
+
 export function directorCalls(ds) {
     const out = [];
-    const m = ds && ds.moveUp;
+    const draftless = !!(ds && ds.draftless);   // no draft at all: no move up, habits or wheel calls (v0.40.0)
+    const m = !draftless && ds && ds.moveUp;
     if (m && CALL_WORDS.moveUp[m.state]) {
         out.push({id: 'moveUp', state: m.state, word: CALL_WORDS.moveUp[m.state],
                   in: m.state === 'prep' ? roundIn(m.secs) : null, for: null, priority: m.priority});
@@ -195,14 +201,20 @@ export function directorCalls(ds) {
         out.push({id: 'pacing', state: pc.state, word: pc.state === 'steep' ? 'steep' : 'over top', in: roundIn(pc.inS),
                   for: pc.state === 'steep' ? roundIn(pc.forS) : null, priority: 35});
     }
-    const n = ds && ds.nudge;
+    // a bend: the inside open (move over: it gains ground) or you're on the outside (stay close: you'll lose ground)
+    const b = ds && ds.bend;
+    if (b && (b.state === 'open' || b.state === 'outside')) {
+        out.push({id: 'bend', state: `${b.state}-${b.side}`, word: b.state === 'open' ? `inside ${b.side}` : 'stay close',
+                  in: b.state === 'open' ? roundIn(b.inS) : null, for: null, priority: 45});   // stay close: now
+    }
+    const n = !draftless && ds && ds.nudge;
     if (n && CALL_WORDS.nudge[n.state]) {
         out.push({id: 'nudge', state: n.state, word: CALL_WORDS.nudge[n.state], in: null, for: null, priority: n.priority});
     }
     const sp = ds && ds.sprint;
     if (sp) {
         const toLine = Number.isFinite(sp.toLineS) ? sp.toLineS : null;
-        if (CALL_WORDS.sprint[sp.state]) {
+        if (CALL_WORDS.sprint[sp.state] && !(draftless && WHEEL_SPRINT.has(sp.state))) {
             // the line's seconds only 1.5 km out: inside 1 km the bunch winds up and a cruising estimate runs long
             // (Urumaze 2026-10-06: +13 s median), and "get a wheel" means now anyway ("last wheel, be ready" is timed by the engine)
             const timed = ['position', 'good'].includes(sp.state);
@@ -252,12 +264,16 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     const s = (me && me.state) || {};
     const settling = !!ds.settling;
     const alone = !(ds.groupSize >= 2);
-    const common = settling ? 'settling' : alone ? 'alone' : null;
+    // no draft at all (a TT bike, a time trial): the pack meters have nothing to say (v0.40.0)
+    const draftless = !settling && !alone && !!ds.draftless;
+    const common = settling ? 'settling' : alone ? 'alone' : draftless ? 'no-draft' : null;
+    const pack = x => (draftless ? null : x);
 
     const blockedState = common || (ds.blocked ? (ds.blockedSide ? `blocked-${ds.blockedSide}` : 'blocked') : 'clear');
     let passState = 'none';
     if (ds.passKind === 'attack') passState = ds.passAtWheel ? 'drop-back' : ds.passWide ? 'too-slow' : 'go-wide';
     else if (ds.passKind === 'defend') passState = DEFEND_STATE[ds.passWhere] || 'none';
+    if (draftless) passState = 'no-draft';
     const gapState = ds.noDraftWheel ? 'no-draft' : Number.isFinite(ds.gapM) ? 'wheel' : ds.beside ? 'beside' : 'no-wheel';
     const sideState = !Number.isFinite(ds.sideM) ? 'no-wheel' : ds.beside ? 'beside' : 'inline';
     const t = ds.tuck;
@@ -275,11 +291,11 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
         ts: now,
         self: !!(me && me.self),
         meters: {
-            position: meter('position', ds.positionW, common || ds.positionState || 'none'),
-            holding: meter('holding', ds.holdingW, common || ds.holdingState || 'warming'),
-            pack: meter('pack', ds.packW, ds.packState || common || 'none'),
-            blocked: meter('blocked', ds.blockedW, blockedState),
-            passing: meter('passing', ds.passKmh ?? (common ? null : 0), passState),
+            position: meter('position', pack(ds.positionW), common || ds.positionState || 'none'),
+            holding: meter('holding', pack(ds.holdingW), common || ds.holdingState || 'warming'),
+            pack: meter('pack', pack(ds.packW), draftless ? common : ds.packState || common || 'none'),
+            blocked: meter('blocked', pack(ds.blockedW), blockedState),
+            passing: meter('passing', pack(ds.passKmh) ?? (common ? null : 0), passState),
             gap: meter('gap', ds.gapM, gapState, ds.gapApprox ? {approx: true} : {}),
             side: meter('side', ds.sideM, sideState),
             tuck: meter('tuck', tuckValue, tuckState, drag ? {drag} : {}),

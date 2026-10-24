@@ -44,6 +44,9 @@ export const CALL_TYPES = [
      tones: [440, 440]},
     {id: 'pacing', label: 'Climb pacing', hint: 'a steep part ahead (when and how long), the top of the climb close',
      tones: [600, 800]},
+    {id: 'bend', label: 'Bends', hint: 'a bend ahead: "inside left / right" when the inside is open and moving over ' +
+     'gains ground (after the draft it costs), "stay close" when you are on the outside and will lose ground',
+     tones: [700, 940]},
     {id: 'nudge', label: 'Habits', hint: 'a habit worth changing, after it lasts: pushing into the wheel, moving up the ' +
      'middle, sitting on the front, off the wheel in a small group (each at most every 5 min)', tones: [520, 660]},
 ];
@@ -69,7 +72,7 @@ export function deliveryDefaults(old = {}) {
             out[deliveryKey(t.id, 'voice')] = false;
             continue;
         }
-        if (['nudge', 'surface', 'pacing'].includes(t.id)) {   // v0.17–0.19: the voice for voice users, else off
+        if (['nudge', 'surface', 'pacing', 'bend'].includes(t.id)) {   // v0.17–0.19, bend v0.40.0: the voice for voice users, else off
             out[deliveryKey(t.id, 'chime')] = false;
             out[deliveryKey(t.id, 'voice')] = voice;
             continue;

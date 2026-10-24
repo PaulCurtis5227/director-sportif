@@ -24,6 +24,9 @@
  * a free-ride recording runs whenever your data comes (FREE_RIDE), stopped for an event's own recording when that
  * one is due (with `events`) and started again after it, and stopped when Zwift is gone. A Stop you press on a
  * free-ride recording sticks until you join or leave an event. Without `events`, one recording runs through events.
+ * Kept across a window reopen (v0.40.0, the user's 2026-10-24 race: a second recording, and OBS with it, 2 min after the
+ * first ended at the finish): which events were recorded (`done`) and which you finished (`ended`), saved by the
+ * caller (state() / restore()). A finished event never starts again, and ended(sg) tells the caller (no OBS for it).
  */
 
 export const AUTO_TAIL_S = 120;    // the finish, screen chat and the results come after the line
@@ -31,6 +34,7 @@ export const AUTO_IDLE_S = 300;    // no state of yours for this long: Zwift is 
 export const AUTO_LEAD_S = 300;    // start this long before the event's start (the pen, the line-up, the start)
 export const AUTO_FRESH_S = 60;    // all the time: start only while your data is this fresh
 export const FREE_RIDE = 'free';   // `owned` for an all-the-time recording
+export const AUTO_KEEP_H = 48;     // state(): events this old are forgotten
 
 export class AutoRecord {
     constructor({tailS = AUTO_TAIL_S, idleS = AUTO_IDLE_S, leadS = AUTO_LEAD_S, events = true, always = false} = {}) {
@@ -50,6 +54,8 @@ export class AutoRecord {
         this.endMs = null;        // when the event ended for you
         this.owned = null;        // the event of the recording WE started (null = none)
         this.done = new Set();    // events already auto-recorded (or stopped by you): never again
+        this.ended = new Set();   // events you finished: never again, and no OBS "with the race" for them
+        this.seenAt = new Map();  // sg -> when it was last noted (for state()'s expiry)
         this.sawLeft = false;     // seen with distance / time left in this event
     }
 
@@ -75,6 +81,8 @@ export class AutoRecord {
         if (left !== undefined && !this.sawLeft) finished = false;   // never seen before its end: no end at all
         if (sg && finished && !this.finished) {
             this.finished = true;
+            this.ended.add(sg);
+            this.seenAt.set(sg, nowMs);
             if (this.owned === sg && this.endMs == null) this.endMs = nowMs;
         }
         if (sg && this.owned === sg && !this.finished) this.endMs = null;   // back in our event (a blip)
@@ -101,7 +109,10 @@ export class AutoRecord {
             return idle || tail || other ? 'stop' : null;
         }
         if (recording) {
-            if (this.sg) this.done.add(this.sg);   // your own recording covers it: a Stop you press stays stopped
+            if (this.sg && !this.done.has(this.sg)) {   // your own recording covers it: a Stop you press stays stopped
+                this.done.add(this.sg);
+                this.seenAt.set(this.sg, nowMs);
+            }
             return null;
         }
         if (this.eventDue(nowMs)) {
@@ -118,7 +129,8 @@ export class AutoRecord {
 
     /* An event recording should run now: in an event, not finished, not recorded yet, past the wait. */
     eventDue(nowMs) {
-        return !!(this.events && this.sg && !this.finished && !this.done.has(this.sg) && !this.waitMs(nowMs));
+        return !!(this.events && this.sg && !this.finished && !this.ended.has(this.sg) && !this.done.has(this.sg) &&
+                  !this.waitMs(nowMs));
     }
 
     /* ms until it starts by itself (0 = now): before leadS ahead of the start, or the start still being looked up. */
@@ -144,6 +156,30 @@ export class AutoRecord {
         return 'starting…';
     }
 
+    /* You finished this event (in this window or one before it). */
+    hasEnded(sg) {
+        return sg != null && this.ended.has(sg);
+    }
+
+    /* What to keep across a window reopen: {done: {sg: ms}, ended: {sg: ms}}, events older than AUTO_KEEP_H dropped. */
+    state(nowMs = Date.now()) {
+        const keep = set => Object.fromEntries([...set].map(sg => [sg, this.seenAt.get(sg) ?? nowMs])
+            .filter(([, at]) => nowMs - at < AUTO_KEEP_H * 3600e3));
+        return {done: keep(this.done), ended: keep(this.ended)};
+    }
+
+    /* Back from state() (a reopened window). */
+    restore(st, nowMs = Date.now()) {
+        for (const key of ['done', 'ended']) {
+            for (const [sg, at] of Object.entries((st && st[key]) || {})) {
+                if (!(nowMs - at < AUTO_KEEP_H * 3600e3)) continue;
+                const id = Number.isNaN(Number(sg)) ? sg : Number(sg);
+                this[key].add(id);
+                this.seenAt.set(id, Math.max(this.seenAt.get(id) ?? 0, at));
+            }
+        }
+    }
+
     /* The Data Tap did it. */
     started() {
         if (this.next === 'free') {
@@ -152,6 +188,7 @@ export class AutoRecord {
         }
         this.owned = this.sg;
         this.done.add(this.sg);
+        this.seenAt.set(this.sg, this.lastTickMs ?? Date.now());
         this.endMs = null;
         this.raced = this.moving;
     }

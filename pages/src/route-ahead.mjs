@@ -140,6 +140,8 @@ export function speedAt(P, grade, {massKg, cda, crr}) {
 export const MIN_WKG = 2.0;   // the effort floor for the speed estimate (a coasting approach is not your climbing power)
 
 export const CLIMB_FROM = 0.02;   // steeper than this, the climb's own speed (at your effort) applies
+export const DESCENT_FROM = -0.01; // down this or steeper, at least the speed your effort holds there (no draft)
+export const NOW_M = 200;          // the next this many meters: at least your speed now
 
 /*
  * The speed you'll ride at each point ahead (adds v, m/s), for seconds-to. Steady by design, not today's bump: on
@@ -147,15 +149,23 @@ export const CLIMB_FROM = 0.02;   // steeper than this, the climb's own speed (a
  * effort (power: smoothed over a minute, at least MIN_WKG) holds there without draft (you climb in the wind more than
  * you ride the flat in it), never faster than vFlat. Urumaze 2026-10-06: with the speed of the moment, 1 km to the
  * same foot read 174, 103, 73 s within 6 s (you were on a ramp, then descending).
- * opts: {vFlat (m/s), power (W), massKg, cda, crr, bodyKg}
+ * v0.40.0: descents (DESCENT_FROM) at least the speed your effort holds there, and the next NOW_M at least your speed
+ * now: at the flat speed a descent ran twice too long (Climber's Gambit 2026-10-24: "steep in 35" at −7.7%, the
+ * climb came in 19 s; vFlat had fallen to 23 km/h on that climbing course).
+ * opts: {vFlat (m/s), power (W), massKg, cda, crr, bodyKg, vNow (m/s, optional)}
  */
-export function withSpeeds(pts, {vFlat, power, massKg, cda, crr, bodyKg}) {
+export function withSpeeds(pts, {vFlat, power, massKg, cda, crr, bodyKg, vNow = null}) {
     if (!pts) return pts;
     const v0 = Math.max(1, vFlat || 0);
     const model = {massKg, cda, crr};
     const P = Math.max(Number.isFinite(power) ? power : 0, MIN_WKG * (bodyKg || massKg - 8));
     const g = smoothGrades(pts);
-    return pts.map((p, i) => ({...p, v: g[i] > CLIMB_FROM ? Math.min(v0, speedAt(P, g[i], model)) : v0}));
+    return pts.map((p, i) => {
+        if (g[i] > CLIMB_FROM) return {...p, v: Math.min(v0, speedAt(P, g[i], model))};
+        let v = g[i] <= DESCENT_FROM ? Math.max(v0, speedAt(P, g[i], model)) : v0;
+        if (Number.isFinite(vNow) && p.d <= NOW_M) v = Math.max(v, vNow);
+        return {...p, v};
+    });
 }
 
 /*

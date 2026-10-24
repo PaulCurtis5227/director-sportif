@@ -82,6 +82,16 @@ test('speeds ahead: your flat speed, slower on climbs at your effort, never fast
     assert.ok(drag.every(p => p.v === 11));
 });
 
+test('speeds ahead: a descent at least the speed your effort holds there; the next 200 m at least your speed now', () => {
+    const m = {massKg: 85, cda: 0.3, crr: 0.0045};
+    // flat to 100 m, then 6% down
+    const pts = [{d: 50, alt: 50}, {d: 100, alt: 50}, {d: 300, alt: 38}, {d: 500, alt: 26}, {d: 700, alt: 14}];
+    const sp = withSpeeds(pts, {vFlat: 7, power: 200, ...m, bodyKg: 77});
+    assert.ok(sp.at(-1).v > 15, `6% down at 200 W: ${sp.at(-1).v.toFixed(1)} m/s, not the 7 m/s flat speed`);
+    const now = withSpeeds([{d: 50, alt: 0}, {d: 150, alt: 0}, {d: 400, alt: 0}], {vFlat: 8, power: 200, ...m, bodyKg: 77, vNow: 13});
+    assert.deepEqual(now.map(p => p.v), [13, 13, 8], 'your speed now for 200 m, then the flat speed');
+});
+
 test('RouteAhead: loads a route once, null while it loads or off a route', async () => {
     let loads = 0;
     const ra = new RouteAhead(async () => { loads++; return sauceRoute(); });
