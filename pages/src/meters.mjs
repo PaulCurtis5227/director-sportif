@@ -78,7 +78,8 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.37.0';
+export const DS_VERSION = '0.38.0';
+const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
 const OBS_RETRY_MS = 30_000;   // = manifest.json (test/capture.test.mjs)
@@ -362,7 +363,7 @@ export async function main() {
         info.ready = Promise.resolve().then(() => Common.rpc.getEventSubgroup(sg)).then(async x => {
             const e = x && x.eventId != null ? await Common.rpc.getEvent(x.eventId).catch(() => null) : null;
             const startMs = x && (Number.isFinite(x.ts) ? x.ts : Date.parse(x.eventSubgroupStart));
-            return {eventName: (e && e.name) || null, subgroup: (x && x.subgroupLabel) || null,
+            return {eventName: (e && e.name) || null, subgroup: (x && x.subgroupLabel) || null, eventType: (e && e.eventType) || null,
                     startMs: Number.isFinite(startMs) ? startMs : null};
         }).catch(e => {
             console.warn('event for the title', e);
@@ -374,6 +375,29 @@ export async function main() {
         });
     };
     let rec = null, cp = null, flushTimer = null, saving = false;   // the recording (below), used by the OBS link too
+    let recSg = null;   // the event whose name went into this recording
+    let stopping = null;   // the recording being stopped (its result being asked for)
+    /*
+     * Your result for the report's summary (caffecter.com): your place among the finishers so far (riders finishing
+     * later are behind you), how many finished and started. Only counts and your own place: nothing about other riders
+     * goes into the recording. Sauce's results are Zwift's, in finishing order; yours may take a few seconds to appear.
+     */
+    const raceResult = async (sg, myId) => {
+        for (let i = 0; i < RESULT_TRIES; i++) {
+            const rows = await Common.rpc.getEventSubgroupResults(sg).catch(() => null);
+            if (Array.isArray(rows)) {
+                const done = rows.filter(x => x && !x.dnf);
+                const k = done.findIndex(x => x.profileId === myId);
+                if (k >= 0 || i === RESULT_TRIES - 1) {
+                    return {sg, place: k >= 0 ? k + 1 : null, finishers: done.length,
+                            started: rows.filter(x => x && !x.dns).length,
+                            timeMs: k >= 0 && done[k].activityData ? done[k].activityData.durationInMilliseconds ?? null : null};
+                }
+            }
+            await new Promise(res => setTimeout(res, RESULT_WAIT_MS));
+        }
+        return null;
+    };
     // ----- OBS: the video clocks (and recording OBS with the race) -----
     const clock = new VideoClock();
     let obs = null, obsConnecting = false;
@@ -548,6 +572,7 @@ export async function main() {
     const startRec = async ({rehearsing = false} = {}) => {
         if (rec) return;
         rec = new CaptureRecorder({meta: {app: 'director-sportif', version: DS_VERSION, routeId, routeName, rehearsal: rehearsing || undefined}});
+        recSg = null;
         cp = new Checkpoint(store, {name: `ds-${rehearsing ? 'rehearsal' : 'capture'}-${stamp(rec.startedAt)}`, rec, release: true});
         await cp.begin();
         // the video clocks as they stand (OBS already recording / streaming)
@@ -564,6 +589,16 @@ export async function main() {
     };
     const stopRec = async () => {
         if (!rec) return;
+        // your result, while the recording is still open (a race left early or stopped by hand: no place); a second
+        // Stop while it's asked stops at once
+        const sg = recSg, into = rec;
+        recSg = null;
+        stopping = into;
+        if (sg && lastMe && lastMe.athleteId != null) {
+            const res = await raceResult(sg, lastMe.athleteId).catch(e => console.warn('race result', e));
+            if (res && rec === into) into.event(Date.now(), res);
+        }
+        if (rec !== into) return;
         if (obsStarted.get() && obs && obs.connected) {
             obs.stopRecord().then(() => obsStarted.set(false)).catch(e => console.warn('OBS stop', e));
         }
@@ -678,6 +713,14 @@ export async function main() {
             mySg = r.me.state.eventSubgroupId || null;
             myName = (r.me.athlete && r.me.athlete.sanitizedFullname) || myName;
             noteEvent(mySg);
+            // your event's name into the recording, once per event (the report's title and summary)
+            if (rec && rec !== stopping && mySg && recSg !== mySg) {
+                const sg = recSg = mySg, into = rec;
+                evInfo.ready.then(v => {
+                    if (rec === into) into.event(Date.now(), {sg, name: (v && v.eventName) || null, subgroup: (v && v.subgroup) || null,
+                                                              type: (v && v.eventType) || null});
+                });
+            }
             if (mySg && rehearsal) endRehearsal('rehearsal ended: you joined an event').catch(e => console.error('rehearsal', e));
             auto.tick(lastTick, {sg: r.me.state.eventSubgroupId,
                                  finished: r.me.remainingType === 'event' && Number.isFinite(r.me.remaining) && r.me.remaining <= 0,

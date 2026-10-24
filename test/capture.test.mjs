@@ -74,3 +74,14 @@ test('the version in a recording is the mod\'s (DS_VERSION = manifest.json)', as
     const manifest = JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
     assert.equal(v, manifest.version);
 });
+
+test('capture: your event and your result are kept, counts only', () => {
+    const rec = new CaptureRecorder({meta: {}, now: 1});
+    rec.tick(10, [entry(1, {self: true})]);
+    rec.event(11, {sg: 7, name: 'Points Race', subgroup: 'B'});
+    rec.event(99, {sg: 7, place: 13, finishers: 25, started: 27, timeMs: 2_600_000});
+    const cap = readCapture([rec._metaLine(), ...rec._lines].join('\n'));
+    assert.equal(cap.ticks.length, 1);
+    assert.deepEqual(cap.events.map(e => e.event), [{sg: 7, name: 'Points Race', subgroup: 'B'},
+        {sg: 7, place: 13, finishers: 25, started: 27, timeMs: 2_600_000}]);
+});

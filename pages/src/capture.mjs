@@ -90,6 +90,11 @@ export class CaptureRecorder {
         this._lines.push(JSON.stringify({t, video: change}));
     }
 
+    /* Your event (docs/CAPTURE.md): {sg, name, subgroup, type (Zwift's eventType: RACE, GROUP_RIDE…)} when it's known, {sg, place, finishers, started, timeMs} at the end. */
+    event(t, info) {
+        this._lines.push(JSON.stringify({t, event: info}));
+    }
+
     /* engine/checkpoint.mjs: the first n lines are stored; drop them from memory. */
     releaseLines(n) {
         this._lines.splice(0, n);
@@ -99,7 +104,7 @@ export class CaptureRecorder {
 
 /*
  * A capture file's text back into ticks: {meta, ticks: [{t, me, riders: [{id, worldTime, roadId, …}], call}],
- * marks: [{t, mark}], videos: [{t, video}]}. For the analysis and the tests.
+ * marks: [{t, mark}], videos: [{t, video}], events: [{t, event}]}. For the analysis and the tests.
  */
 export function readCapture(text) {
     const lines = String(text).split('\n').filter(Boolean);
@@ -107,7 +112,7 @@ export function readCapture(text) {
     if (!head.__capture) throw new Error('not a capture file');
     const fields = head.fields || RIDER_FIELDS;
     const last = new Map();
-    const ticks = [], marks = [], videos = [];
+    const ticks = [], marks = [], videos = [], events = [];
     for (const l of lines.slice(1)) {
         const x = JSON.parse(l);
         if (x.mark) {
@@ -118,6 +123,10 @@ export function readCapture(text) {
             videos.push(x);
             continue;
         }
+        if (x.event) {
+            events.push(x);
+            continue;
+        }
         const riders = (x.r || []).map(([id, ...vals]) => {
             const p = last.get(id) || [];
             const full = fields.map((_, i) => (vals[i] === undefined || vals[i] === null ? p[i] : vals[i]));
@@ -126,5 +135,5 @@ export function readCapture(text) {
         });
         ticks.push({t: x.t, me: x.me, riders, call: x.c || null});
     }
-    return {meta: head.meta, fields, ticks, marks, videos};
+    return {meta: head.meta, fields, ticks, marks, videos, events};
 }

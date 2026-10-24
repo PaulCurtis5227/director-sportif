@@ -29,7 +29,9 @@ Zwift profile as Sauce has it (name, weight, height, FTP) and your heart rate. I
 Not recorded for other riders: names, Zwift ids, power, cadence, heart rate, weight, height, chat.
 
 **The director's call** at each tick, your **marks** (the Mark button) and, with the OBS link on, when your OBS
-recording and stream started (so a moment can be found in your video).
+recording and stream started (so a moment can be found in your video). In an event, its name, category and type, and
+when the recording stops, **your result** from Sauce: your place and how many riders finished and started (counts only,
+nothing about any other rider).
 
 ## The format
 
@@ -47,6 +49,7 @@ Then one line per tick:
 
 `values` follow the header's `fields`; a value that didn't change since that rider's last row is `null`, and trailing
 unchanged values are left off. `readCapture(text)` in `capture.mjs` puts them back. Marks are `{"t", "mark"}` lines,
-video clocks `{"t", "video": {kind, event, startMs}}`.
+video clocks `{"t", "video": {kind, event, startMs}}`, your event `{"t", "event": {sg, name, subgroup, type}}` and
+your result `{"t", "event": {sg, place, finishers, started, timeMs}}`.
 
 At about 3.5–6 MB an hour (gzipped), a two-hour race is ~10 MB.
