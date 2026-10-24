@@ -58,10 +58,26 @@ export function deliveryKey(type, how) {
 }
 
 /*
- * Defaults for every delivery key. old = the settings before per-type delivery (speakCalls, speechChime): whoever
- * had the voice on keeps it, except being passed, which gets the chime alone.
+ * Spoken from the start on a fresh install (v0.43.0, the user: "make the installation experience as painless as
+ * possible": a new rider heard nothing until they found the Calls tab). Not bends and habits (frequent, nice to have),
+ * not being passed (a chime suits it), not the tuck and take-the-wheel (chime only: words come too late).
+ */
+export const FRESH_VOICE = ['gap', 'pass', 'blocked', 'moveUp', 'pacing', 'sprint', 'powerup', 'card', 'surface'];
+
+/*
+ * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
+ * choices always stay. old = the settings so far: a fresh install (no call settings at all) gets FRESH_VOICE spoken;
+ * before per-type delivery there was one voice switch (speakCalls, speechChime): whoever had the voice on keeps it,
+ * except being passed, which gets the chime alone.
  */
 export function deliveryDefaults(old = {}) {
+    const fresh = old.speakCalls === undefined &&
+        !CALL_TYPES.some(t => DELIVERY.some(how => old[deliveryKey(t.id, how)] !== undefined));
+    if (fresh) {
+        const out = deliveryDefaults({speakCalls: false});
+        for (const id of FRESH_VOICE) out[deliveryKey(id, 'voice')] = true;
+        return out;
+    }
     const voice = old.speakCalls === true;
     const chime = voice && old.speechChime !== false;
     const out = {};

@@ -4,11 +4,12 @@
 A [Sauce for Zwift](https://www.sauce.llc) mod: a director sportif in your ear. It reads the pack, the road and the race
 from Sauce and tells you, in a word or two, what to do now. Its meters show on a display you lay out yourself.
 
-## Two windows
+## Two windows (open both)
 
-- **Director Sportif**: the director. It runs the meters and the calls and shows a short status (the call now, your
-  route and race card, whether data is coming). Keep it open: the Grid shows nothing without it. Its gear holds your
-  bike, CdA, FTP and FRC, how each call reaches you, and your race card plan.
+- **Director Sportif**: the director, the part that thinks. It reads Sauce's data, works out the meters and makes the
+  calls, and shows a short status (the call now, your route and race card, whether data is coming). **Keep it open
+  while you ride** (it can sit behind Zwift): close it and the meters and calls stop. Its gear holds your bike, CdA,
+  FTP and FRC, how each call reaches you, your race card plan, recording and OBS.
 - **Director Sportif — Grid**: the display. The slots, sizes and yellow / red thresholds you set with its gear. It
   computes nothing: it shows what the Director Sportif window publishes (described in [`docs/DS-DATA.md`](docs/DS-DATA.md);
   any window of the mod can listen on the same channel).
@@ -17,8 +18,8 @@ from Sauce and tells you, in a word or two, what to do now. Its meters show on a
 
 Each shows a number, and a word under it when there's something to do ("back off", "ease off", "block left").
 
-- **Position**: what your spot costs against the best-placed rider in your group. Blank behind a rider who gives no
-  draft (a hand cycle): "change wheel".
+- **Position**: what your spot in the group costs you in watts, against the best spot at your speed (4–6 m back on a
+  fast descent, not on the wheel). Blank behind a rider who gives no draft (a hand cycle): "change wheel".
 - **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
@@ -68,6 +69,21 @@ you ride); in a time trial a bike that isn't a TT bike turns it red.
 Settings ▸ Mods in Sauce: enable Director Sportif, then open **Director Sportif** and **Director Sportif — Grid**.
 Right-click a window to show its title bar; the gear opens its settings. A manifest change (a new version) needs a full
 Sauce quit.
+
+### First setup (two minutes)
+
+1. **Choose how you hear the calls.** Out of the box the main calls are spoken (the gap, your pass, blocked, move
+   up, steep, the finish, power-ups, race card, surfaces) and a few kinds chime. Director Sportif's gear ▸ **Calls**:
+   tick **Voice** and / or **Chime** per kind. Bends and habits are off to start with; a chime alone suits being
+   passed.
+2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
+   use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
+   Zwift profile's FTP and 15 kJ).
+3. **Lay out the Grid.** It starts with Position, Holding, Blocked, Passing, Pack cost, Gap, L/R and Tuck. Its gear
+   adds, removes and orders slots and sets their yellow / red ranges. Place it over Zwift, or capture it in OBS.
+
+Then ride: the meters fill once you're in a group, and the Grid says "waiting for the Director Sportif window" whenever
+that window is closed.
 
 ## Recording
 

@@ -61,6 +61,7 @@
  * "give room" (a habit), the feather call, and draftless is its own state (Position's no-draft wheel said "change wheel").
  * v0.42.0: Blocked counts spikes on fast descents again within 5.5 m of the wheel (engine/blocking.mjs FAST_DESCENT_CLOSE_M):
  * there they are the cost of sitting close (research/2026-10-24/pack-speed.mjs), not the draft swinging.
+ * v0.43.0: a fresh install speaks the main calls (calls.mjs FRESH_VOICE); existing riders keep their own choices.
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -84,7 +85,7 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.42.0';
+export const DS_VERSION = '0.43.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
