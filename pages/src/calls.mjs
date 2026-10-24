@@ -48,7 +48,7 @@ export const CALL_TYPES = [
      'gains ground (after the draft it costs), "stay close" when you are on the outside and will lose ground',
      tones: [700, 940]},
     {id: 'nudge', label: 'Habits', hint: 'a habit worth changing, after it lasts: pushing into the wheel, moving up the ' +
-     'middle, sitting on the front, off the wheel in a small group (each at most every 5 min)', tones: [520, 660]},
+     'middle, sitting on the front, off the wheel in a small group, crowding the wheel (each at most every 5 min)', tones: [520, 660]},
 ];
 export const DELIVERY = ['chime', 'voice'];
 

@@ -17,7 +17,7 @@ export const CHANNEL = 'director-sportif/v1';
 
 /*
  * Every meter's states: the word a display shows (active words for advice; '' = nothing to show) and a one-line
- * help for tooltips (the long explanation, no numbers). The common states (alone, settling, coasting, warming, no-draft, none)
+ * help for tooltips (the long explanation, no numbers). The common states (alone, settling, coasting, warming, draftless, none)
  * show no word.
  */
 const COMMON = {
@@ -25,7 +25,7 @@ const COMMON = {
     settling: {word: '', help: 'You just teleported: power and speed don\'t match for a few seconds.'},
     coasting: {word: '', help: 'Coasting: the draft only adds speed, it saves no pedaling watts.'},
     warming: {word: '', help: 'Filling the averaging window.'},
-    'no-draft': {word: '', help: 'You get no draft (a TT bike in a group, or a time trial): the pack meters and their calls are off.'},
+    draftless: {word: '', help: 'You get no draft (a TT bike in a group, or a time trial): the pack meters and their calls are off.'},
     none: {word: '', help: ''},
 };
 
@@ -137,7 +137,7 @@ export const CALL_WORDS = {
     moveUp: {prep: 'climb', move: 'move up', hold: 'hold spot', late: 'stay in line'},
     sprint: {position: 'top ten', good: 'good spot', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
              'keep-going': 'keep going', ease: 'ease off', 'ease-ftp': 'ease to FTP', window: 'you can go', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
-    nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line'},
+    nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line', crowd: 'give room'},
 };
 
 /*
@@ -207,6 +207,12 @@ export function directorCalls(ds) {
         out.push({id: 'bend', state: `${b.state}-${b.side}`, word: b.state === 'open' ? `inside ${b.side}` : 'stay close',
                   in: b.state === 'open' ? roundIn(b.inS) : null, for: null, priority: 45});   // stay close: now
     }
+    // the feather you hold, for the steepest 30 s ahead (the finish's power-ups come from the sprint coach)
+    const f = ds && ds.feather;
+    if (f && (f.state === 'ready' || f.state === 'fire')) {
+        out.push({id: 'powerup', state: `feather-${f.state}`, word: f.state === 'fire' ? 'FEATHER now' : 'hold FEATHER',
+                  in: f.state === 'ready' ? roundIn(f.inS) : null, for: null, priority: f.state === 'fire' ? 75 : 50});
+    }
     const n = !draftless && ds && ds.nudge;
     if (n && CALL_WORDS.nudge[n.state]) {
         out.push({id: 'nudge', state: n.state, word: CALL_WORDS.nudge[n.state], in: null, for: null, priority: n.priority});
@@ -266,14 +272,14 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     const alone = !(ds.groupSize >= 2);
     // no draft at all (a TT bike, a time trial): the pack meters have nothing to say (v0.40.0)
     const draftless = !settling && !alone && !!ds.draftless;
-    const common = settling ? 'settling' : alone ? 'alone' : draftless ? 'no-draft' : null;
+    const common = settling ? 'settling' : alone ? 'alone' : draftless ? 'draftless' : null;
     const pack = x => (draftless ? null : x);
 
     const blockedState = common || (ds.blocked ? (ds.blockedSide ? `blocked-${ds.blockedSide}` : 'blocked') : 'clear');
     let passState = 'none';
     if (ds.passKind === 'attack') passState = ds.passAtWheel ? 'drop-back' : ds.passWide ? 'too-slow' : 'go-wide';
     else if (ds.passKind === 'defend') passState = DEFEND_STATE[ds.passWhere] || 'none';
-    if (draftless) passState = 'no-draft';
+    if (draftless) passState = 'draftless';
     const gapState = ds.noDraftWheel ? 'no-draft' : Number.isFinite(ds.gapM) ? 'wheel' : ds.beside ? 'beside' : 'no-wheel';
     const sideState = !Number.isFinite(ds.sideM) ? 'no-wheel' : ds.beside ? 'beside' : 'inline';
     const t = ds.tuck;

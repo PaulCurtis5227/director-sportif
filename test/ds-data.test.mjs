@@ -139,3 +139,14 @@ test('bend call: "inside left / right" when the inside is open, "stay close" on 
     assert.equal(callWords(out), 'stay close', 'now, not at the bend');
     assert.deepEqual(directorCalls({bend: null}), []);
 });
+
+test('give room (a habit call) and the feather call before the steepest part', async () => {
+    const {directorCalls} = await import('../pages/src/ds-data.mjs');
+    const {callWords} = await import('../pages/src/calls.mjs');
+    const [room] = directorCalls({nudge: {state: 'crowd', priority: 18}});
+    assert.deepEqual([room.id, room.word], ['nudge', 'give room']);
+    const [ready] = directorCalls({feather: {state: 'ready', inS: 22, grade: 0.07}});
+    assert.equal(callWords(ready), 'hold FEATHER in 20');
+    assert.equal(ready.id, 'powerup');
+    assert.equal(callWords(directorCalls({feather: {state: 'fire', inS: 1}})[0]), 'FEATHER now');
+});

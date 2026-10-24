@@ -57,6 +57,8 @@
  *   bend          a bend ahead (engine/bend-live.mjs bendCue, from the Data Tap; v0.40.0): {state: 'open' (the inside
  *                 is open: moving over gains ground) | 'outside' (you're on the outside: stay close), side ('left' |
  *                 'right', the bend's way), inS, moveM, gainM, lossM} or null; the same state two ticks running
+ *   feather       the feather power-up you hold, for the steepest 30 s ahead (engine/powerup-cue.mjs featherCue, from
+ *                 the Data Tap; v0.41.0): {state: 'ready' | 'fire', inS (to the steepest part), grade} or null
  *   pacing        the climb ahead (engine/pacing-cue.mjs, from the Data Tap): {state: 'steep' (a steep part ahead:
  *                 inS to it, forS how long it lasts, grade) | 'top' (the crest close while climbing: inS)} or null
  *   frc           your anaerobic reserve (engine/frc-live.mjs, the Data Tap's model): {leftJ, frac, lowJ} or null
@@ -68,12 +70,12 @@
  *   cda           the CdA in use; cdaSource says where it comes from
  *   groupSize     riders in your group (chained ≤ 1 s apart), you included
  *   draftless     you get no draft at all (draftless.mjs: 0 W on a wheel for 20 s; a TT bike, a time trial): the pack
- *                 meters read 'no-draft' and their calls stop (ds-data.mjs)
+ *                 meters read 'draftless' and their calls stop (ds-data.mjs)
  *   settling      you just teleported (group hop): power and speed don't match for ~15 s
  */
 
 import {freshEntries, DraftClassifier} from './engine/riders-live.mjs';
-import {wheelsAhead} from './engine/wheels.mjs';
+import {wheelsAhead, gapBehind} from './engine/wheels.mjs';
 import {GapCurve, groupLayout} from './engine/gap-curve.mjs';
 import {packSituation, packCostW, packCostNote, packCostState, foreAftW, UNIT_PER_M} from './engine/pack-cost.mjs';
 import {TeleportGuard} from './engine/teleport.mjs';
@@ -88,7 +90,8 @@ import {tuckState, TuckDrag} from './engine/supertuck.mjs';
 import {BendMap, lateralSituation, bendCue} from './engine/bend-live.mjs';
 import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
-import {predictedCap} from './engine/draft-live.mjs';
+import {predictedCap, crowdingCue} from './engine/draft-live.mjs';
+import {featherCue} from './engine/powerup-cue.mjs';
 import {withSpeeds, secsAlong} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
@@ -299,11 +302,15 @@ export class MeterEngine {
                                   crr: model.crr, kind: settling ? null : TuckDrag.kind(tuck, tuckIn), powerUp: s.activePowerUp});
         }
 
+        // crowding the wheel (under 1 m at full draft: a habit, "give room"; draft-live.mjs crowdingCue)
+        const crowding = !!(me.self && !settling && !draftless && ahead &&
+            crowdingCue({q: draftQ, aheadGap: ahead.gap, aheadLane: ahead.lane, ahead20: ahead.counts[2],
+                         powerUp: s.activePowerUp, behindGap: gapBehind(entries, me.athleteId)}).state === 'crowding');
         // habits (yours only): quiet before a climb, in the finish (2 km) and under a power-up, as in the Data Tap
         const finale = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 2000;
         const nudge = settling || !me.self ? null : this.nudgeCoach.update({
             wt: s.worldTime, size: L.size, ahead: L.ahead, holdW: hold.w, relMs: Number.isFinite(L.vGroup) ? v - L.vGroup : 0,
-            depthM: lateralDepth(entries, me), q: draftQ, gapAhead: L.gapAhead ?? null, positionW: pos.w,
+            depthM: lateralDepth(entries, me), q: draftQ, gapAhead: L.gapAhead ?? null, positionW: pos.w, crowding,
             quiet: !!(climb && climb.state) || finale || !!s.activePowerUp});
         // the race card for this route (yours only, in an event)
         const cardCall = settling || !me.self || !this.raceCards ? null :
@@ -362,6 +369,11 @@ export class MeterEngine {
                 this.bendLast = key;
             }
         }
+        // the feather you hold: at the steepest 30 s ahead (not on a TT bike: held is null there)
+        const fc = me.self && !settling && roadAhead && held === 'LIGHTNESS' ?
+            featherCue({held, profile: roadAhead, v, grade: s.grade || 0}) : null;
+        const feather = fc && fc.state ? {state: fc.state, inS: secsAlong(roadAhead, fc.startM, this.pace.vFlat ?? v),
+                                          grade: fc.grade} : null;
         const ds = {
             ts: s.worldTime,
             gapM: inline ? inline.gap : null,
@@ -391,7 +403,7 @@ export class MeterEngine {
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
-            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend,
+            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, feather,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
             card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
                               power: cardCall.power || null, held: cardCall.held || null, note: cardCall.note || null,

@@ -29,7 +29,7 @@ test('only on a wheel close ahead that gives draft: alone, far back or behind a 
     assert.equal(feed(w, 60, {draft: 0, gapM: 2, noDraftWheel: true}, 200), false, 'that wheel gives no draft to anyone');
 });
 
-test('draftless: the pack meters read no-draft, no pack calls, no move up / habits / wheel calls; the rest stay', () => {
+test('draftless: the pack meters read draftless (not the no-draft wheel), no pack calls, no move up / habits / wheel calls; the rest stay', () => {
     const me = {self: true, state: {power: 250, speed: 40, draft: 0, grade: 0}};
     const ds = {groupSize: 6, draftless: true, positionW: 30, positionState: 'gapping', blocked: true, blockedW: 40,
                 passKind: 'defend', passWhere: 'behind', packW: 20, holdingW: 30,
@@ -37,7 +37,7 @@ test('draftless: the pack meters read no-draft, no pack calls, no move up / habi
                 sprint: {state: 'windup', priority: 90}, pacing: {state: 'steep', inS: 20, forS: 30}};
     const d = buildData({me, ds});
     for (const k of ['position', 'holding', 'pack', 'blocked', 'passing']) {
-        assert.equal(d.meters[k].state, 'no-draft', k);
+        assert.equal(d.meters[k].state, 'draftless', k);
         assert.equal(d.meters[k].level, null, `${k}: no level`);
     }
     assert.deepEqual(directorCalls(ds).map(c => c.id), ['pacing'], 'the climb call stays');
@@ -46,4 +46,12 @@ test('draftless: the pack meters read no-draft, no pack calls, no move up / habi
     assert.deepEqual(directorCalls({...ds, sprint: {state: 'keep-going', priority: 90}}).map(c => c.state), ['steep', 'keep-going']);
     // with draft: the same reading calls the gap
     assert.equal(engineCall(buildData({me, ds: {...ds, draftless: false}}), {...ds, draftless: false}).id, 'sprint');
+});
+
+test('draftless shows no word anywhere: the Grid must not say "change wheel" for a whole TT ride', async () => {
+    const {allWords} = await import('../pages/src/grid-fields.mjs');
+    const me = {self: true, state: {power: 250, speed: 40, draft: 0, grade: 0}};
+    const d = buildData({me, ds: {groupSize: 6, draftless: true, positionState: 'no-draft', positionW: 20}});
+    for (const [k, m] of Object.entries(d.meters)) assert.notEqual(m.state, 'no-draft', k);
+    assert.equal(allWords(d).text, null);
 });

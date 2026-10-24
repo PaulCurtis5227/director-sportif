@@ -37,7 +37,10 @@ const CAP_SAMPLES_MIN = 60;
 const RHO = 1.225, CRR = 0.0042, BIKE_KG = 5, F_MAX = 0.496;
 const guard = new TeleportGuard();   // other riders hop groups too (teleport.mjs)
 
-const speedScale = v => Math.max(0.5, Math.min(2, v * 3.6 / REF_KMH));
+// the penalty grows as (v/REF)² (DS 0.41.0, research/2026-10-24/descent-gap.mjs: ~v^1.6 flat, ~v^1.8–1.9 on descents;
+// by v the best range at 45 km/h started at 0 m, so "back off" never came on a fast descent); clamped as before
+export const PENALTY_EXP = 2;
+const speedScale = v => Math.min(2 ** PENALTY_EXP, Math.max(0.5 ** PENALTY_EXP, (v * 3.6 / REF_KMH) ** PENALTY_EXP));
 const center = i => (GAP_EDGES[i] + GAP_EDGES[i + 1]) / 2;
 const median = a => {
     const s = [...a].sort((x, y) => x - y);

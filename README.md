@@ -43,11 +43,12 @@ windows always show it. Times are in seconds, never meters.
 - **Climbs**: "climb in 90", "move up" 60–45 s before it, "hold spot" or "stay in line"; "steep in 20 for 30",
   "over top in 15". From your route: it works alone, from the start.
 - **The finish**: "top ten in 120", "get a wheel", "go first", "go wide", "dig in" (a rider closing fast), "keep
-  going"; power-ups by Zwift's names ("hold VAN in 25", "AERO now"): advice only, never fired for you.
+  going"; power-ups by Zwift's names ("hold VAN in 25", "AERO now"): advice only, never fired for you. A feather you
+  hold gets its own call before a climb: "hold FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
 - **The road**: "dirt in 15 for 40"; "coast" when you're fast enough to supertuck; bends: "inside left in 6" when the
   inside is open and moving over gains ground, "stay close" when you're on the outside of the bunch.
-- **Habits**, now and then: "use edge", "sit in", "get in line", "ease off".
+- **Habits**, now and then: "use edge", "sit in", "get in line", "ease off", "give room" (under a meter off the wheel).
 
 On a bike that gets no draft (a TT bike in a group ride, or any bike in a time trial) the pack calls go quiet by
 themselves after 20 s on a wheel with no draft: no "gap opening", "drop back" or "hold line" for a draft you don't get.

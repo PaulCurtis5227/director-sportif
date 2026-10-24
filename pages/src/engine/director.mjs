@@ -168,12 +168,15 @@ export class Director {
  * edge, Innsbruck), sitting on the front of a group (40–70 W of draft), and riding off a wheel in a SMALL group (10–50 W;
  * in a big bunch it barely matters). A nudge needs the habit to last (holdS), then that nudge rests for COOLDOWN_S and
  * all nudges for GAP_S. Quiet before a climb and in the finale, where the real calls take over.
+ * v0.68.4 (DS 0.41.0): crowding the wheel (draft-live.mjs crowdingCue 'crowding': under 1 m at full draft, ~+5 W for the
+ * same speed, 2026-09-27 pack data): "give room", from the Data Tap's on-screen cue.
  */
 export const NUDGE = {
     wheel: {holdS: 30, priority: 20},
     middle: {holdS: 10, priority: 22},
     front: {holdS: 20, priority: 21},
     line: {holdS: 15, priority: 19},
+    crowd: {holdS: 10, priority: 18},
 };
 export const NUDGE_COOLDOWN_S = 300;
 export const NUDGE_GAP_S = 60;
@@ -214,7 +217,7 @@ export class NudgeCoach {
 
     /*
      * x: {wt (ms), size, ahead, holdW, relMs (you − group speed), depthM, q (draft / your max), gapAhead (m),
-     *     positionW, quiet (climb or finale coming)}
+     *     positionW, crowding (crowdingCue says 'crowding'), quiet (climb or finale coming)}
      */
     update(x) {
         const wt = x.wt;
@@ -228,6 +231,7 @@ export class NudgeCoach {
             middle: inGroup && x.size >= 6 && moving && x.depthM != null && x.depthM > DEEP_INSIDE_M,
             front: x.size >= 6 && x.ahead === 0,
             line: inGroup && x.size < SMALL_GROUP && x.ahead > 0 && x.gapAhead != null && x.gapAhead < 4 && x.q != null && x.q < 0.8,
+            crowd: inGroup && !!x.crowding,
         };
         for (const k of Object.keys(now)) {
             if (!now[k]) delete this.since[k];
@@ -244,6 +248,7 @@ export class NudgeCoach {
             middle: 'Moving up through the middle costs 4x: go round the edge',
             front: `Front of the group: sit in${w(x.positionW)}`,
             line: 'Small group: line up right behind a wheel',
+            crowd: 'Crowding the wheel: under a meter costs ~5 W for the same speed, 2–3 m keeps the full draft',
         }[k];
         const call = {id: 'nudge', state: k, priority: NUDGE[k].priority, text};
         this.lastAt[k] = wt;

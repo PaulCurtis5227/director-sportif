@@ -46,7 +46,7 @@ below). A display may override them with the rider's own thresholds.
 ## The meters
 
 Common states, used by every meter with nothing to read: `alone` (no group) · `settling` (just teleported)
-· `coasting` (under 30 W in a group) · `warming` (filling the window) · `no-draft` (you get no draft at all: 0 W on a
+· `coasting` (under 30 W in a group) · `warming` (filling the window) · `draftless` (you get no draft at all: 0 W on a
 wheel for 20 s, a TT bike in a group or a time trial; Position, Holding, Pack cost, Blocked and Passing, and their
 calls, plus move up, habits and the finish's wheel calls, v0.40.0) · `none` (nothing to show here). No word is shown
 for them; the value is 0 (watt meters) or blank (the rest).
@@ -100,9 +100,9 @@ if there is one ("steep in 25", "AERO in 12"); the chime is the call `id`'s own 
 | Being passed (`passed`) | `left` block left · `right` block right · `behind` hold line | — | 60 |
 | Tuck (`tuck`) | `stop` coast | — | 40 |
 | Move up (`moveUp`) | `prep` climb · `move` move up · `hold` hold spot · `late` stay in line | in: to the climb | 40 / 80 / 60 / 30 |
-| Nudge (`nudge`) | `wheel` ease off · `middle` use edge · `front` sit in · `line` get in line | — | 19–22 |
+| Nudge (`nudge`) | `wheel` ease off · `middle` use edge · `front` sit in · `line` get in line · `crowd` give room (under 1 m off the wheel at full draft for 10 s: ~5 W for the same speed; v0.41.0) | — | 18–22 |
 | Sprint (`sprint`) | `position` top ten · `good` good spot · `windup` get a wheel · `last` last wheel, be ready · `last-go` jump now · `window` you can go · `take-wheel-light` / `-medium` / `-hard` wheel, jump light / medium / hard (call id `wheel`, last km, at the moment to jump; `take-wheel` wheel, jump without FTP / model) · `closer` dig in · `keep-going` keep going · `ease-ftp` ease to FTP · `ease` ease off (both also at contested race-card intermediates: `intermediate: true`, `remainingM` to its line) · `shake-left` drift left · `shake-right` drift right | in: to the line | 55–94; `targetW`: the power you can hold to the line leaving 3 kJ |
-| Power-up (`powerup`) | `ready-<name>` AERO · `fire-<name>` AERO now · `hold-<name>` hold AERO | in: until it should fire | 70–95 |
+| Power-up (`powerup`) | `ready-<name>` AERO · `fire-<name>` AERO now · `hold-<name>` hold AERO · `feather-ready` hold FEATHER · `feather-fire` FEATHER now (the feather you hold, at the steepest 30 s of a climb ahead, 3%+; v0.41.0) | in: until it should fire | 70–95 (feather 50 / 75) |
 | Climb pacing (`pacing`) | `steep` steep (a part averaging 5%+; on a climb only 1.5 points steeper than where you are) · `top` over top (after 30 s of climbing, 5–15 s out) | in: to the steep part / the top; for: how long it's steep | 35 |
 | Bend (`bend`) | `open-left` / `open-right` inside left / right (the inside is open: moving over gains ground after the draft it costs) · `outside-left` / `outside-right` stay close (you're on the outside: you'll lose ground) | in: to the bend (inside only) | 45 |
 | Surface (`surface`) | `wood` · `dirt` · `cobbles` · `brick` (the word is the surface) | in: to it; for: how long | 20 |

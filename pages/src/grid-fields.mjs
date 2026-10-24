@@ -22,7 +22,7 @@ import {callWords} from './calls.mjs';
 export const METER_OF = {
     'ds-position': 'position', 'ds-holding': 'holding', 'ds-pack': 'pack', 'ds-blocked': 'blocked',
     'ds-pass': 'passing', 'ds-gap': 'gap', 'ds-side': 'side', 'ds-tuck': 'tuck', 'ds-group': 'group', 'ds-cda': 'cda',
-    'ds-surface': 'surface', 'ds-frc': 'frc', 'ds-demand': 'demand',
+    'ds-surface': 'surface', 'ds-frc': 'frc', 'ds-demand': 'demand'
 };
 
 const NAMES = {
