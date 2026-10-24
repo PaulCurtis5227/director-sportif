@@ -13,6 +13,14 @@ import {gapBetween} from './wheels.mjs';
 export const POSITION_TAU_S = 10;   // smoothing while the group zero isn't there yet (the group zero is smoothed already)
 export const COAST_W = 30;          // below this you are coasting: draft only adds speed, Position is blank
 export const NO_DRAFT_NOTE = 'no draft from this wheel (hand cycle or recumbent?): find another';
+// The best gap is picked at no more than this speed: the curve was fitted on flat road at ~30–45 km/h (gap-curve.mjs),
+// and above it the "too close" penalty (× v) loses to the draft (× v³), so the best range slid to 0–1 m on every fast
+// descent (Urumaze 2026-10-06, 50–58 km/h: "close up to 0.0–1.0 m" while 1.5 m off the wheel). The watts still use
+// your real speed.
+export const BEST_ADVICE_KMH = 45;
+// Advice names a gap only when the gap itself is worth this much on the curve. Below it, what Position shows is draft
+// you didn't get at that gap (the wheel moving about in a small group, or you off its line): 'unsteady'.
+export const GAP_ADVICE_MIN_W = 5;
 
 /*
  * Your spot can't be improved by a gap: the wheel in line gives no draft and is the only rider within 20 m ahead,
@@ -32,6 +40,19 @@ export function noDraftSpot(draftClass, {ahead, L, layout, entries, me, maxGapM 
 }
 
 /*
+ * The best spot for advice: the curve's best range at min(v, BEST_ADVICE_KMH) (your air drag scaled to that speed),
+ * and its saving at your real speed (the curve over that range, every half meter).
+ */
+export function adviceBest(gapCurve, aeroW, v) {
+    const vc = BEST_ADVICE_KMH / 3.6;
+    if (!(v > vc)) return gapCurve.best(aeroW, v);
+    const b = gapCurve.best(aeroW * (vc / v) ** 3, vc);
+    const at = [];
+    for (let g = b.lo + 0.25; g < b.hi; g += 0.5) at.push(gapCurve.savingW(g, aeroW, false, v));
+    return {...b, savingW: at.length ? at.reduce((x, y) => x + y, 0) / at.length : gapCurve.savingW(b.gap, aeroW, false, v)};
+}
+
+/*
  * Your spot vs the ideal spot. expected = the real saving where you sit: Zwift's reported draft minus the pack cost of
  * your spot (pack-cost.mjs packCostW, the same number Holding and the Pack cost meter use, so the three add up;
  * v0.56.0, was the gap curve's "too close" penalty). positionW = what the ideal spot at your speed saves on top
@@ -41,21 +62,23 @@ export function noDraftSpot(draftClass, {ahead, L, layout, entries, me, maxGapM 
  * in a group of 3–5: research/2026-10-19/position-abs.mjs). Your saving is the 10 s smoothed share when known.
  * modelW = the power keeping your place needs there: your solo need minus that saving, plus matching your group's
  * speed.
+ * gapW = what the curve says your gap itself costs against the best range (null without a wheel in line).
  * c = physics.mjs powerComponents for you now; L = gap-curve.mjs groupLayout entry; s = your state; v in m/s.
  */
 export function spotCost(gapCurve, L, c, s, v, athleteId, packW = 0) {
     const aero = c.aero;
     const inGroup = L.size >= 2;
     const draftW = s.draft || 0;
-    const best = gapCurve.best(aero, v);
+    const best = adviceBest(gapCurve, aero, v);
     const boxed = L.gapBehind != null && L.gapBehind < BOXED_M;
+    const gapW = inGroup && L.gapAhead != null ? Math.max(0, best.savingW - gapCurve.savingW(L.gapAhead, aero, boxed, v)) : null;
     const expectedW = Math.max(0, draftW - (packW || 0));
     // Your saving: the 10 s smoothed share (groupShare's mine) once known, else now (smoothed by PositionSmoother)
     const g = inGroup ? gapCurve.groupShare(athleteId, L) : null;
     const positionW = !inGroup || s.activePowerUp ? 0 : Math.max(0, best.savingW - (g ? g.mine * aero : expectedW));
     const vg = inGroup && Number.isFinite(L.vGroup) ? L.vGroup : v;
     const slope = v > 1 ? (3 * Math.max(0, aero - expectedW) + c.roll) / v : 0;
-    return {expectedW, best, boxed, positionW, smoothed: !!g, modelW: c.solo - expectedW + slope * (vg - v), groupW: slope * (vg - v)};
+    return {expectedW, best, boxed, gapW, positionW, smoothed: !!g, modelW: c.solo - expectedW + slope * (vg - v), groupW: slope * (vg - v)};
 }
 
 /* Smooths Position over POSITION_TAU_S of world time unless the value comes smoothed (the group zero). */
@@ -85,23 +108,31 @@ export class PositionSmoother {
 /* One line: the move that saves the most from where you sit (gaps centre to centre, as "Gap"). */
 /*
  * The same advice as a state code (docs/DS-DATA.md): 'alone' | 'good' | 'sit-in' | 'boxed' | 'too-close' |
- * 'close-up' | 'find-wheel'. "Drift to the back" mid-bunch is 'too-close' too (both mean: get more room).
+ * 'close-up' | 'find-wheel' | 'unsteady'. "Drift to the back" mid-bunch is 'too-close' too (both mean: get more room).
+ * gapW = spotCost's gapW, the part of w your gap explains; the rest is draft you didn't get at that gap. Advice goes to
+ * the bigger part, and its "save" is that part only, so the move it names really saves that (Urumaze 2026-10-06:
+ * "too close: ease to 3.5–4.5 m, save ~80 W" 1.5 m off the wheel, where the curve gives the gap ~6 W). A gap worth
+ * under GAP_ADVICE_MIN_W is never the advice. null: not known, the whole of w goes to the gap as before.
  */
-export function positionState(w, best, L, boxed) {
+const unsteady = (w, gapW) => gapW != null && (gapW < GAP_ADVICE_MIN_W || w - gapW > gapW);
+
+export function positionState(w, best, L, boxed, gapW = null) {
     if (!L || L.size < 2) return 'alone';
     if (!(w >= 5)) return 'good';
     if (L.ahead === 0) return 'sit-in';
+    if (unsteady(w, gapW)) return 'unsteady';
     if (L.gapAhead != null && L.gapAhead < best.lo) return boxed ? 'boxed' : 'too-close';
     if (L.gapAhead != null && L.gapAhead > best.hi) return 'close-up';
     return 'find-wheel';
 }
 
-export function positionAdvice(w, best, L, boxed, fmt = (x, d) => x.toFixed(d)) {
+export function positionAdvice(w, best, L, boxed, fmt = (x, d) => x.toFixed(d), gapW = null) {
     if (L.size < 2) return 'no group';
     const range = `${fmt(best.lo, 1)}–${fmt(best.hi, 1)} m`;
     if (w < 5) return 'good spot';
-    const save = `save ~${fmt(w, 0)} W`;
-    if (L.ahead === 0) return `front of the group: sit in at ${range}, ${save}`;
+    if (L.ahead === 0) return `front of the group: sit in at ${range}, save ~${fmt(w, 0)} W`;
+    if (unsteady(w, gapW)) return `less draft than your gap gives: hold one wheel, in line, save ~${fmt(w - gapW, 0)} W`;
+    const save = `save ~${fmt(gapW != null ? Math.min(w, gapW) : w, 0)} W`;
     // Mid-bunch there is nearly always someone 1–2 m ahead (protocol H: median 0.9–1.8 m in every step), so the
     // room to sit off a wheel is at the back.
     const behind = L.size - 1 - L.ahead;

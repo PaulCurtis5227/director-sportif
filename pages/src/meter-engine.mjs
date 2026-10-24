@@ -407,8 +407,8 @@ export class MeterEngine {
             return {w: null, note: COASTING_NOTE, state: 'coasting'};
         }
         const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
-        return {w: L.size < 2 ? null : w, note: positionAdvice(w, spot.best, L, spot.boxed),
-                state: positionState(w, spot.best, L, spot.boxed)};
+        return {w: L.size < 2 ? null : w, note: positionAdvice(w, spot.best, L, spot.boxed, undefined, spot.gapW),
+                state: positionState(w, spot.best, L, spot.boxed, spot.gapW)};
     }
 
     /*

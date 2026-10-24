@@ -38,6 +38,7 @@ export const VOCAB = {
         boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
         'close-up': {word: 'close up', help: 'Too far off the wheel: close up to the best gap.'},
         'find-wheel': {word: 'find a wheel', help: 'Get on a wheel at the best gap.'},
+        unsteady: {word: 'hold a wheel', help: 'Less draft than your gap should give: the wheel is moving about, or you are off its line. Hold one wheel, in line.'},
         'no-draft': {word: 'change wheel', help: 'This wheel gives no draft (a hand cycle or recumbent?): find another.'},
     },
     holding: {
