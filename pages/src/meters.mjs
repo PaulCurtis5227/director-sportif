@@ -78,7 +78,7 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.38.0';
+export const DS_VERSION = '0.39.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);

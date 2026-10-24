@@ -21,6 +21,9 @@
  * v0.60.2: power-ups no longer blind the watch (it used to reset on any power-up and then need 10 s: AERO in a sprint
  * finish left it blank to the line, though a rider beside you lost 262 + 468 W in two ticks; docs/FINDINGS.md "BLOCKING
  * IN THAT SPRINT"). Each power-up's effect on your own physics goes into the balance instead (POWER_UPS).
+ * v0.68.2 (DS 0.39.0): no spikes on fast descents (FAST_DESCENT_KMH, FAST_DESCENT_GRADE). There Zwift's draft swings
+ * 0–340 W tick to tick and the balance can't tell that from blocking: 45+ km/h downhill read 11–35 W blocked on three
+ * rides vs 1–8 W under 45 km/h (docs/FINDINGS.md "BLOCKED AT SPEED"). Fast flat finishes still count.
  */
 
 import {leads} from './wheels.mjs';
@@ -28,6 +31,8 @@ import {UNIT_PER_M} from './pack-cost.mjs';
 
 export const SPIKE_W = 80;          // a tick whose balance exceeds this lost power to blocking
 export const BLOCK_WINDOW_S = 10;   // what the lost watts are averaged over
+export const FAST_DESCENT_KMH = 45;      // a tick this fast...
+export const FAST_DESCENT_GRADE = -0.01; // ...on a road this steep down or steeper has no spikes (the draft swings)
 export const BLOCK_CUE_W = 10;      // the cue: this many watts lost over the window...
 export const BLOCK_CUE_N = 2;       // ...in at least this many spike ticks
 export const BESIDE_ALONG_M = 1;    // a rider overlapping you along the road (wheels level within a meter)...
@@ -114,7 +119,8 @@ export class BlockWatch {
         const res = (a.p + this.last.p) / 2 + (a.d + this.last.d) / 2 -
             0.5 * RHO * (e0.cda * a.v ** 3 + e1.cda * tick.v ** 3) / 2 - G * (e0.crr * e0.m * a.v + e1.crr * e1.m * tick.v) / 2 -
             (0.5 * m * (tick.v ** 2 - a.v ** 2) + m * G * (tick.alt - a.alt)) / dt;
-        if ((tick.behind || tick.beside) && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
+        const fastDescent = (a.v + tick.v) / 2 * 3.6 >= FAST_DESCENT_KMH && grade <= FAST_DESCENT_GRADE;
+        if ((tick.behind || tick.beside) && !fastDescent && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
         return this.read(tick.wt, res);
     }
 

@@ -22,7 +22,7 @@ Each shows a number, and a word under it when there's something to do ("back off
 - **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
-- **Blocked**: watts lost pushing into the wheel ahead.
+- **Blocked**: watts lost pushing into the wheel ahead (not counted on fast descents, where Zwift's draft swings tick to tick).
 - **Passing**: the closing speed when you creep up on a rider at the speed that gets you held, or one creeps up on you.
 - **Gap**, **L/R**: to the wheel in front.
 - **Tuck**: the speed still needed for a supertuck; **Tuck drag**: your drag in the tuck against coasting.
