@@ -76,6 +76,8 @@
  * obsPlanText) and to it stopping after your finish. The window is one line (the user: "text field, button, button"):
  * the words (22em, "…" past it), Record (red, "● 12:03" while recording), Mark. In the pen with no call the text
  * cycles through the event, the card, OBS and the bike, 4 s each (panel.mjs); no group count (Sauce shows it).
+ * v0.45.2: the line laid out as a row (Sauce's #content is a flex column: 0.45.1 stacked it, centered); the mod's
+ * description says what it is now (calls, meters, recording, OBS), and a fresh window opens wide and short.
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -101,7 +103,7 @@ import {recButton, eventText, cardText, bikeText, inPen, cycleText} from './pane
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.45.1';
+export const DS_VERSION = '0.45.2';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);

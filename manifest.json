@@ -2,8 +2,8 @@
     "manifest_version": 1,
     "id": "director-sportif",
     "name": "Director Sportif",
-    "description": "Pack meters for Zwift: what your spot costs (Position), whether you are spending more than holding your place needs (Holding), the pack cost beyond Zwift's draft, and gap and left/right to the wheel. One tile per meter, in the order you choose.",
-    "version": "0.45.1",
+    "description": "Race calls and pack meters for Zwift, built on measured Zwift physics: what your spot in the pack costs (Position), watts you spend for nothing (Holding, Blocked), the gap and left/right to the wheel, and spoken calls for the pack, climbs, the finish and power-ups. Records your rides for a free report at caffecter.com, and can run OBS with the race.",
+    "version": "0.45.2",
     "author": "PaulCurtis5227",
     "web_root": "pages",
     "windows": [
@@ -11,12 +11,12 @@
             "file": "pages/meters.html",
             "id": "director-sportif-meters",
             "name": "Director Sportif",
-            "description": "Runs the Director Sportif and gives its calls; a small status. Keep it open: the Grid shows its meters (settings: the gear; right-click the window to show it)",
+            "description": "Runs the Director Sportif: one line of what to do now (the call and the meters' advice), Record and Mark. Keep it open: the Grid shows its meters (settings: the gear; right-click the window to show it)",
             "overlay": true,
             "frame": false,
             "default_bounds": {
-                "width": 260,
-                "height": 110,
+                "width": 640,
+                "height": 70,
                 "x": 0.06,
                 "y": 0.06
             }

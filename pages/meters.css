@@ -399,9 +399,11 @@ html.measuring #content.control {
 }
 
 /* One line (v0.45.1, the user: "one line, text field, button, button"): the text, then Record and Mark. The text is
- * a fixed 22em, so the window doesn't jump as words come and go; longer words end in "…". */
+ * a fixed 22em, so the window doesn't jump as words come and go; longer words end in "…". A row, said outright: Sauce's
+ * common.css makes #content a column (v0.45.2; 0.45.1 stacked the text and buttons, centered). */
 #content.control {
     display: flex;
+    flex-direction: row;
     align-items: center;
     gap: 0.4em;
 }
