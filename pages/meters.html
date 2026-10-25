@@ -43,15 +43,14 @@
         </div>
         <div id="content" class="control">
             <div class="call-word" title="What to do now: the call (the same words the voice says), then each meter's advice. Yellow / red when a meter is in its range">—</div>
-            <div class="status-line state">starting…</div>
-            <div class="status-line route"></div>
-            <div class="record-row">
-                <button class="rec" title="Record this ride (capture format: others' positions and draft, everything about you)">Record</button>
-                <button class="mark" title="Mark this moment: something worth a look later" disabled>Mark</button>
-                <span class="status-line rec-state">not recording</span>
+            <!-- one line: the text, then the buttons (v0.45.1, the user: "one line, text field, button, button"). In the
+                 pen the text cycles through the event, the card, OBS and the bike (panel.mjs); the lines below feed it -->
+            <button class="rec" title="Record this ride (capture format: others' positions and draft, everything about you)">Record</button>
+            <button class="mark" title="Mark this moment: something worth a look later" disabled>Mark</button>
+            <div class="sources" hidden>
+                <div class="obs-state" hidden></div>
+                <div class="hint">open "Director Sportif — Grid" for the meters; keep this window open: it runs them</div>
             </div>
-            <div class="status-line obs-state" hidden></div>
-            <div class="status-line hint">Meters: open "Director Sportif — Grid". Keep this window open: it runs them.</div>
         </div>
     </body>
 </html>

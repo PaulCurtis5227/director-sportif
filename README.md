@@ -7,8 +7,9 @@ from Sauce and tells you, in a word or two, what to do now. Its meters show on a
 ## Two windows (open both)
 
 - **Director Sportif**: the director, the part that thinks. It reads Sauce's data, works out the meters and makes the
-  calls. Its big line is **what to do now**: the call and each meter's advice in one place, yellow or red when
-  urgent; under it a short status (your route and race card, whether data is coming, recording). **Keep it open
+  calls. It's one line: **what to do now** (the call and each meter's advice in one place, yellow or red when
+  urgent), then the **Record** button ("● 12:03" while recording) and **Mark**. In the start pen the text takes turns
+  showing the event, the race card, OBS and your bike. **Keep it open
   while you ride** (it can sit behind Zwift): close it and the meters and calls stop. Its gear holds your bike, CdA,
   FTP and FRC, how each call reaches you, your race card plan, recording and OBS.
 - **Director Sportif — Grid**: the display. The slots, sizes and yellow / red thresholds you set with its gear. It
@@ -105,8 +106,8 @@ can see (climbs, surfaces), just not the race's own segments.
 Screen, Spiral Summit), from Zwift Insider's race guides. New cards come with new releases.
 
 **Using one:** nothing to do on race day. In an event, the Director Sportif window picks the card for the route
-you're on by itself (a card only speaks on its own route, since its distances are race distances on that route). The
-status line shows which card it's using.
+you're on by itself (a card only speaks on its own route, since its distances are race distances on that route). In
+the pen, the Director Sportif window shows which card it's using ("card: …", or "no race card").
 
 **Your plan** (the gear ▸ **Race card** tab): pick a card, then for each item:
 

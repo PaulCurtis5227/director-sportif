@@ -38,3 +38,23 @@ export const linkSeconds = (momentMs, startMs) =>
 
 /* OBS's output events say active / not with these states (obs-websocket v5). */
 export const obsActive = d => !!(d && d.outputActive);
+
+/*
+ * What OBS will do with the race, for the window's OBS line (v0.45.0; the user, 2026-10-25: in the pen with nothing
+ * saying OBS would start, they started it by hand). "Record OBS with the race" only. All times in ms; start = the
+ * event's start (ms), null (not known: now) or 'pending' (being looked up). Returns the words or null.
+ *   {withRace, rehearsing, recording (OBS), ours (we started it), stopAt, sg (null = the warm-up), ended (you finished),
+ *    capturing (the DS recording runs), autoEvents, autoDone (this event's own recording done or stopped by you),
+ *    start, leadMs, connected, now}
+ */
+export const clockText = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+export function obsPlanText(o) {
+    if (!o.withRace || o.rehearsing) return null;
+    if (o.recording) return o.ours && o.stopAt != null ? `stops in ${clockText(Math.max(0, o.stopAt - o.now))}` : null;
+    if (!o.sg || o.ended) return null;
+    if (!o.capturing && (!o.autoEvents || o.autoDone)) return 'starts when you press Record';
+    if (o.start === 'pending') return 'looking up the start…';
+    const dueMs = Number.isFinite(o.start) ? o.start - o.leadMs - o.now : 0;
+    const when = dueMs > 0 ? `in ${clockText(dueMs)}` : 'now';
+    return o.connected ? `starts with the race ${when}` : `starts with the race ${when}, once connected`;
+}

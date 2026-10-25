@@ -87,9 +87,9 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
     }, {
         id: 'ds-position',
         shortName: 'Position',
-        longName: 'Position: what your spot costs against the best-placed rider in your group',
-        tooltip: tip('position', "Watts the best-placed rider in your group saves that you don't, over 10 s. " +
-            '0 alone or coasting.'),
+        longName: 'Position: what your spot costs against the best spot at your speed',
+        tooltip: tip('position', 'Watts of draft your spot misses against the best spot at your speed, over 10 s (on a ' +
+            'fast descent the best spot is 4–6 m back, not on the wheel). 0 alone or coasting.'),
         format: watts('position', true),
         label: word('position'),
         suffix: 'W',

@@ -32,8 +32,9 @@ const COMMON = {
 export const VOCAB = {
     position: {
         ...COMMON,
-        good: {word: 'stay', help: 'Good spot: the best-placed rider in your group saves little more than you.'},
+        good: {word: 'stay', help: 'Good spot: within a few watts of the best spot at your speed.'},
         'sit-in': {word: 'sit in', help: 'You are on the front: sitting in behind a wheel saves this much.'},
+        shatter: {word: 'shattering', help: 'The group is breaking up ahead of you: do what you can (hold the front part, or the group you can). No advice about your gap meanwhile.'},
         gapping: {word: 'gap opening', help: 'A hole is opening in front of your wheel (or the next one): close it or go round, or you are gapped.'},
         'too-close': {word: 'back off', help: 'Too close to the wheel: ease back to the best gap (or drift to the back of the bunch).'},
         boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
@@ -135,7 +136,7 @@ export const VOCAB = {
  */
 export const CALL_WORDS = {
     moveUp: {prep: 'climb', move: 'move up', hold: 'hold spot', late: 'stay in line'},
-    sprint: {position: 'top ten', good: 'good spot', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
+    sprint: {position: 'top ten', good: 'good spot', 'window-prep': 'jump', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
              'keep-going': 'keep going', ease: 'ease off', 'ease-ftp': 'ease to FTP', window: 'you can go', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
     nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line', crowd: 'give room'},
 };
@@ -224,9 +225,10 @@ export function directorCalls(ds) {
             // the line's seconds only 1.5 km out: inside 1 km the bunch winds up and a cruising estimate runs long
             // (Urumaze 2026-10-06: +13 s median), and "get a wheel" means now anyway ("last wheel, be ready" is timed by the engine)
             const timed = ['position', 'good'].includes(sp.state);
-            // "take the wheel" is its own call type (v0.26.0: turned off without the rest of the finish)
+            // "take the wheel" is its own call type (v0.26.0: turned off without the rest of the finish); "jump in 20":
+            // the seconds to the sprint window
             out.push({id: /^take-wheel/.test(sp.state) ? 'wheel' : 'sprint', state: sp.state, word: CALL_WORDS.sprint[sp.state],
-                      in: timed ? roundIn(toLine) : null, for: null, priority: sp.priority});
+                      in: sp.state === 'window-prep' ? roundIn(sp.inS) : timed ? roundIn(toLine) : null, for: null, priority: sp.priority});
         } else if (/^fire-/.test(sp.state)) {
             const name = sp.state.slice(5);   // SprintCoach's own names: AERO, VAN, GHOST, BURRITO, ARROWS
             out.push({id: 'powerup', state: `fire-${name.toLowerCase()}`, word: `${name} now`, in: null, for: null,

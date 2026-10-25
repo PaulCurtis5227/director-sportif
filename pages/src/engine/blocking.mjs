@@ -29,6 +29,9 @@
  * 77–78% of windows 0–3.5 m off the wheel have a spike (85–87 W left over) vs 26% / 17 W at 5.5–10 m: the cost of
  * sitting close, real and avoidable. So on a fast descent spikes count within FAST_DESCENT_CLOSE_M of the wheel in line
  * (or alongside a rider), and only further back, where the gap doesn't explain them, are they taken as the draft swinging.
+ * v0.68.6 (DS 0.45.0, the 2026-10-25 ride): the passing cue compares speeds at your state time (accelKmhS: a bunch
+ * speeding up read 1–4 km/h "closing" from states a second apart; "drop back" 17 times in that event, 3 after) and stays
+ * quiet when your group goes through with you (WITH_N).
  */
 
 import {leads} from './wheels.mjs';
@@ -196,11 +199,21 @@ export const PASS_BEHIND_M = 4;     // ...or behind, for the defence
 export const PASS_LAT_M = 1.5;      // ...and no more than this to the side
 export const WIDE_M = 1.5;          // a pass this far out gets through more often at low closing speed
 export const AT_WHEEL_M = 1.5;      // closer than this behind, in line: pulling out here is the worst pass
+// Moving through with your group (v0.68.6; the user, 2026-10-25: "I was in a small group that overtook another small
+// group. We were moving through them at a fair speed, the cue said to back off. At that point there was no telling if
+// my group was going to ride through"): this many riders within WITH_M of you closing on the same rider as fast as you
+// (within WITH_KMH) = your group is going through, and the cue stays quiet.
+export const WITH_N = 2;
+export const WITH_M = 10;
+export const WITH_KMH = 1;
 
 /* {attack, defend}: the nearest rider you close on, and the nearest closing on you, in the held band; each null or
  * {where: 'ahead'|'behind'|'on your left'|'on your right', closeKmh, alongM, latM, atWheel (attack: glued to their
- * wheel, in line)}. */
-export function passSituation(entries, me, lead = leads(entries)) {
+ * wheel, in line)}. accelKmhS = your acceleration (km/h per s): each rider's speed is from their own state time, so
+ * while a bunch speeds up together a state 1 s older read 1–2 km/h slower (the 2026-10-25 start, 12 -> 41 km/h in
+ * 30 s: "drop back" over and over); their speed is moved to your state time at your acceleration. An attack your group
+ * makes with you (WITH_N) is no attack. */
+export function passSituation(entries, me, lead = leads(entries), {accelKmhS = 0} = {}) {
     const out = {attack: null, defend: null};
     if (!me || !me.state) return out;
     const s = me.state, mine = lead.get(me);
@@ -214,14 +227,28 @@ export function passSituation(entries, me, lead = leads(entries)) {
         if (Math.abs(lat) > PASS_LAT_M) continue;
         const level = Math.abs(along) <= BESIDE_ALONG_M && Math.abs(lat) >= BESIDE_LAT_M[0];
         const where = level ? `on your ${lat > 0 ? 'right' : 'left'}` : along > 0 ? 'ahead' : 'behind';
-        const dv = (s.speed || 0) - (o.state.speed || 0);   // km/h, + = you are faster
+        const dtS = Number.isFinite(s.worldTime) && Number.isFinite(o.state.worldTime) ?
+            Math.max(-2, Math.min(2, (s.worldTime - o.state.worldTime) / 1000)) : 0;
+        const dv = (s.speed || 0) - ((o.state.speed || 0) + accelKmhS * dtS);   // km/h, + = you are faster
         if (dv >= HELD_KMH[0] && dv < HELD_KMH[1] && (level || (along > 0 && along <= PASS_AHEAD_M))) {
             const atWheel = !level && along < AT_WHEEL_M && Math.abs(lat) < BESIDE_LAT_M[0];
-            if (!out.attack || Math.abs(along) < Math.abs(out.attack.alongM)) out.attack = {where, closeKmh: dv, alongM: along, latM: lat, atWheel};
+            if (!out.attack || Math.abs(along) < Math.abs(out.attack.alongM)) out.attack = {where, closeKmh: dv, alongM: along, latM: lat, atWheel, rider: o};
         }
         if (-dv >= HELD_KMH[0] && -dv < HELD_KMH[1] && (level || (along < 0 && along >= -PASS_BEHIND_M))) {
             if (!out.defend || Math.abs(along) < Math.abs(out.defend.alongM)) out.defend = {where, closeKmh: -dv, alongM: along, latM: lat};
         }
+    }
+    if (out.attack) {
+        const target = out.attack.rider, tv = target.state.speed || 0;
+        let n = 0;
+        for (const o of entries || []) {
+            if (o === me || o === target || !o.state || o.state.roadId !== s.roadId || !!o.state.reverse !== !!s.reverse) continue;
+            const x = lead.get(o);
+            if (x == null || Math.abs(x - mine) > WITH_M) continue;
+            if ((o.state.speed || 0) - tv >= out.attack.closeKmh - WITH_KMH) n++;
+        }
+        if (n >= WITH_N) out.attack = null;
+        else delete out.attack.rider;
     }
     return out;
 }

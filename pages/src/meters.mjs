@@ -65,6 +65,17 @@
  * v0.44.0: the window's big line is All words (the call and each meter's advice, grid-fields.mjs allWords, yellow /
  * red when urgent): one place to look (the user: words spread over many meters "aren't where you are looking"); the
  * "open the Grid" hint goes once a Grid has said hello (GRID_SEEN_KEY).
+ * v0.45.0 (the 2026-10-25 ride, Tour of Watopia stage 3): "group shattering" / "gap opening" while the riders ahead split
+ * or ride away, with no "ease off", "back off", "drop back" or "drift back" meanwhile (ride-away.mjs); the passing cue
+ * time-aligned and quiet when your group goes through; the finish: only its own calls speak from 1.5 km (calls.mjs
+ * FINALE_CALLS), a surge under 2.2× FTP is no longer your jump, "jump in N" counts down to the sprint window, and
+ * the finish's calls don't wait 30 s behind each other; OBS "with the race" also starts inside a recording already
+ * running (5 min before the start, as an event recording would) and stops 2 min after you finish; OBS is retried on
+ * your ticks every 10 s (a hidden window's timer took minutes).
+ * v0.45.1: the OBS line counts down to OBS starting with the race ("starts with the race in 3:20", video-clock.mjs
+ * obsPlanText) and to it stopping after your finish. The window is one line (the user: "text field, button, button"):
+ * the words (22em, "…" past it), Record (red, "● 12:03" while recording), Mark. In the pen with no call the text
+ * cycles through the event, the card, OBS and the bike, 4 s each (panel.mjs); no group count (Sauce shows it).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -82,18 +93,20 @@ import {RouteAhead} from './route-ahead.mjs';
 import {RaceCards, cardEntries, loadEntry, importCard} from './race-cards-live.mjs';
 import {CaptureRecorder} from './capture.mjs';
 import {Checkpoint, idbStore, leftovers, recoveredBlob, CHECKPOINT_S} from './engine/checkpoint.mjs';
-import {AutoRecord} from './engine/auto-record.mjs';
+import {AutoRecord, AUTO_LEAD_S, AUTO_TAIL_S} from './engine/auto-record.mjs';
 import {ObsClient} from './engine/obs-client.mjs';
-import {VideoClock, obsActive} from './video-clock.mjs';
+import {VideoClock, obsActive, obsPlanText} from './video-clock.mjs';
 import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-card.mjs';
+import {recButton, eventText, cardText, bikeText, inPen, cycleText} from './panel.mjs';
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.44.0';
+export const DS_VERSION = '0.45.1';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
 const OBS_RETRY_MS = 30_000;   // = manifest.json (test/capture.test.mjs)
+const OBS_TICK_RETRY_MS = 10_000;   // not connected: tried again on your ticks this often too
 const CAPTURE_STORE = 'ds-captures';
 // The title card (engine/title-card.mjs): this mod's own OBS scene and Browser source, and the page they show
 const DS_TITLE = {scene: 'Director Sportif: title', input: 'Director Sportif title card', path: '/mods/director-sportif/pages/title.html'};
@@ -266,8 +279,6 @@ export async function main() {
     const content = document.querySelector('#content');
     const el = {
         word: content.querySelector('.call-word'),
-        state: content.querySelector('.state'),
-        route: content.querySelector('.route'),
     };
     const fitter = windowFitter(content, {extras: () => [document.querySelector('#bike-check')]});
     let fitCheckAt = 0;
@@ -441,9 +452,18 @@ export async function main() {
         const mins = ms => `${Math.floor((Date.now() - ms) / 60000)}:${String(Math.floor((Date.now() - ms) / 1000) % 60).padStart(2, '0')}`;
         const parts = [clock.starts.record != null ? `recording ${mins(clock.starts.record)}` : null,
                        clock.starts.stream != null ? `streaming ${mins(clock.starts.stream)}` : null].filter(Boolean);
+        let plan = null;
+        try { plan = obsPlan(); } catch (e) { /* the window still opening: the recording's parts not set up yet */ }
         setText(obsState, (obs && obs.connected ? `OBS: ${parts.join(' · ') || 'connected'}` : `OBS: ${obsConnecting ? 'connecting…' : 'not connected'}`) +
-            (rehearsal ? ' · rehearsal' : obsNoteText ? ` · ${obsNoteText}` : ''));
+            (plan ? ` · ${plan}` : '') + (rehearsal ? ' · rehearsal' : obsNoteText ? ` · ${obsNoteText}` : ''));
     };
+    // what OBS will do with the race: a countdown in the pen (video-clock.mjs obsPlanText)
+    const obsPlan = () => obsPlanText({
+        withRace: !!Common.settingsStore.get('obsRecordWithRace'), rehearsing: !!rehearsal,
+        recording: clock.starts.record != null, ours: obsStarted.get(), stopAt: obsEndAt, sg: mySg,
+        ended: auto.hasEnded(mySg), capturing: !!rec, autoEvents: !!Common.settingsStore.get('autoRecordEvents'),
+        autoDone: auto.done.has(mySg), start: mySg ? eventStart(mySg) : null, leadMs: AUTO_LEAD_S * 1000,
+        connected: !!(obs && obs.connected), now: Date.now()});
     // ----- the race index: YouTube chapters for the OBS recording, saved to Downloads when OBS stops -----
     let lastMe = null;
     const raceIndex = (() => {
@@ -577,6 +597,43 @@ export async function main() {
     };
     obsConnect().then(titleRescue);
     setInterval(() => { obsConnect().then(titleRescue); showObs(); }, OBS_RETRY_MS);
+    // ...and on your ticks: a hidden window's timers slow to about one a minute, so OBS opened after Sauce took minutes
+    // to connect (2026-10-25: it connected only when the settings window was opened)
+    let obsTickAt = 0;
+    const obsTickConnect = () => {
+        if (obs && obs.connected) return;
+        if (Date.now() - obsTickAt < OBS_TICK_RETRY_MS) return;
+        obsTickAt = Date.now();
+        obsConnect().then(titleRescue).catch(() => {});
+    };
+    // OBS with the race inside a recording already running ("Record all the time", or Record pressed in the warm-up;
+    // 2026-10-25: into the pen and OBS never started, as startRec is the only place it did): it starts when an event's
+    // own recording would (AUTO_LEAD_S before the start, or the race moving) and stops AUTO_TAIL_S after you finish or
+    // leave that event, if we started it. obsSg = the event OBS records for us.
+    let obsSg = null, obsEndAt = null;
+    const obsRaceCheck = moving => {
+        if (!rec || rehearsal || !Common.settingsStore.get('obsRecordWithRace')) return;
+        const now = Date.now();
+        if (obsSg == null) {
+            if (!mySg || auto.hasEnded(mySg) || !(obs && obs.connected) || clock.starts.record != null) return;
+            const st = eventStart(mySg);
+            if (!(moving || st === null || (Number.isFinite(st) && now >= st - AUTO_LEAD_S * 1000))) return;
+            obsSg = mySg;
+            obsEndAt = null;
+            obsStartWithTitle().catch(e => console.warn('OBS record', e));
+            return;
+        }
+        if (mySg === obsSg && !auto.hasEnded(obsSg)) {
+            obsEndAt = null;
+            return;
+        }
+        obsEndAt ??= now + AUTO_TAIL_S * 1000;
+        if (now < obsEndAt) return;
+        obsSg = obsEndAt = null;
+        if (obsStarted.get() && obs && obs.connected) {
+            obs.stopRecord().then(() => obsStarted.set(false)).catch(e => console.warn('OBS stop', e));
+        }
+    };
 
     // ----- recording (capture format) -----
     const store = idbStore(CAPTURE_STORE);
@@ -593,14 +650,16 @@ export async function main() {
     };
     const recBtn = content.querySelector('button.rec');
     const markBtn = content.querySelector('button.mark');
-    const recState = content.querySelector('.rec-state');
+    // recording shows on the button ("● 12:03", red; panel.mjs recButton); what auto-record does is its tooltip
     const showRec = () => {
-        recBtn.textContent = rec ? 'Stop' : 'Record';
-        recBtn.classList.toggle('on', !!rec);
+        const b = recButton({recording: !!rec, startedAt: rec && rec.startedAt, saving, now: Date.now()});
+        setText(recBtn, b.text);
+        recBtn.classList.toggle('on', b.on);
         markBtn.disabled = !rec;
-        setText(recState, rec ? `recording ${Math.round((Date.now() - rec.startedAt) / 60000)} min` :
-            saving ? 'saving…' : Common.settingsStore.get('recordAlways') ? `records all the time (${auto.why(false, Date.now())})` :
-            Common.settingsStore.get('autoRecordEvents') ? `records every event (${auto.why(false, Date.now())})` : 'not recording');
+        const how = Common.settingsStore.get('recordAlways') ? `records all the time (${auto.why(!!rec, Date.now())})` :
+            Common.settingsStore.get('autoRecordEvents') ? `records every event (${auto.why(!!rec, Date.now())})` : 'records when you press it';
+        const title = `${rec ? 'Recording: press to stop and save it' : "Record this ride (capture format: others' positions and draft, everything about you)"} · ${how}`;
+        if (recBtn.title !== title) recBtn.title = title;
     };
     const startRec = async ({rehearsing = false} = {}) => {
         if (rec) return;
@@ -617,6 +676,7 @@ export async function main() {
         // a recording 2 min after the finish, still in the event, started OBS again)
         const raceOn = mySg && !auto.hasEnded(mySg);
         if ((rehearsing || (Common.settingsStore.get('obsRecordWithRace') && raceOn)) && obs && obs.connected && clock.starts.record == null) {
+            if (!rehearsing) obsSg = mySg;
             obsStartWithTitle({rehearsing}).catch(e => console.warn('OBS record', e));
         }
         flushTimer = setInterval(() => cp && cp.flush().catch(e => console.warn('capture checkpoint', e)), CHECKPOINT_S * 1000);
@@ -634,6 +694,7 @@ export async function main() {
             if (res && rec === into) into.event(Date.now(), res);
         }
         if (rec !== into) return;
+        obsSg = obsEndAt = null;
         if (obsStarted.get() && obs && obs.connected) {
             obs.stopRecord().then(() => obsStarted.set(false)).catch(e => console.warn('OBS stop', e));
         }
@@ -728,8 +789,8 @@ export async function main() {
     showRec();
     setInterval(() => {
         if (Date.now() - lastTick > STALE_MS) {
-            setText(el.state, channel ? 'waiting for Zwift data' : 'running, but this Sauce can\'t pass data to the Grid');
-            setText(el.word, '—');
+            setText(el.word, channel ? 'waiting for Zwift data' : 'running, but this Sauce can\'t pass data to the Grid');
+            el.word.className = 'call-word quiet';
         }
     }, 1000);
     Common.subscribe('nearby', list => {
@@ -763,6 +824,9 @@ export async function main() {
                                  left: r.me.remainingType === 'event' ? r.me.remaining : null,
                                  start: eventStart(mySg), moving: Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0});
             autoCheck();
+            obsTickConnect();
+            obsRaceCheck(Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0);
+            showObs();   // the countdown
         }
         if (channel) {
             try {
@@ -780,15 +844,24 @@ export async function main() {
                     .catch(e => console.warn('route name', e));
             }
         }
+        // The text: the director's words; in the pen with no call, the event, the card, OBS and the bike one at a time
+        // (panel.mjs); with nothing to say, what's off (watching someone else) or the "open the Grid" hint
         const said = allWords(data, wordsHold);
-        setText(el.word, said.text || '—');
-        el.word.classList.toggle('warn', said.level === 'warn');
-        el.word.classList.toggle('alarm', said.level === 'alarm');
-        setText(el.state, `${data.self ? 'you' : 'watching'} · group ${data.meters.group.value ?? '-'} · ` +
-            `${r.ds.ahead === 'route' ? 'route ahead' : r.ds.ahead === 'riders' ? 'road from the riders' : 'no road ahead'}`);
         const card = raceCards.card;
-        setText(el.route, `${routeName || (routeId != null ? 'route…' : 'no route')}` +
-            `${card ? ` · card: ${card.name}` : s.eventSubgroupId ? ' · no race card' : ''}`);
+        const ev = mySg && evInfo.sg === mySg && evInfo.value ? evInfo.value : null;
+        const inEvent = !!s.eventSubgroupId;
+        const penText = !data.call && data.self && inPen(r.me) ? cycleText([
+            eventText({eventName: ev && ev.eventName, subgroup: ev && ev.subgroup, routeName, routeId, inEvent}),
+            cardText({cardName: card && card.name, inEvent}),
+            obsState.hidden ? null : obsState.textContent,
+            bikeText(BIKES.find(b => b.id === (Common.settingsStore.get('bike') || DEFAULT_BIKE)),
+                     WHEELS.find(w => w.id === (Common.settingsStore.get('wheels') || DEFAULT_WHEELS))),
+            hint.hidden ? null : hint.textContent]) : null;
+        const idle = !penText && !said.text ? (!data.self ? 'watching another rider: no calls' : hint.hidden ? '—' : hint.textContent) : null;
+        setText(el.word, penText || said.text || idle);
+        el.word.classList.toggle('quiet', !!(penText || idle));
+        el.word.classList.toggle('warn', !penText && said.level === 'warn');
+        el.word.classList.toggle('alarm', !penText && said.level === 'alarm');
         if (Date.now() - fitCheckAt > 1000 && Common.settingsStore.get('fitWindow') !== false) {
             fitCheckAt = Date.now();
             fitter.fit({growOnly: true});

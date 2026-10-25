@@ -281,7 +281,10 @@ export const VAN_S = 40;
 export const BURRITO_S = 20;
 export const JUMP_RATIO = 1.4;
 export const JUMP_PLUS_W = 150;
-export const SPRINT_PRIORITY = {fire: 95, closer: 94, keep: 93, ease: 92, easeFtp: 91, windup: 90, take: 89, last: 88, window: 87, position: 85, shake: 80, prep: 70,
+// ...and this × FTP when known (2026-10-25: a surge to 440–474 W on the rise 650 m out read as the jump, and the window,
+// "you can go", never came; the jump itself was 580 W, then 940)
+export const JUMP_FTP = 2.2;
+export const SPRINT_PRIORITY = {fire: 95, closer: 94, keep: 93, ease: 92, easeFtp: 91, windup: 90, take: 89, last: 88, window: 87, windowPrep: 86, position: 85, shake: 80, prep: 70,
                                 good: 55};
 
 /*
@@ -448,6 +451,18 @@ export function sprintBudget({leftJ, ftpW, remainingM, v}) {
     return {targetW, secs, open: targetW >= SPRINT_RATIO * ftpW};
 }
 
+/*
+ * Where the window will open (m before the line) at today's FRC: the distance whose target is SPRINT_RATIO × FTP.
+ * The countdown to it (v0.68.6; the user, 2026-10-25: "at the finish of the event it didn't call the sprint": from
+ * "top ten" 1.3 km out to the window at 360 m nothing spoke) is "jump in N", WINDOW_PREP_S out at most.
+ */
+export const WINDOW_PREP_S = 45;
+export function sprintWindowM({leftJ, ftpW, v}) {
+    if (!(ftpW > 0) || !Number.isFinite(leftJ)) return null;
+    const secs = Math.max(0, leftJ - SPRINT_RESERVE_J) / ((SPRINT_RATIO - 1) * ftpW);
+    return secs * Math.max((v || 0) + SPRINT_GAIN_KMH / 3.6, 4);
+}
+
 export const KEEP_GOING_M = 200;
 export const KEEP_GOING_RATIO = 0.5;
 // ...and under this × FTP (when known): 2026-10-19, 180 m out, 504 W was "under half" of a 1015 W AERO peak, and not easing off
@@ -570,7 +585,8 @@ export class IntermediateCoach {
             if (!this.lineKey) return none;
         }
         if (!this.jumped) {
-            this.jumpTicks = power >= Math.max(this.avgP * JUMP_RATIO, this.avgP + JUMP_PLUS_W) ? this.jumpTicks + 1 : 0;
+            const floor = x.ftpW > 0 ? JUMP_FTP * x.ftpW : 0;
+            this.jumpTicks = power >= Math.max(this.avgP * JUMP_RATIO, this.avgP + JUMP_PLUS_W, floor) ? this.jumpTicks + 1 : 0;
             if (this.jumpTicks >= 2) this.jumped = true;
         }
         if (this.jumped) this.peak = Math.max(this.peak, power);
@@ -617,7 +633,8 @@ export class SprintCoach {
         if (remaining > SPRINT_POSITION_M[1] + 500) this.reset();
         const g = x.group || {size: 1, ahead: 0};
         if (remaining <= 1500 && !this.jumped) {
-            this.jumpTicks = power >= Math.max(this.avgP * JUMP_RATIO, this.avgP + JUMP_PLUS_W) ? this.jumpTicks + 1 : 0;
+            const floor = x.ftpW > 0 ? JUMP_FTP * x.ftpW : 0;
+            this.jumpTicks = power >= Math.max(this.avgP * JUMP_RATIO, this.avgP + JUMP_PLUS_W, floor) ? this.jumpTicks + 1 : 0;
             if (this.jumpTicks >= 2) this.jumped = true;
         }
         if (this.jumped) this.peak = Math.max(this.peak, power);
@@ -707,6 +724,15 @@ export class SprintCoach {
             return {id: 'sprint', state: 'window', priority: SPRINT_PRIORITY.window, text: `You can go from here${hold}`};
         }
         if (windup) return {id: 'sprint', state: 'windup', priority: SPRINT_PRIORITY.windup, text: 'They are going: get on a wheel'};
+        // the window ahead: "jump in 20"
+        const openM = !this.jumped && b && remaining <= WINDUP_M ? sprintWindowM({leftJ: x.frc.leftJ, ftpW: x.ftpW, v}) : null;
+        // seconds along the road ahead when known (a rise before the line is slow: that ride's 28 km/h at 600 m)
+        const inS = openM == null ? null : Number.isFinite(x.toLineS) && remaining > 0 ? x.toLineS * (remaining - openM) / remaining :
+            (remaining - openM) / Math.max(v || 0, 4);
+        if (inS > 0 && inS <= WINDOW_PREP_S) {
+            return {id: 'sprint', state: 'window-prep', priority: SPRINT_PRIORITY.windowPrep, inS,
+                    text: `You can go in ${Math.round(inS)} s (${Math.round(openM)} m out)`};
+        }
         // in the wind with a rider on your wheel in the last kilometer: drift to make them work
         const side = x.canSteer && (remaining <= WINDUP_M || this.jumped) ? shakeSide(x.wheels, x.q) : null;
         if (side) {

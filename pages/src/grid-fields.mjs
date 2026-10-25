@@ -55,7 +55,7 @@ function wordFields() {
 export const ADVICE = {
     blocked: ['blocked', 'blocked-left', 'blocked-right'],
     passing: ['too-slow', 'go-wide', 'drop-back', 'rider-left', 'rider-right', 'rider-behind'],
-    position: ['gapping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'unsteady', 'no-draft', 'sit-in'],
+    position: ['shatter', 'gapping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'unsteady', 'no-draft', 'sit-in'],
     holding: ['easy', 'blocked'],
     tuck: ['build', 'stop', 'rest'],
     frc: ['low', 'empty'],

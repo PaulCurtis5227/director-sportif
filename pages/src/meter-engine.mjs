@@ -95,6 +95,7 @@ import {featherCue} from './engine/powerup-cue.mjs';
 import {withSpeeds, secsAlong} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
+import {RideAwayWatch} from './ride-away.mjs';
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
 import {remainingOnSurface} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
@@ -105,6 +106,7 @@ export const COASTING_NOTE = 'coasting: draft only adds speed';
 export const ALONE_NOTE = 'not in a group';
 // Beyond this there is no wheel to speak of (no draft left; pack-cost.mjs reads the wheel in line within 25 m too).
 export const GAP_MAX_M = 25;
+export const FINALE_M = 1500;   // the finish calls' stretch (SprintCoach's "top ten" starts 1.7 km out)
 
 /* The rider the meters are for: you when Sauce knows you, else the rider being watched. */
 export function meterRider(all) {
@@ -159,6 +161,8 @@ export class MeterEngine {
         this.teleport = new TeleportGuard({newcomers: false});
         this.position = new PositionSmoother();
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
+        this.rideAway = new RideAwayWatch();   // the group ahead leaves or splits: no "ease off" / "back off" then
+        this.accel = null;    // {wt, kmh, a}: your acceleration (km/h per s, ~2 s), to time-align the passing cue's speeds
         this.gapFor = null;               // whose (a camera change starts it fresh)
         this.demand = new DemandMeter();  // the pack's demand: the ideal spot's power to hold your group, 30 s
         this.holding = new HoldingMeter();
@@ -223,15 +227,28 @@ export class MeterEngine {
         }
         const demandW = this.demand.update(s.worldTime, !settling && L.size >= 2 ? packDemandW(c, spot) : null, {v, massKg: model.massKg});
         const gapping = settling ? null : this.gapWatch.update(entries, me, s.worldTime);
-        const pos = this.readPosition(s, spot, L, settling, power, noDraft.spot, gapping);
+        // the riders ahead riding away or splitting (ride-away.mjs): "gap opening" / "group shattering", never "back off",
+        // "ease off", "drop back" or "drift back"
+        if (settling || L.size < 2) this.rideAway.reset();
+        const away = settling || L.size < 2 ? null : this.rideAway.update(entries, me, s.worldTime);
+        const pos = this.readPosition(s, spot, L, settling, power, noDraft.spot, away && away.state === 'shatter' ? {which: 'shatter'} :
+            gapping || (away && {which: 'group', mps: away.mps}));
         if (settling) this.block.reset();
-        const blk = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
+        const blkRead = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
                                        massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
                                        wheelGapM: sit ? sit.wheelGap : null,
                                        behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
                                        powerUp: s.activePowerUp, coffee: s.coffeeStop});
-        const hold = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
-        const pass = settling || L.size < 2 ? this.pass.update(null) : this.pass.update(passSituation(entries, me));
+        // the measured loss stays (blockedW); only the cue goes while they ride away
+        const blk = away && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
+        const holdRead = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
+        const hold = away && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
+        const ac = this.accel, dtAc = ac && Number.isFinite(s.worldTime) ? (s.worldTime - ac.wt) / 1000 : null;
+        const accelKmhS = dtAc > 0 && dtAc < 5 ? ac.a + (1 - Math.exp(-dtAc / 2)) * (((s.speed || 0) - ac.kmh) / dtAc - ac.a) : ac ? ac.a : 0;
+        if (!ac || dtAc !== 0) this.accel = {wt: s.worldTime, kmh: s.speed || 0, a: dtAc > 0 && dtAc < 5 ? accelKmhS : 0};
+        const passRead = settling || L.size < 2 ? this.pass.update(null) :
+            this.pass.update(passSituation(entries, me, undefined, {accelKmhS}));
+        const pass = !away ? passRead : {...passRead, attack: null, defend: away.state === 'shatter' ? null : passRead.defend};
         // the road ahead (yours only: the learned road follows your own track, the route is yours). Its seconds use
         // steady inputs: your flat speed (smoothed ~30 s while the road is within ±2%) and effort (power, ~60 s)
         const pc = this.pace;
@@ -414,9 +431,14 @@ export class MeterEngine {
             sprint: !(finish && finish.state) && inter && inter.state ? {state: inter.state, priority: inter.priority, held: null,
                 toLineS: null, targetW: null, remainingM: line ? line.toLineM : null, intermediate: true} :
                 finish && finish.state ? {state: finish.state, priority: finish.priority,
-                held, toLineS: finish && finish.state ? toLineS : null,
+                held, toLineS: finish && finish.state ? toLineS : null, inS: Number.isFinite(finish.inS) ? finish.inS : null,
                 targetW: this.sprintCoach.budget ? Math.round(this.sprintCoach.budget.targetW) : null,
                 remainingM: Number.isFinite(me.remaining) ? me.remaining : null} : null,
+            // the finish (calls.mjs FINALE_CALLS): 'run-in' (an event's last FINALE_M), 'sprint' (after your jump), 'done'
+            // (past the line, still in the event), else null
+            finale: !me.self || settling || me.remainingType !== 'event' || me.remainingMetric !== 'distance' ||
+                !Number.isFinite(me.remaining) ? null : me.remaining <= 0 ? 'done' : this.sprintCoach.jumped ? 'sprint' :
+                me.remaining < FINALE_M ? 'run-in' : null,
             draftQ,
             cda: model.cda,
             cdaSource: model.source,
@@ -442,8 +464,12 @@ export class MeterEngine {
         // a gap opening ahead beats any advice about your own gap ("back off" while the wheel drifts off the group)
         if (gapping) {
             const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
+            if (gapping.which === 'shatter') {
+                return {w: L.size < 2 ? null : w, state: 'shatter', note: 'group shattering: the riders ahead are splitting up. Do what you can: hold the front part, or the group you can'};
+            }
             return {w: L.size < 2 ? null : w, state: 'gapping',
-                    note: `gap opening ${gapping.which === 'wheel' ? 'in front of your wheel' : 'two wheels up'} (${Math.round(gapping.holeM)} m): close it or go round`};
+                    note: gapping.which === 'group' ? `gap opening: the riders ahead ride away (${gapping.mps.toFixed(1)} m/s): close up or go round` :
+                        `gap opening ${gapping.which === 'wheel' ? 'in front of your wheel' : 'two wheels up'} (${Math.round(gapping.holeM)} m): close it or go round`};
         }
         if (noDraftWheel && L.size >= 2) {
             this.position.reset();

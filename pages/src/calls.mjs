@@ -143,6 +143,8 @@ export function localizeUnits(text, imperial) {
 }
 
 /* Call priorities (docs/DS-DATA.md; the director's move-up 80 / sprint 55–93 sit around them). */
+export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup']);   // Announcer: no wait per type
+
 export const CALL_PRIORITY = {gap: 75, pass: 70, blocked: 65, passed: 60, tuck: 40};
 
 const call = (id, state, word, extra = {}) => ({id, state, word, in: null, for: null, priority: CALL_PRIORITY[id], ...extra});
@@ -153,7 +155,14 @@ const call = (id, state, word, extra = {}) => ({id, state, word, in: null, for: 
  * words are the meters' own, VOCAB) and the director's (`extra`: ds-data.mjs directorCalls, e.g. move up before a
  * climb). The highest priority wins; on a tie the earlier one.
  */
-export function dsCall(data, extra = []) {
+// In the finale only these speak (v0.45.0; 2026-10-25: from 1.3 km to the line the voice said "drop back", "ease off",
+// "wood in 45" and "gap opening" around the two finish calls it found room for)
+// (run-in); after your jump only the finish's own; past the line nothing ("group shattering" 84 m after it)
+export const FINALE_CALLS = {'run-in': new Set(['sprint', 'wheel', 'powerup', 'card', 'gap']),
+                             sprint: new Set(['sprint', 'wheel', 'powerup']), done: new Set()};
+
+export function dsCall(data, extra = [], {finale = null} = {}) {
+    const only = finale ? FINALE_CALLS[finale] : null;
     const m = data && data.meters;
     if (!m) return null;
     const c = [];
@@ -168,15 +177,19 @@ export function dsCall(data, extra = []) {
         c.push(call('passed', pass.slice(6), wordOf('passing', pass)));
     }
     if (m.position && m.position.state === 'gapping') c.push(call('gap', 'opening', wordOf('position', 'gapping')));
+    if (m.position && m.position.state === 'shatter') c.push(call('gap', 'shatter', 'group shattering'));   // the user's words
     if (m.tuck && m.tuck.state === 'stop') c.push(call('tuck', 'stop', wordOf('tuck', 'stop')));
     for (const x of extra || []) if (x && x.word) c.push(x);
     let best = null;
-    for (const x of c) if (!best || (x.priority ?? 0) > (best.priority ?? 0)) best = x;
+    for (const x of c) {
+        if (only && !only.has(x.id)) continue;
+        if (!best || (x.priority ?? 0) > (best.priority ?? 0)) best = x;
+    }
     return best;
 }
 
 /* The call from the engine's reading: the data object's pack calls and the director's. */
-export const engineCall = (data, ds) => dsCall(data, directorCalls(ds));
+export const engineCall = (data, ds) => dsCall(data, directorCalls(ds), {finale: (ds && ds.finale) || null});
 
 /* What the voice says and the windows show: the word, then the time if something is ahead ("steep in 25"). */
 export function callWords(c) {
@@ -208,10 +221,14 @@ export class Announcer {
         if (!delivery || (!delivery.chime && !delivery.voice)) return null;
         const key = `${call.id}|${call.state}`;
         if (key === this.lastKey) return null;
-        if (now - this.lastAt < this.minGapMs || now - (this.typeAt.get(call.id) ?? -Infinity) < this.repeatMs) return null;
+        // the finish's calls follow each other ("top ten", "jump in 20", "you can go", "dig in"): only the same one
+        // waits repeatS (2026-10-25: "jump in" would have held "you can go" back 30 s); every other type waits as a type
+        const urgent = URGENT_TYPES.has(call.id);
+        const lastSame = urgent ? this.typeAt.get(key) : this.typeAt.get(call.id);
+        if (now - this.lastAt < this.minGapMs || now - (lastSame ?? -Infinity) < this.repeatMs) return null;
         this.lastKey = key;
         this.lastAt = now;
-        this.typeAt.set(call.id, now);
+        this.typeAt.set(urgent ? key : call.id, now);
         const type = CALL_TYPES.find(t => t.id === call.id);
         return {tones: delivery.chime && type ? type.tones : null, say: delivery.voice ? speechText(callWords(call) || call.say || call.text) : null};
     }
