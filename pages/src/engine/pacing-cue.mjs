@@ -6,8 +6,8 @@
  * Climb ahead: where the steep part is and how long, and "hold the wheel over the top". No power advice.
  *
  * Re-riding 14 climbs of the 2026-09-29 Innsbruck race, the best power shape depends on what the effort is assumed
- * to cost, and the three costs disagree. Energy: push the steep part. Normalized power (30 s averages, 4th
- * power): ride it evenly. Work above FTP (W′ / FRC): follow the grade, which is what the riders did; one constant
+ * to cost, and the three costs disagree. Energy: push the steep part. A surge-weighted average (30 s
+ * averages, 4th power): ride it evenly. Work above FTP (W′ / FRC): follow the grade, which is what the riders did; one constant
  * power at the same work above FTP loses ~1.6 s at the top, and shifting 10% around inside the climb moves things
  * by a few tenths at most. All three agree that easing below FTP (on the approach or the descent) can't pay for
  * extra effort on the climb. The sim can't tell which cost the body follows, so the cue only describes the road.
