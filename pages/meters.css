@@ -239,6 +239,33 @@ html[data-theme="transparent-dark"] .tile {
     margin-top: 0.4em;
 }
 
+/*
+ * Nothing in a settings tab is wider than the window (v0.45.3: the long wheel names, the meter list's names and a saved
+ * file name widened the tabs: a sideways scrollbar, cut-off fields, the OBS tab scrolled off its left edge). Sauce's
+ * form is a flex column whose labels take their content's width: cap them, and let the selects shrink.
+ */
+.settings-page form label {
+    max-width: 100%;
+}
+
+/* and never scrolled sideways (Sauce gives each tab overflow-x: auto; a tab scrolled off its left edge cut every line) */
+.settings-page #settings > .section.tab {
+    overflow-x: hidden;
+}
+
+.settings-page form label select,
+.settings-page .add-tile select {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    text-overflow: ellipsis;
+}
+
+.settings-page .obs-rehearse-status {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .settings-page .tile-list .empty {
     padding: 0.5em;
     opacity: 0.7;

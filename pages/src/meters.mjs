@@ -78,6 +78,8 @@
  * cycles through the event, the card, OBS and the bike, 4 s each (panel.mjs); no group count (Sauce shows it).
  * v0.45.2: the line laid out as a row (Sauce's #content is a flex column: 0.45.1 stacked it, centered); the mod's
  * description says what it is now (calls, meters, recording, OBS), and a fresh window opens wide and short.
+ * v0.45.3: the settings tabs fit their window (meters.css: labels capped, selects shrink, the OBS status wraps, no
+ * sideways scroll): long wheel and meter names had widened the You and Slots tabs and scrolled the OBS tab.
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -103,7 +105,7 @@ import {recButton, eventText, cardText, bikeText, inPen, cycleText} from './pane
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 
-export const DS_VERSION = '0.45.2';
+export const DS_VERSION = '0.45.3';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
