@@ -47,6 +47,12 @@ export const CALL_TYPES = [
     {id: 'bend', label: 'Bends', hint: 'a bend ahead: "inside left / right" when the inside is open and moving over ' +
      'gains ground (after the draft it costs), "stay close" when you are on the outside and will lose ground',
      tones: [700, 940]},
+    {id: 'teamHr', label: 'Teammate HR', hint: 'you or a teammate in your race (your team tag) with no heart rate for 20 s: ' +
+     'in the pen, so they can pair a strap, and in the race (some races disqualify for it); every 2 min until you ' +
+     'press I know on the red banner (a teammate: then quiet for the event; you: again only if it comes back and drops out again, up to 3 times)', tones: [880, 660, 880]},
+    {id: 'burrito', label: 'Burritos', hint: 'a burrito fired just ahead of you: no draft in its cone for 20 s, move ' +
+     'over; "burritos done" once nearly everyone in your race has fired theirs (the Grid Burritos field counts the ' +
+     'ones still ahead of you)', tones: [500, 750, 500]},
     {id: 'nudge', label: 'Habits', hint: 'a habit worth changing, after it lasts: pushing into the wheel, moving up the ' +
      'middle, sitting on the front, off the wheel in a small group, crowding the wheel (each at most every 5 min)', tones: [520, 660]},
 ];
@@ -62,7 +68,7 @@ export function deliveryKey(type, how) {
  * possible": a new rider heard nothing until they found the Calls tab). Not bends and habits (frequent, nice to have),
  * not being passed (a chime suits it), not the tuck and take-the-wheel (chime only: words come too late).
  */
-export const FRESH_VOICE = ['gap', 'pass', 'blocked', 'moveUp', 'pacing', 'sprint', 'powerup', 'card', 'surface'];
+export const FRESH_VOICE = ['gap', 'pass', 'blocked', 'moveUp', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr'];
 
 /*
  * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
@@ -93,7 +99,7 @@ export function deliveryDefaults(old = {}) {
             out[deliveryKey(t.id, 'voice')] = voice;
             continue;
         }
-        if (['moveUp', 'sprint', 'powerup', 'card', 'gap'].includes(t.id)) {   // added v0.14–0.18, gap v0.26.0: chime on; voice for voice users
+        if (['moveUp', 'sprint', 'powerup', 'card', 'gap', 'burrito', 'teamHr'].includes(t.id)) {   // added v0.14–0.18, gap v0.26.0, burrito v0.47.0, teamHr v0.48.0: chime on; voice for voice users
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = voice;
             continue;

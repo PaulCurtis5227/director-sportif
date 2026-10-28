@@ -381,6 +381,41 @@ html[data-theme="transparent-dark"] .tile {
     min-width: 0;
 }
 
+/* a rider with no heart rate (meters.mjs hrChecker): red until acknowledged */
+#hr-check {
+    margin: 0.3em 0.4em 0;
+    padding: 0.3em 0.5em;
+    border-radius: 0.3em;
+    background: #f94144;
+    color: #fff;
+    font-size: calc(0.8rem * var(--text-scale, 1));
+}
+
+#hr-check[hidden] {
+    display: none;
+}
+
+#hr-check .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3em 0.6em;
+}
+
+#hr-check .row + .row {
+    margin-top: 0.3em;
+}
+
+#hr-check .text {
+    flex: 1 1 14em;
+    font-weight: 600;
+}
+
+#hr-check button {
+    flex: 0 0 auto;
+    font-weight: 600;
+}
+
 /* ----- the race card plan (meters.mjs initRaceCardEditor) ----- */
 
 .settings-page #race-card select.card {

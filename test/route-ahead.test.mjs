@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {routeProfile, profileAhead, speedAt, withSpeeds, RouteAhead} from '../pages/src/route-ahead.mjs';
+import {routeProfile, profileAhead, speedAt, withSpeeds, RouteAhead, routeSections} from '../pages/src/route-ahead.mjs';
 import {nextClimb} from '../pages/src/engine/director.mjs';
 
 /*
@@ -104,4 +104,19 @@ test('RouteAhead: loads a route once, null while it loads or off a route', async
     assert.equal(loads, 1);
     assert.equal(ra.ahead({routeId: null}), null);
     assert.equal(ra.ahead({routeId: 7}), null, 'no route distance (Sauce leaves it out before the start)');
+});
+
+test('the route roads in order for the surface ahead: welds dropped, laps kept', async () => {
+    const r = {supportedLaps: true, sections: [
+        {roadId: 0, reverse: true, start: 0.6, end: 0.98, leadin: true}, {roadId: 25, reverse: true, start: 0.16, end: 0.8},
+        {roadId: 21, start: 0.13, end: 0.99}, {roadId: 0, start: 0.1, end: 0.2, weld: true}]};
+    assert.deepEqual(routeSections(r), {laps: true, sections: [
+        {roadId: 0, reverse: true, start: 0.6, end: 0.98, leadin: true}, {roadId: 25, reverse: true, start: 0.16, end: 0.8, leadin: false},
+        {roadId: 21, reverse: false, start: 0.13, end: 0.99, leadin: false}]});
+    assert.equal(routeSections({}), null);
+    const ra = new RouteAhead(async () => r);
+    assert.equal(ra.sections({routeId: 5}), null, 'loading');
+    await new Promise(res => setTimeout(res, 0));
+    assert.equal(ra.sections({routeId: 5}).sections.length, 3);
+    assert.equal(ra.sections({}), null, 'off a route');
 });

@@ -12,6 +12,7 @@
  * Placing you: as Sauce's elevation window does, by the distance left in the lap (routeEnd − routeDistance): the
  * lap's finish line never moves, its start can (lead-in on the first lap, the join after it).
  * Pure (no Sauce imports): the loader is passed in, so this runs headless.
+ * The route's roads in order (routeSections; v0.46.1): the surface ahead follows them past a junction (road-map.mjs).
  */
 
 export const TRACE_STEP_M = 5;   // the traced profile: a point every this many meters
@@ -200,6 +201,14 @@ function smoothGrades(p) {
     return out;
 }
 
+/* The route's road sections for RoadMap.ahead(): {sections: [{roadId, reverse, start, end, leadin}], laps}, or null. */
+export function routeSections(r) {
+    const list = (r && Array.isArray(r.sections) ? r.sections : []).filter(x => x && !x.weld && x.roadId != null &&
+        Number.isFinite(x.start) && Number.isFinite(x.end))
+        .map(x => ({roadId: x.roadId, reverse: !!x.reverse, start: x.start, end: x.end, leadin: !!x.leadin}));
+    return list.length ? {sections: list, laps: !!r.supportedLaps} : null;
+}
+
 /*
  * Routes by id, loaded once each (load(routeId) -> Promise of a Sauce route object). ahead(state, maxM) -> the
  * profile ahead, or null while the route loads or when you're not on one.
@@ -208,13 +217,17 @@ export class RouteAhead {
     constructor(load) {
         this.load = load;
         this.routes = new Map();   // routeId -> profile | null (loading or none)
+        this.roads = new Map();    // routeId -> routeSections()
     }
 
     ensure(routeId) {
         if (routeId == null || this.routes.has(routeId) || !this.load) return;
         this.routes.set(routeId, null);
         Promise.resolve().then(() => this.load(routeId))
-            .then(r => this.routes.set(routeId, routeProfile(r)))
+            .then(r => {
+                this.roads.set(routeId, routeSections(r));
+                this.routes.set(routeId, routeProfile(r));
+            })
             .catch(e => console.warn('route', routeId, e));
     }
 
@@ -222,5 +235,12 @@ export class RouteAhead {
         if (!s || s.routeId == null || !Number.isFinite(s.routeDistance)) return null;
         this.ensure(s.routeId);
         return profileAhead(this.routes.get(s.routeId), s, maxM);
+    }
+
+    /* Your route's roads in order (routeSections), or null off a route / while it loads. */
+    sections(s) {
+        if (!s || s.routeId == null) return null;
+        this.ensure(s.routeId);
+        return this.roads.get(s.routeId) || null;
     }
 }

@@ -17,6 +17,8 @@
  */
 import {ChapterLog, RaceStartWatch, raceRunning} from './engine/chapters.mjs';
 
+export const FINISH_NEAR_M = 30;   // one tick at sprint speed
+
 export class RaceIndex {
     constructor() {
         this.log = new ChapterLog();
@@ -66,7 +68,9 @@ export class RaceIndex {
         this.ed = ed;
         const rem = me.remainingType === 'event' && me.remainingMetric === 'distance' && Number.isFinite(me.remaining) ? me.remaining : null;
         if (rem != null && this.rem != null && this.rem > 1500 && rem <= 1500) this.add(nowMs, '1.5 km to go', 2);
-        if (rem != null && this.rem != null && this.rem > 0 && rem <= 0) this.add(nowMs, 'Finish', 4);
+        // the line: remaining reaches 0, or the event fields go with a few meters still showing (Spiral Summit
+        // 2026-10-27: 1.2 m left, then no event: no Finish chapter)
+        if (this.rem != null && this.rem > 0 && (rem != null ? rem <= 0 : this.rem <= FINISH_NEAR_M)) this.add(nowMs, 'Finish', 4);
         this.rem = rem;
         if (jumped && !this.jumped && ed != null) this.add(nowMs, 'Sprint: jump', 4);
         this.jumped = !!jumped;

@@ -27,6 +27,10 @@
  * Kept across a window reopen (v0.40.0, the user's 2026-10-24 race: a second recording, and OBS with it, 2 min after the
  * first ended at the finish): which events were recorded (`done`) and which you finished (`ended`), saved by the
  * caller (state() / restore()). A finished event never starts again, and ended(sg) tells the caller (no OBS for it).
+ * Your Record in the warm-up (v0.68.7; the user, 2026-10-26: Record pressed by hand put the warm-up and both races of
+ * 2026-10-25 in one file): with `events`, a recording you started outside an event is stopped like the all-the-time one
+ * when the event's own is due, and that one starts. A recording you start in an event is still yours to the end, and a
+ * Stop you press still sticks (stopped in an event: that event is done).
  */
 
 export const AUTO_TAIL_S = 120;    // the finish, screen chat and the results come after the line
@@ -57,6 +61,7 @@ export class AutoRecord {
         this.ended = new Set();   // events you finished: never again, and no OBS "with the race" for them
         this.seenAt = new Map();  // sg -> when it was last noted (for state()'s expiry)
         this.sawLeft = false;     // seen with distance / time left in this event
+        this.hand = null;         // a recording you started: {sg} = the event it was started in (null = outside one)
     }
 
     /*
@@ -108,7 +113,18 @@ export class AutoRecord {
             const other = this.sg != null && this.sg !== this.owned;
             return idle || tail || other ? 'stop' : null;
         }
+        if (!recording && this.hand) {   // stopped by you (our own stop clears it first: stopped())
+            if (this.sg && !this.done.has(this.sg)) {
+                this.done.add(this.sg);
+                this.seenAt.set(this.sg, nowMs);
+            }
+            if (!this.sg) this.freeStopped = true;   // in a free ride: like a Stop on the all-the-time one
+            this.hand = null;
+            return null;
+        }
         if (recording) {
+            this.hand ??= {sg: this.sg};
+            if (this.events && this.hand.sg == null) return this.eventDue(nowMs) ? 'stop' : null;   // the warm-up's: split
             if (this.sg && !this.done.has(this.sg)) {   // your own recording covers it: a Stop you press stays stopped
                 this.done.add(this.sg);
                 this.seenAt.set(this.sg, nowMs);
@@ -144,7 +160,7 @@ export class AutoRecord {
     why(recording, nowMs = Date.now()) {
         if (this.owned === FREE_RIDE) return 'recording all the time';
         if (this.owned != null) return 'recording this event';
-        if (recording) return 'recording (yours)';
+        if (recording) return this.events && this.hand && this.hand.sg == null ? 'recording (yours, until the event)' : 'recording (yours)';
         if (this.always && this.freeStopped) return 'stopped by you (starts again at the next event)';
         if (this.always && (!this.events || !this.sg || this.finished || this.done.has(this.sg))) return 'waiting for Zwift data';
         if (!this.sg) return 'not in an event';
@@ -197,6 +213,7 @@ export class AutoRecord {
     stopped() {
         if (this.owned != null && this.owned !== FREE_RIDE && !this.raced) this.done.delete(this.owned);
         this.owned = null;
+        this.hand = null;
         this.endMs = null;
         this.raced = false;
     }

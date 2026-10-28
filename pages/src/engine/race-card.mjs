@@ -101,12 +101,29 @@ export function sprintLineAhead({card, plan = {}, edM, maxM = 1000}) {
 }
 
 /*
+ * Meters to the next arch that gives a power-up you'd take (your plan doesn't keep what you hold there), or null.
+ * tt: on a TT bike EVERY arch takes the power-up you hold (Zwift swaps it for +10 XP, rarely +250; the user,
+ * 2026-10-26: you get one on a TT bike by taking it on a road bike, then switching), so any arch, whatever the plan.
+ */
+export function nextArchM({card, plan = {}, edM, tt = false}) {
+    if (!card || !Number.isFinite(edM)) return null;
+    let best = null;
+    for (const it of card.items) {
+        if (it.km == null || !(it.km > 0) || it.kind !== 'arch' && !it.gives) continue;
+        if (!tt && (!it.gives || it.gives === 'XP' || powerFor(it, plan) === 'keep')) continue;
+        const toM = it.km * 1000 - edM;
+        if (toM > 0 && (best == null || toM < best)) best = toM;
+    }
+    return best;
+}
+
+/*
  * The call for the race card right now. edM: your race distance (state.eventDistance, m); v: m/s; held: the power-up
  * in your pocket (gameState.availablePowerUp). Returns {id: 'card', state, priority, text} or a null call; a call also
  * says what it's about, for the Director Sportif's words and seconds: {about: 'segment' | 'line' | 'arch' | 'note',
  * item, plan, power, held, gives, note, toM (meters to the item's km), toEndM (to the end of a segment)}.
  */
-export function cardCall({card, plan = {}, edM, v, held}) {
+export function cardCall({card, plan = {}, edM, v, held, tt = false}) {
     const none = {id: 'card', state: null, text: '', priority: 0};
     if (!card || !Number.isFinite(edM)) return none;
     const speed = Math.max(v || 0, 4);
@@ -139,9 +156,14 @@ export function cardCall({card, plan = {}, edM, v, held}) {
                         text: `${what} points in ${where}: ${it.name}, ${tail}${note ? ` (${note})` : ''}`,
                         about: 'segment', item: it, plan: p, note, toM, toEndM: toM + (Number(it.lengthKm) || 0) * 1000});
         }
-        // arches that give a power-up: empty your pocket first, unless your plan keeps what you hold
+        // arches that give a power-up: empty your pocket first, unless your plan keeps what you hold. On a TT bike any
+        // arch takes it (nextArchM): use it before, whatever the plan
         const gives = it.gives && it.gives !== 'XP' ? it.gives : null;
-        if (gives && it.km > 0 && toS <= ARCH_WARN_S && held) {
+        if (tt && (it.kind === 'arch' || it.gives) && it.km > 0 && toS <= ARCH_WARN_S && held) {
+            calls.push({id: 'card', state: `arch-${itemKey(it)}-tt`, priority: PRIORITY.archUse,
+                        text: `Arch in ${where} takes your ${label(held)} (TT bike): use it before`,
+                        about: 'arch', item: it, power: 'use', held, gives: 'XP', note, toM});
+        } else if (gives && it.km > 0 && toS <= ARCH_WARN_S && held) {
             const g = gives === 'RANDOM' ? 'a random power-up' : label(gives);
             if (powerFor(it, plan) === 'keep') {
                 calls.push({id: 'card', state: `arch-${itemKey(it)}-keep`, priority: PRIORITY.archKeep,

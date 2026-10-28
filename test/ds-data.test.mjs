@@ -17,7 +17,7 @@ test('data object v1: every meter present, basics, no call yet', () => {
     assert.equal(d.ts, 1234);
     assert.equal(d.self, true);
     assert.deepEqual(Object.keys(d.meters).sort(),
-        ['blocked', 'cda', 'demand', 'frc', 'gap', 'group', 'holding', 'pack', 'passing', 'position', 'side', 'surface', 'tuck']);
+        ['blocked', 'burrito', 'cda', 'demand', 'frc', 'gap', 'group', 'holding', 'pack', 'passing', 'position', 'side', 'surface', 'tuck']);
     for (const [k, m] of Object.entries(d.meters)) {
         assert.ok('value' in m && 'state' in m && 'level' in m, `${k} has value, state, level`);
         assert.ok(k in VOCAB, `${k} has words`);
@@ -146,7 +146,7 @@ test('give room (a habit call) and the feather call before the steepest part', a
     const [room] = directorCalls({nudge: {state: 'crowd', priority: 18}});
     assert.deepEqual([room.id, room.word], ['nudge', 'give room']);
     const [ready] = directorCalls({feather: {state: 'ready', inS: 22, grade: 0.07}});
-    assert.equal(callWords(ready), 'hold FEATHER in 20');
+    assert.equal(callWords(ready), 'FEATHER in 20');
     assert.equal(ready.id, 'powerup');
     assert.equal(callWords(directorCalls({feather: {state: 'fire', inS: 1}})[0]), 'FEATHER now');
 });

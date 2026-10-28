@@ -64,18 +64,18 @@ test('units follow Sauce\'s imperial switch (help text)', () => {
 
 test('delivery: per call type; the old voice switch carries over, being passed gets the chime alone', () => {
     const chimesOn = ['callGapChime', 'callTuckChime', 'callMoveUpChime', 'callSprintChime', 'callWheelChime',
-                      'callPowerupChime', 'callCardChime'];
+                      'callPowerupChime', 'callCardChime', 'callBurritoChime', 'callTeamHrChime'];
     // a fresh install: the main calls spoken, the same chimes (v0.43.0)
     const fresh = deliveryDefaults({});
     const voiceOn = ['callGapVoice', 'callPassVoice', 'callBlockedVoice', 'callMoveUpVoice', 'callPacingVoice',
-                     'callSprintVoice', 'callPowerupVoice', 'callCardVoice', 'callSurfaceVoice'];
+                     'callSprintVoice', 'callPowerupVoice', 'callCardVoice', 'callSurfaceVoice', 'callBurritoVoice', 'callTeamHrVoice'];
     assert.ok(Object.entries(fresh).every(([k, v]) => v === (chimesOn.includes(k) || voiceOn.includes(k))), JSON.stringify(fresh));
     assert.deepEqual(deliveryFor(fresh, 'passed'), {chime: false, voice: false}, 'being passed: nothing until chosen');
     assert.deepEqual(deliveryFor(fresh, 'wheel'), {chime: true, voice: false}, 'take the wheel: a chime only');
     // an existing install with its own choices (here: voice off everywhere): a new call type doesn't turn the voice on
     const off = deliveryDefaults({callPassVoice: false});
     assert.ok(Object.entries(off).every(([k, v]) => v === chimesOn.includes(k)),
-        'an existing install: only the gap, tuck, move-up, finish, take-the-wheel, power-up and race card chimes are on');
+        'an existing install: only the gap, tuck, move-up, finish, take-the-wheel, power-up, race card, burrito and teammate HR chimes are on');
     assert.equal(deliveryDefaults({speakCalls: false}).callGapVoice, false, 'the old switch off: stays off');
     const old = deliveryDefaults({speakCalls: true, speechChime: true});
     assert.deepEqual(deliveryFor(old, 'pass'), {chime: true, voice: true});
@@ -179,11 +179,11 @@ test('the finish: words, seconds to the line where they help, power-ups by Zwift
     // firing: the coach's own names; holding: Zwift's name and when to fire
     assert.deepEqual(sprint('fire-AERO', {p: 'fire'})[0], {id: 'powerup', state: 'fire-aero', word: 'AERO now', in: null,
                                                           for: null, priority: 95});
-    assert.deepEqual([sprint('prep', {held: 'DRAFTBOOST'})[0].word, sprint('prep', {held: 'DRAFTBOOST'})[0].in], ['hold VAN', 80]);
+    assert.deepEqual([sprint('prep', {held: 'DRAFTBOOST'})[0].word, sprint('prep', {held: 'DRAFTBOOST'})[0].in], ['VAN', 80]);
     assert.equal(sprint('prep', {held: 'AERO'})[0].in, 105, '15 s to go');
     assert.equal(sprint('prep', {held: 'NINJA', toLineS: 60, remainingM: 1000})[0].in, 35, 'just before 400 m');
     assert.deepEqual([sprint('prep', {held: 'LIGHTNESS'})[0].word, sprint('prep', {held: 'LIGHTNESS'})[0].in],
-        ['hold FEATHER', null], 'the feather: on your jump (it helps the acceleration)');
+        ['FEATHER at jump', null], 'the feather: on your jump (it helps the acceleration)');
     assert.equal(sprint('fire-FEATHER', {p: 'fire'})[0].word, 'FEATHER now');
     for (const c of [sprint('position'), sprint('fire-BURRITO', {p: 'fire'}), sprint('prep', {held: 'UNDRAFTABLE'})].flat()) {
         assert.ok(c.word.length <= 12 && !/\d/.test(c.word), c.word);

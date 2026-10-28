@@ -46,8 +46,8 @@ windows always show it. Times are in seconds, never meters.
 - **Climbs**: "climb in 90", "move up" 60–45 s before it, "hold spot" or "stay in line"; "steep in 20 for 30",
   "over top in 15". From your route: it works alone, from the start.
 - **The finish**: "top ten in 120", "get a wheel", "go first", "go wide", "dig in" (a rider closing fast), "keep
-  going"; power-ups by Zwift's names ("hold VAN in 25", "AERO now"): advice only, never fired for you. A feather you
-  hold gets its own call before a climb: "hold FEATHER in 20", then "FEATHER now" at the steepest part.
+  going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
+  hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
 - **The road**: "dirt in 15 for 40"; "coast" when you're fast enough to supertuck; bends: "inside left in 6" when the
   inside is open and moving over gains ground, "stay close" when you're on the outside of the bunch.
@@ -94,6 +94,31 @@ Record (or record every event, or all the time) saves your ride to your Download
 `ds-capture-<date>.ndjson.gz`: you in full, other riders only as positions and draft under random ids, never their
 names, power or heart rate. What's in it and the format: [`docs/RECORDING.md`](docs/RECORDING.md). The file stays on your
 computer unless you take it somewhere, for example to [caffecter.com](https://caffecter.com/report.html) for a ride report.
+
+With **Record every event** on, each event gets its own file, even when you pressed Record in the warm-up: that file
+ends when the event's own starts (5 minutes before the start). A recording you start in an event runs until you stop it.
+No file is saved (no save window) from the start pen to the finish: files that end in between are kept safe and saved
+once you finish or leave the event.
+
+## Burritos
+
+In a race where everyone gets a burrito (it takes the draft from the riders in a cone behind whoever fires it, for
+20 s), the Director Sportif sees each one fired: "burrito, move over" when one goes off just ahead of you, and "burritos
+done" once nearly everyone has used theirs. The Grid's **Burritos** field counts the riders ahead of you who still hold
+one: near the front, fewer of them can catch you. The cone is short (measured over 45 burritos in a race): from 1 to
+8.5 m behind the rider who fired it, and a quarter of that distance to either side (±0.5 m at 2 m back, ±2 m at 8 m).
+Riding a lane to the side of the wheel, or 9 m or more back, keeps your draft.
+
+## Teammate heart rate
+
+Some races disqualify a rider with no heart rate, or halve their points. In a race, the Director Sportif checks
+you and the riders in your race who carry your team tag (the "(Dinos)" or "[Dinos]" in a Zwift name): one with no
+heart rate for 20 s gets a call, "Nick: no heart rate", in the pen (time to pair a strap) or in the race, and a red
+banner in the Director Sportif window that stays until you press **I know Nick has no HR**. Until you do, the call
+comes again every 2 minutes. Once you have, a teammate is done for the event: you tell them, the rest is up to them. Your
+own warning comes back only if your heart rate returns and then drops out again, until you have pressed **I know**
+three times. A heart rate back gets one call, unless you already acknowledged that rider. Only whether a signal is there is read; nothing about it is kept, and the recording has no names.
+Turn it off in the Calls tab (Teammate HR).
 
 ## Race cards
 

@@ -10,6 +10,7 @@
  *   {v, ts, self, meters: {<key>: {value, state, level, ...extra}}, basics: {...}, call: {...} | null}
  */
 
+import {teamHrWord} from './team-hr.mjs';
 import {rangeLevel, DEFAULT_RANGES} from './tiles.mjs';
 
 export const DATA_VERSION = 1;
@@ -112,6 +113,15 @@ export const VOCAB = {
         sand: {word: 'sand', help: 'Sand (rolls like pavement in Zwift).'},
         snow: {word: 'ice', help: 'Ice / snow.'},
     },
+    burrito: {
+        ...COMMON,
+        ahead: {word: '', help: 'Riders ahead of you in your race who have not fired their burrito yet (everyone got one): ' +
+                'each can take your draft for 20 s. Near the front, fewer are ahead of you.'},
+        cone: {word: 'move over', help: 'A burrito fired just ahead of you: no draft for 20 s in a short wedge behind it ' +
+               '(1–8.5 m back, a quarter of that either side). Move a lane over, or sit 9 m+ back.'},
+        done: {word: 'done', help: 'Nearly everyone has fired their burrito: safe to slide back into the bunch.'},
+        clear: {word: '', help: 'No burrito active near you.'},
+    },
     frc: {
         ...COMMON,
         ok: {word: '', help: 'Your reserve above FTP (FRC), from your power: it drains above FTP, refills below.'},
@@ -155,6 +165,7 @@ const FIRE_AT_S = {AERO: 15, DRAFTBOOST: 40, UNDRAFTABLE: 20};
 const GHOST_AT_M = 400;
 
 export const SURFACE_CALL_S = 45;
+export const FEATHER_FIRE_PRIORITY = 86.5;   // over the finish's "jump in N" (86), under "you can go" (87): your jump fires it anyway
 
 /* Seconds for a call: to 5 s above 20 s, whole seconds below (docs/DS-DATA.md). */
 export function roundIn(secs) {
@@ -197,6 +208,18 @@ export function directorCalls(ds) {
         out.push({id: 'surface', state: sa.surface, word: VOCAB.surface[sa.surface].word, in: roundIn(sa.inS),
                   for: roundIn(sa.forS), priority: 20});
     }
+    // burritos (burrito.mjs): one fired just ahead of you, and once they're nearly all gone
+    const bu = ds && ds.burrito;
+    if (bu && bu.state === 'cone') {
+        out.push({id: 'burrito', state: 'cone', word: 'burrito, move over', in: null, for: null, priority: 72});
+    } else if (bu && bu.state === 'done') {
+        out.push({id: 'burrito', state: 'done', word: 'burritos done', in: null, for: null, priority: 30});
+    }
+    // a teammate with no heart rate (team-hr.mjs): said when it starts and every 2 min (some races DQ for it)
+    const th = ds && ds.teamHr;
+    if (th && th.say && th.names.length) {
+        out.push({id: 'teamHr', state: th.state, word: teamHrWord(th), in: null, for: null, priority: th.state === 'missing' ? 74 : 30});
+    }
     const pc = ds && ds.pacing;
     if (pc && (pc.state === 'steep' || pc.state === 'top')) {
         out.push({id: 'pacing', state: pc.state, word: pc.state === 'steep' ? 'steep' : 'over top', in: roundIn(pc.inS),
@@ -208,11 +231,13 @@ export function directorCalls(ds) {
         out.push({id: 'bend', state: `${b.state}-${b.side}`, word: b.state === 'open' ? `inside ${b.side}` : 'stay close',
                   in: b.state === 'open' ? roundIn(b.inS) : null, for: null, priority: 45});   // stay close: now
     }
-    // the feather you hold, for the steepest 30 s ahead (the finish's power-ups come from the sprint coach)
+    // the feather you hold, for the steepest 30 s ahead. The name and the seconds, no "hold" (v0.46.1; the user,
+    // 2026-10-26: "hold feather in 25 is hard to parse. Maybe just feather in 25"). "FEATHER now" outranks "jump in N"
+    // (Spiral Summit 2026-10-27: the Volcano's 9% kick came 320 m out, inside the jump countdown)
     const f = ds && ds.feather;
     if (f && (f.state === 'ready' || f.state === 'fire')) {
-        out.push({id: 'powerup', state: `feather-${f.state}`, word: f.state === 'fire' ? 'FEATHER now' : 'hold FEATHER',
-                  in: f.state === 'ready' ? roundIn(f.inS) : null, for: null, priority: f.state === 'fire' ? 75 : 50});
+        out.push({id: 'powerup', state: `feather-${f.state}`, word: f.state === 'fire' ? 'FEATHER now' : 'FEATHER',
+                  in: f.state === 'ready' ? roundIn(f.inS) : null, for: null, priority: f.state === 'fire' ? FEATHER_FIRE_PRIORITY : 50});
     }
     const n = !draftless && ds && ds.nudge;
     if (n && CALL_WORDS.nudge[n.state]) {
@@ -233,14 +258,17 @@ export function directorCalls(ds) {
             const name = sp.state.slice(5);   // SprintCoach's own names: AERO, VAN, GHOST, BURRITO, ARROWS
             out.push({id: 'powerup', state: `fire-${name.toLowerCase()}`, word: `${name} now`, in: null, for: null,
                       priority: sp.priority});
-        } else if (sp.state === 'prep' && sp.held && POWERUP_NAMES[sp.held]) {
+        } else if (sp.state === 'prep' && sp.held && POWERUP_NAMES[sp.held] && !(sp.held === 'LIGHTNESS' && f && f.state)) {
+            // (a climb ahead times the feather, above: Spiral Summit 2026-10-27 said "FEATHER at jump" 1.2 km out on the
+            // Volcano, and it went there; the 9% kick at 320 m was the place)
             // holding one for the finish: when to fire it (the arrows and the feather: on your jump, no seconds)
             const name = POWERUP_NAMES[sp.held];
             const at = FIRE_AT_S[sp.held];
             const inS = at != null && toLine != null ? toLine - at :
                 sp.held === 'NINJA' && Number.isFinite(sp.remainingM) && toLine != null && sp.remainingM > 0 ?
                     toLine * (sp.remainingM - GHOST_AT_M) / sp.remainingM : null;
-            out.push({id: 'powerup', state: `hold-${name.toLowerCase()}`, word: `hold ${name}`,
+            // "AERO in 35"; with no seconds (the arrows, the feather) it goes with your jump: "FEATHER at jump"
+            out.push({id: 'powerup', state: `hold-${name.toLowerCase()}`, word: roundIn(inS) != null ? name : `${name} at jump`,
                       in: roundIn(inS), for: null, priority: sp.priority});
         }
     }
@@ -310,6 +338,10 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
             group: meter('group', ds.groupSize, 'none'),
             cda: meter('cda', ds.cda, ds.cdaState || 'model'),
             surface: meter('surface', ds.surfaceW, ds.surfaceId || 'none'),
+            // burritos still to come from riders ahead of you in your race (burrito.mjs); blank when none are in play
+            burrito: ds.burrito ? meter('burrito', ds.burrito.unfiredAheadN, ds.burrito.state, {firedN: ds.burrito.firedN,
+                                        unfiredN: ds.burrito.unfiredN, othersN: ds.burrito.othersN}) :
+                meter('burrito', null, 'none'),
             // the pack's demand (30 s): no level, it only reports; pctFtp for the note
             demand: Number.isFinite(ds.demandW) ? {value: ds.demandW, state: 'ok', level: null,
                 pctFtp: ds.demandFtpW > 0 ? Math.round(ds.demandW / ds.demandFtpW * 100) : null} :

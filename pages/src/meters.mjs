@@ -80,6 +80,27 @@
  * description says what it is now (calls, meters, recording, OBS), and a fresh window opens wide and short.
  * v0.45.3: the settings tabs fit their window (meters.css: labels capped, selects shrink, the OBS status wraps, no
  * sideways scroll): long wheel and meter names had widened the You and Slots tabs and scrolled the OBS tab.
+ * v0.46.0 (EM v0.68.7): your Record in the warm-up is split at the event (auto-record.mjs hand: 2026-10-25 put the warm-up
+ * and both races in one file); no save window from the pen to the finish (save-queue.mjs: finished files wait in the
+ * crash-safe store, saved once you finish or leave; the Record tooltip counts them).
+ * v0.46.1 (EM v0.68.8, 2026-10-26 ride): the surface ahead follows your route past a junction (road-map.mjs ahead with
+ * route-ahead.mjs routeSections; "dirt in 1 for 15" was 66 s of dirt); off a route a stretch running past the road's end
+ * gets no length; power-ups without "hold" ("AERO in 35", "FEATHER at jump"); a race result only in a file that saw the race.
+ * The feather keeps for a part a point steeper further up (powerup-cue.mjs featherCue: 2026-10-26 said
+ * FEATHER now on the 3.5% slope, the user rightly held for the 10% climb after it), looking up the whole climb (climbTopM:
+ * dips like Epic KOM's stay inside it) or to the next arch on the race card (race-cards-live.mjs nextArch), 15 km of route.
+ * Nothing past the next arch, near or far (Spiral Summit replay).
+ * v0.47.0: burritos (burrito.mjs, the user 2026-10-26 for ZRL Spiral Summit, a burrito for everyone in the pens): one
+ * fired just ahead of you (Sauce shows every rider's active power-up: UNDRAFTABLE) -> "burrito, move over"; the ones
+ * still to come from riders ahead counted (Grid field Burritos); "burritos done" once ~all fired. Cone size unmeasured.
+ * Power-up calls on a TT bike too (v0.34.0 dropped them); there every arch takes it: race card "use it before" (cardCall tt).
+ * v0.48.0 (Spiral Summit 2026-10-27): the burrito cone measured (45 burritos): 1–8.5 m behind, a quarter of that
+ * either side, gaps aligned (wheels.mjs gapBetween); a climbing finish times the feather you hold (ds-data: the sprint
+ * coach's "FEATHER at jump" said it 1.2 km out on the Volcano; "FEATHER now" outranks "jump in N"); the race index
+ * marks the finish when the event fields go a few meters short of the line; "Teammate HR" call (team-hr.mjs: a rider
+ * with your team tag in your race, no heart rate for 20 s; pen and race, every 2 min).
+ * v0.49.0: no heart rate is a red banner that stays until "I know Nick has no HR" (hrChecker; the user: a DQ or half
+ * points, it must not get lost in the calls); you are watched too; a teammate acknowledged is quiet for the event, you get up to 3 (a new dropout only).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -97,6 +118,7 @@ import {RouteAhead} from './route-ahead.mjs';
 import {RaceCards, cardEntries, loadEntry, importCard} from './race-cards-live.mjs';
 import {CaptureRecorder} from './capture.mjs';
 import {Checkpoint, idbStore, leftovers, recoveredBlob, CHECKPOINT_S} from './engine/checkpoint.mjs';
+import {SaveQueue, holdSaves} from './save-queue.mjs';
 import {AutoRecord, AUTO_LEAD_S, AUTO_TAIL_S} from './engine/auto-record.mjs';
 import {ObsClient} from './engine/obs-client.mjs';
 import {VideoClock, obsActive, obsPlanText} from './video-clock.mjs';
@@ -104,8 +126,9 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {recButton, eventText, cardText, bikeText, inPen, cycleText} from './panel.mjs';
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
+import {hrAckText} from './team-hr.mjs';
 
-export const DS_VERSION = '0.45.3';
+export const DS_VERSION = '0.49.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -157,6 +180,7 @@ const saveImportedCards = list => localStorage.setItem(IMPORTED_CARDS_KEY, JSON.
 const doc = document.documentElement;
 // The event the bike was last checked for (plain localStorage: picking a bike reloads the window)
 const BIKE_CHECKED_KEY = 'director-sportif-bike-checked';
+const HR_ACKED_KEY = 'director-sportif-hr-acked';   // {sg, acks: {athleteId: times}}: "I know" this event (team-hr.mjs)
 const STALE_MS = 5000;   // no data for this long: waiting for Zwift
 
 export const SETTING_DEFAULTS = {
@@ -275,6 +299,76 @@ function bikeChecker({speak, refit, onBike}) {
     };
 }
 
+/*
+ * The heart rate banner (team-hr.mjs): a rider in your race (you or a teammate) with no heart rate stays on screen,
+ * red, until you press "I know" (the user, 2026-10-28: some races DQ or halve the points, so it must not get lost in
+ * the calls). A teammate: once per event; you: up to 3 times (team-hr.mjs). The acks are kept for this event only, so
+ * a reopened window doesn't ask again.
+ */
+function hrChecker({watch, refit}) {
+    const box = document.querySelector('#hr-check');
+    let sg = null, restored = null, shown = '';
+    const load = () => {
+        try { return JSON.parse(localStorage.getItem(HR_ACKED_KEY)) || null; } catch (e) { return null; }
+    };
+    const acks = () => {
+        const kept = load();
+        return kept && kept.sg === sg && kept.acks ? kept.acks : {};
+    };
+    const save = a => {
+        try { localStorage.setItem(HR_ACKED_KEY, JSON.stringify({sg, acks: a})); } catch (e) { /* asks again after a reopen */ }
+    };
+    const close = () => {
+        if (box.hidden) return;
+        box.hidden = true;
+        box.replaceChildren();
+        shown = '';
+        refit();
+    };
+    return {
+        update(me, th) {
+            const id = me && me.self && me.state ? me.state.eventSubgroupId || null : null;
+            if (me && !me.self) return;
+            sg = id;
+            // a reopened window: this event's acks back into the watch, once it runs for the event (it resets on a new one)
+            if (sg && th && restored !== sg) {
+                restored = sg;
+                for (const [a, n] of Object.entries(acks())) watch.ack(Number(a), n);
+                return;   // shown from the next tick, acks applied
+            }
+            const open = th && th.missing ? th.missing.filter(m => !m.acked) : [];
+            if (!open.length) return close();
+            const key = open.map(m => m.id).join(',');
+            if (key === shown) return;
+            shown = key;
+            box.replaceChildren(...open.map(m => {
+                const t = hrAckText(m);
+                const row = document.createElement('div');
+                row.className = 'row';
+                const text = document.createElement('div');
+                text.className = 'text';
+                text.textContent = t.text;
+                const ok = document.createElement('button');
+                ok.textContent = t.button;
+                ok.addEventListener('click', () => {
+                    watch.ack(m.id);
+                    const a = acks();
+                    save({...a, [m.id]: (a[m.id] || 0) + 1});
+                    row.remove();
+                    shown = [...box.querySelectorAll('.row')].map(r => r.dataset.id).join(',');
+                    if (!box.children.length) close();
+                    else refit();
+                });
+                row.dataset.id = m.id;
+                row.append(text, ok);
+                return row;
+            }));
+            box.hidden = false;
+            refit();
+        },
+    };
+}
+
 export async function main() {
     Common.initInteractionListeners();
     applyDefaults();
@@ -284,7 +378,7 @@ export async function main() {
     const el = {
         word: content.querySelector('.call-word'),
     };
-    const fitter = windowFitter(content, {extras: () => [document.querySelector('#bike-check')]});
+    const fitter = windowFitter(content, {extras: () => [document.querySelector('#bike-check'), document.querySelector('#hr-check')]});
     let fitCheckAt = 0;
     const fitWindow = () => {
         if (Common.settingsStore.get('fitWindow') !== false) fitter.fit();
@@ -331,6 +425,7 @@ export async function main() {
         fitnessFor: me => ({ftpW: Number(settings.myFtpW) > 0 ? Number(settings.myFtpW) : me.athlete && me.athlete.ftp,
                             frcJ: (Number(settings.myFrcKJ) > 0 ? Number(settings.myFrcKJ) : 15) * 1000}),
     });
+    const hrCheck = hrChecker({watch: engine.teamHrWatch, refit: () => requestAnimationFrame(fitWindow)});
     // Calls (calls.mjs): each type delivered as its settings say (text / chime / voice).
     const delivery = {};
     const readDelivery = () => {
@@ -413,7 +508,15 @@ export async function main() {
         });
     };
     let rec = null, cp = null, flushTimer = null, saving = false;   // the recording (below), used by the OBS link too
+    // finished files: saved (Sauce's save window) only outside an event, never from the pen to the finish (save-queue.mjs)
+    const saves = new SaveQueue(download), openedAt = Date.now();
+    const saveNow = () => {
+        if (!saves.size || saves.busy) return;
+        saves.run(holdSaves({sg: mySg, ended: auto.hasEnded(mySg), lastTickMs: lastTick, nowMs: Date.now(), openedMs: openedAt}))
+            .then(() => showRec());
+    };
     let recSg = null;   // the event whose name went into this recording
+    let recRaced = false;   // and it saw that race under way (else no result: 2026-10-26, the warm-up's file closed in the pen got "0 finishers")
     let stopping = null;   // the recording being stopped (its result being asked for)
     /*
      * Your result for the report's summary (caffecter.com): your place among the finishers so far (riders finishing
@@ -662,13 +765,15 @@ export async function main() {
         markBtn.disabled = !rec;
         const how = Common.settingsStore.get('recordAlways') ? `records all the time (${auto.why(!!rec, Date.now())})` :
             Common.settingsStore.get('autoRecordEvents') ? `records every event (${auto.why(!!rec, Date.now())})` : 'records when you press it';
-        const title = `${rec ? 'Recording: press to stop and save it' : "Record this ride (capture format: others' positions and draft, everything about you)"} · ${how}`;
+        const held = saves.size ? ` · ${saves.size} file${saves.size > 1 ? 's' : ''} saved after the event` : '';
+        const title = `${rec ? 'Recording: press to stop and save it' : "Record this ride (capture format: others' positions and draft, everything about you)"} · ${how}${held}`;
         if (recBtn.title !== title) recBtn.title = title;
     };
     const startRec = async ({rehearsing = false} = {}) => {
         if (rec) return;
         rec = new CaptureRecorder({meta: {app: 'director-sportif', version: DS_VERSION, routeId, routeName, rehearsal: rehearsing || undefined}});
         recSg = null;
+        recRaced = false;
         cp = new Checkpoint(store, {name: `ds-${rehearsing ? 'rehearsal' : 'capture'}-${stamp(rec.startedAt)}`, rec, release: true});
         await cp.begin();
         // the video clocks as they stand (OBS already recording / streaming)
@@ -693,7 +798,7 @@ export async function main() {
         const sg = recSg, into = rec;
         recSg = null;
         stopping = into;
-        if (sg && lastMe && lastMe.athleteId != null) {
+        if (sg && recRaced && lastMe && lastMe.athleteId != null) {
             const res = await raceResult(sg, lastMe.athleteId).catch(e => console.warn('race result', e));
             if (res && rec === into) into.event(Date.now(), res);
         }
@@ -710,12 +815,12 @@ export async function main() {
         showRec();
         try {
             await c.flush();
-            download(await c.blob(), `${c.name}.ndjson.gz`);
-            await c.discard();
+            saves.add({name: `${c.name}.ndjson.gz`, blob: () => c.blob(), done: () => c.discard()});
         } catch (e) {
             console.error('capture save failed: kept for next time', e);   // left in the store: saved on the next open
         }
         saving = false;
+        saveNow();
         showRec();
     };
     recBtn.addEventListener('click', () => (rehearsal ? rehearse() : rec ? stopRec() : startRec()).catch(e => console.error('record', e)));
@@ -764,9 +869,9 @@ export async function main() {
     // a recording left by a crash or a closed window: saved now (no keyboard mid-ride: no question asked)
     leftovers(store).then(async list => {
         for (const r of list) {
-            download(await recoveredBlob(store, r.id), `${r.name}-recovered.ndjson.gz`);
-            await store.remove(r.id);
+            saves.add({name: `${r.name}-recovered.ndjson.gz`, blob: () => recoveredBlob(store, r.id), done: () => store.remove(r.id)});
         }
+        saveNow();
     }).catch(e => console.warn('capture leftovers', e));
     // Start / stop by itself: on this timer AND on every tick of yours (a hidden window's timers slow to about one a
     // minute; the data keeps coming, subscribed persistent below). Busy while a start or stop is under way.
@@ -792,6 +897,7 @@ export async function main() {
     setInterval(autoCheck, 5000);
     showRec();
     setInterval(() => {
+        saveNow();   // the event over, Zwift gone, or a reopened window that heard nothing
         if (Date.now() - lastTick > STALE_MS) {
             setText(el.word, channel ? 'waiting for Zwift data' : 'running, but this Sauce can\'t pass data to the Grid');
             el.word.className = 'call-word quiet';
@@ -804,6 +910,7 @@ export async function main() {
         }
         lastTick = Date.now();
         bikeCheck.update(r.me);
+        hrCheck.update(r.me, r.ds && r.ds.teamHr);
         const data = buildData(r);
         data.call = engineCall(data, r.ds);
         // the recording: the list as Sauce gave it (capture.mjs keeps only what docs/CAPTURE.md says) + the call
@@ -815,6 +922,7 @@ export async function main() {
             myName = (r.me.athlete && r.me.athlete.sanitizedFullname) || myName;
             noteEvent(mySg);
             // your event's name into the recording, once per event (the report's title and summary)
+            if (rec && mySg && recSg === mySg && Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0) recRaced = true;
             if (rec && rec !== stopping && mySg && recSg !== mySg) {
                 const sg = recSg = mySg, into = rec;
                 evInfo.ready.then(v => {

@@ -207,6 +207,20 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         },
         suffix: 'W',
     }, {
+        id: 'ds-burrito',
+        shortName: 'Burritos',
+        longName: 'Burritos still to come from riders ahead of you',
+        tooltip: tip('burrito', 'Riders ahead of you in your race who haven\'t fired their burrito yet, when everyone got ' +
+            'one (you hold one too) or once someone fires one: each can take your draft for 20 s. Fired / riders in the note. ' +
+            'Blank with no burritos in play.'),
+        format: x => num(m(x, 'burrito')?.value),
+        label: x => {
+            const e = m(x, 'burrito');
+            if (!e || !Number.isFinite(e.othersN)) return '';
+            return e.state === 'cone' ? 'move over' : `${e.firedN} of ${e.othersN} fired`;
+        },
+        suffix: '',
+    }, {
         id: 'ds-group',
         shortName: 'Group',
         longName: 'Riders in your group',

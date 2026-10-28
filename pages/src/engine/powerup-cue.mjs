@@ -18,6 +18,12 @@
  * where you gain height fastest (near the foot, carrying speed), but each joule buys more time where you're
  * slower, so the best moment falls in between; anywhere 40–60 s out was within about 0.4 s of the best.
  * The climb ahead comes from the road map riders draw (BendMap.roadAhead: altitude and speed per spot).
+ * A steeper climb further on wins (v0.68.8; the user, 2026-10-26 Watopia: "the call was to fire on the first slope. I held
+ * until the second which was the correct thing to do"): it said FIRE on the first slope's 3.5% for one second, just
+ * before the second climb's 10% came within 600 m. It looks all the way up the climb, or to the next arch that gives a
+ * power-up (the user: "on the alp there are arches mid climb": a feather still held there gets you nothing new), whichever
+ * comes first (limitM; climbTopM): a part FEATHER_BETTER steeper than the best within FEATHER_LOOK_M is the one: 'wait'
+ * (keep it, no call) until it comes within FEATHER_LOOK_M.
  */
 
 export const AERO_BEST_S = 25;          // seconds from the line
@@ -27,6 +33,11 @@ export const FEATHER_SEC = 30;
 export const FEATHER_MIN_GRADE = 0.03;  // a climb worth a feather
 export const FEATHER_LOOK_M = 600;
 export const FEATHER_FIRE_M = 20;       // this close to the steep part = fire now
+export const FEATHER_BETTER = 0.01;     // a steeper part further up is worth keeping it for when this much steeper
+export const CLIMB_RISE_M = 10;         // climbTopM: a climb rises this much ...
+export const CLIMB_DROP_M = 15;         // ... and ends where the road has dropped this far below its top,
+export const CLIMB_DROP_SHARE = 0.25;   // and this share of what it climbed: the dips inside Epic KOM (28 m of 363 m
+                                        // forward, 23 m in reverse; the user: "careful on the volcano and the epic kom")
 
 const none = {state: null, text: ''};
 
@@ -80,7 +91,7 @@ export function steepestAhead(pts, {vNow = 5, lookM = FEATHER_LOOK_M, sec = FEAT
         }
         if (dist > 0 && t >= sec * 0.66) {
             const grade = rise / dist;
-            if (!best || grade > best.grade) {
+            if (!best || grade > best.grade + 1e-6) {   // a tie (a steady grade): the first, not rounding noise
                 best = {startM: p[i].d, grade, secs: t};
             }
         }
@@ -88,12 +99,54 @@ export function steepestAhead(pts, {vNow = 5, lookM = FEATHER_LOOK_M, sec = FEAT
     return best;
 }
 
-/* held: availablePowerUp; profile: BendMap.roadAhead(...).pts; v: m/s; grade: your current grade (fraction). */
-export function featherCue({held, profile, v, grade = 0}) {
+/*
+ * Meters to the top of the climb you're on or coming to, from a profile [{d, alt}]: the highest point before the road
+ * drops below it by CLIMB_DROP_M and by CLIMB_DROP_SHARE of the climb's rise so far, once it has risen CLIMB_RISE_M (a
+ * dip between two ramps stays one climb). The profile's end when it never drops that far (or no climb in it).
+ * Checked on the map export's KOMs: Epic KOM both ways, Volcano KOM (3.5 m dip), Itza, Jarvis, Titans Grove, Alpe du
+ * Zwift, Ventoux, Innsbruck: each one climb, start to banner.
+ */
+export function climbTopM(pts) {
+    const p = (pts || []).filter(x => Number.isFinite(x.alt) && Number.isFinite(x.d));
+    if (!p.length) {
+        return 0;
+    }
+    let lo = Infinity;
+    let top = null;
+    for (const x of p) {
+        if (!top) {
+            lo = Math.min(lo, x.alt);
+            if (x.alt - lo >= CLIMB_RISE_M) {
+                top = {alt: x.alt, d: x.d};
+            }
+        } else if (x.alt > top.alt) {
+            top = {alt: x.alt, d: x.d};
+        } else if (x.alt <= top.alt - Math.max(CLIMB_DROP_M, CLIMB_DROP_SHARE * (top.alt - lo))) {
+            return top.d;
+        }
+    }
+    return p.at(-1).d;
+}
+
+/*
+ * held: availablePowerUp; profile: the road ahead [{d, alt, v}] (as far as it goes: the whole climb, ideally); v: m/s;
+ * grade: your current grade (fraction); archM: meters to the next arch that gives a power-up (null: not known).
+ */
+export function featherCue({held, profile, v, grade = 0, archM = null}) {
     if (held !== 'LIGHTNESS') {
         return none;
     }
-    const s = steepestAhead(profile, {vNow: v});
+    // nothing past the next arch, near or far: the race card says use it before (Spiral Summit replay: from the 14.0 km
+    // arch it counted down to a ramp past the 14.9 km arch)
+    const arch = Number.isFinite(archM) && archM > 0 ? archM : Infinity;
+    const s = steepestAhead(profile, {vNow: v, lookM: Math.min(FEATHER_LOOK_M, arch)});
+    const limitM = Math.min(climbTopM(profile), arch);
+    const far = steepestAhead(profile, {vNow: v, lookM: limitM});
+    if (far && far.startM > FEATHER_LOOK_M && far.grade >= FEATHER_MIN_GRADE &&
+        (!s || far.grade >= s.grade + FEATHER_BETTER)) {
+        return {state: 'wait', startM: far.startM, grade: far.grade,
+                text: `Feather: keep it for the steeper part in ${Math.round(far.startM)} m (${(far.grade * 100).toFixed(1)}% for ~30 s)`};
+    }
     if (!s || s.grade < FEATHER_MIN_GRADE) {
         return none;
     }

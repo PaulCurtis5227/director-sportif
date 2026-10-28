@@ -22,12 +22,12 @@ import {callWords} from './calls.mjs';
 export const METER_OF = {
     'ds-position': 'position', 'ds-holding': 'holding', 'ds-pack': 'pack', 'ds-blocked': 'blocked',
     'ds-pass': 'passing', 'ds-gap': 'gap', 'ds-side': 'side', 'ds-tuck': 'tuck', 'ds-group': 'group', 'ds-cda': 'cda',
-    'ds-surface': 'surface', 'ds-frc': 'frc', 'ds-demand': 'demand'
+    'ds-surface': 'surface', 'ds-frc': 'frc', 'ds-demand': 'demand', 'ds-burrito': 'burrito'
 };
 
 const NAMES = {
     position: 'Position', holding: 'Holding', pack: 'Pack cost', blocked: 'Blocked', passing: 'Passing', gap: 'Gap',
-    side: 'L/R', tuck: 'Tuck', surface: 'Surface', frc: 'FRC', demand: 'Demand',
+    side: 'L/R', tuck: 'Tuck', surface: 'Surface', frc: 'FRC', demand: 'Demand', burrito: 'Burritos',
 };
 
 /* The words fields: one per meter that has words to say. */
@@ -59,6 +59,7 @@ export const ADVICE = {
     holding: ['easy', 'blocked'],
     tuck: ['build', 'stop', 'rest'],
     frc: ['low', 'empty'],
+    burrito: ['cone'],
 };
 export const WORDS_HOLD_S = 3;   // a word stays up at least this long after its meter stops saying it
 

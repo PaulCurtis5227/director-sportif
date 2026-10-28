@@ -16,7 +16,7 @@
  *   .refresh() -> look again (after an import)
  */
 
-import {loadIndex, loadCard, cardForRoute, cardCall, sprintLineAhead, itemKey, validateCard} from './engine/race-card.mjs';
+import {loadIndex, loadCard, cardForRoute, cardCall, sprintLineAhead, nextArchM, itemKey, validateCard} from './engine/race-card.mjs';
 
 /* The cards to pick from: the shipped index's entries and the imported cards (entries carrying the card itself). */
 export function cardEntries(shipped = [], imported = []) {
@@ -86,12 +86,20 @@ export class RaceCards {
     }
 
     /* The card's call now (in an event only: its km are race distances), or null. */
-    call(s, {held = null, v = 0} = {}) {
+    call(s, {held = null, v = 0, tt = false} = {}) {
         if (!s || !s.eventSubgroupId || s.routeId == null) return null;
         this.ensure(s.routeId);
         if (!this.card) return null;
-        const c = cardCall({card: this.card, plan: this.planFor(this.card.id) || {}, edM: s.eventDistance, v, held});
+        const c = cardCall({card: this.card, plan: this.planFor(this.card.id) || {}, edM: s.eventDistance, v, held, tt});
         return c && c.state ? c : null;
+    }
+
+    /* Meters to the next arch that gives a power-up (the feather looks no further), or null. */
+    nextArch(s, {tt = false} = {}) {
+        if (!s || !s.eventSubgroupId || s.routeId == null) return null;
+        this.ensure(s.routeId);
+        if (!this.card) return null;
+        return nextArchM({card: this.card, plan: this.planFor(this.card.id) || {}, edM: s.eventDistance, tt});
     }
 
     sprintLine(s) {

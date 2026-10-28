@@ -53,7 +53,8 @@
  *                 'segment' | 'line' | 'arch' | 'note', kind (sprint / kom / …), plan, power, held, note, inS (seconds to
  *                 the item), endS (to a segment's line), priority, state} or null
  *   surfaceW      watts the surface under you costs your tyres beyond pavement (0 on pavement), surfaceId
- *   surfaceAhead  the next non-pavement stretch on this road within 600 m: {surface, inS, forS} or null
+ *   surfaceAhead  the next non-pavement stretch within 600 m (along your route past junctions): {surface, inS, forS}
+ *                 or null; forS null when its end isn't known (off a route, it runs past this road's end)
  *   bend          a bend ahead (engine/bend-live.mjs bendCue, from the Data Tap; v0.40.0): {state: 'open' (the inside
  *                 is open: moving over gains ground) | 'outside' (you're on the outside: stay close), side ('left' |
  *                 'right', the bend's way), inS, moveM, gainM, lossM} or null; the same state two ticks running
@@ -96,10 +97,14 @@ import {withSpeeds, secsAlong} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
 import {RideAwayWatch} from './ride-away.mjs';
+import {BurritoWatch} from './burrito.mjs';
+import {TeamHrWatch} from './team-hr.mjs';
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
 import {remainingOnSurface} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
 import {riderModel} from './rider-model.mjs';
+
+const FEATHER_ROAD_M = 15000;   // the feather looks up the whole climb (or to the next arch): Alpe du Zwift is 12 km
 
 export const SETTLING_NOTE = 'teleported: settling';
 export const COASTING_NOTE = 'coasting: draft only adds speed';
@@ -162,6 +167,8 @@ export class MeterEngine {
         this.position = new PositionSmoother();
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
         this.rideAway = new RideAwayWatch();   // the group ahead leaves or splits: no "ease off" / "back off" then
+        this.teamHrWatch = new TeamHrWatch();     // a teammate in your race with no heart rate (pen and race)
+        this.burritoWatch = new BurritoWatch();   // burritos fired in your event: the cone ahead, how many are still to come
         this.accel = null;    // {wt, kmh, a}: your acceleration (km/h per s, ~2 s), to time-align the passing cue's speeds
         this.gapFor = null;               // whose (a camera change starts it fresh)
         this.demand = new DemandMeter();  // the pack's demand: the ideal spot's power to hold your group, 30 s
@@ -292,8 +299,10 @@ export class MeterEngine {
         // seconds to the line along the road ahead (its climbs and descents): the last-wheel call is timed by it
         const inEventFinish = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 3000;
         const toLineS = inEventFinish ? secsAlong(roadAhead, me.remaining, this.pace.vFlat ?? v) : null;
-        // TT bikes lose the power-up at the next arch while Sauce still shows it (2026-10-23): no power-up advice
-        const held = base.bike === 'tt' ? null : me.gameState ? me.gameState.availablePowerUp || null : null;
+        // the power-up you hold, on any bike (v0.46.1; the user, 2026-10-26: "if we have a power up yes the call should
+        // come": AERO on the Hanzo cut the drag 0.25 -> 0.17). On a TT bike the next arch takes it (tt: race card calls)
+        const held = me.gameState ? me.gameState.availablePowerUp || null : null;
+        const tt = base.bike === 'tt';
         const finish = settling || !me.self ? null : this.sprintCoach.update({
             wt: s.worldTime, remaining: me.remaining, remainingMetric: me.remainingMetric, remainingType: me.remainingType,
             v, power, held, bike: base.bike, toLineS,
@@ -332,7 +341,7 @@ export class MeterEngine {
             quiet: !!(climb && climb.state) || finale || !!s.activePowerUp});
         // the race card for this route (yours only, in an event)
         const cardCall = settling || !me.self || !this.raceCards ? null :
-            this.raceCards.call(s, {held, v});
+            this.raceCards.call(s, {held, v, tt});
         // ride warnings (yours only): the surface here and ahead, the climb's pacing, your reserve
         const vAhead = this.pace.vFlat ?? v;
         const crrOf = id => {
@@ -344,11 +353,11 @@ export class MeterEngine {
             Math.max(0, (crrOf(surface) - pave) * model.massKg * 9.80665 * Math.max(v, 1)) : 0;
         let surfaceAhead = null;
         if (this.roadMap && me.self && !settling && (!surface || surface === 'pavement' || surface === 'sand')) {
-            const ah = this.roadMap.ahead(s, 600);
+            const ah = this.roadMap.ahead(s, 600, this.routeAhead ? this.routeAhead.sections(s) : null);
             if (ah) {
                 const inS = secsAlong(roadAhead, ah.inM, vAhead);
                 const outS = secsAlong(roadAhead, ah.inM + ah.lengthM, vAhead);
-                surfaceAhead = {surface: ah.surface, inS, forS: inS != null && outS != null ? outS - inS : null};
+                surfaceAhead = {surface: ah.surface, inS, forS: !ah.open && inS != null && outS != null ? outS - inS : null};
             }
         }
         let pacing = null;
@@ -387,9 +396,20 @@ export class MeterEngine {
                 this.bendLast = key;
             }
         }
-        // the feather you hold: at the steepest 30 s ahead (not on a TT bike: held is null there)
-        const fc = me.self && !settling && roadAhead && held === 'LIGHTNESS' ?
-            featherCue({held, profile: roadAhead, v, grade: s.grade || 0}) : null;
+        // the feather you hold: at the steepest 30 s ahead
+        // up the whole climb (to the next arch at most): the route's profile further than the 3 km above (Alpe du Zwift 12 km)
+        let featherRoad = roadAhead;
+        if (me.self && !settling && held === 'LIGHTNESS' && aheadFrom === 'route') {
+            const far = this.routeAhead.ahead(s, FEATHER_ROAD_M);
+            if (far && far.length >= 4) {
+                featherRoad = withSpeeds(far, {vFlat: vA, power: this.pace.power, massKg: model.massKg, cda: model.cda,
+                                               crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
+            }
+        }
+        const fc = me.self && !settling && featherRoad && held === 'LIGHTNESS' ?
+            featherCue({held, profile: featherRoad, v, grade: s.grade || 0,
+                        archM: this.raceCards ? this.raceCards.nextArch(s, {tt}) : null}) : null;
+        // 'wait' too (no call): a steeper part is still ahead, so the finish's "FEATHER at jump" stays quiet (ds-data)
         const feather = fc && fc.state ? {state: fc.state, inS: secsAlong(roadAhead, fc.startM, this.pace.vFlat ?? v),
                                           grade: fc.grade} : null;
         const ds = {
@@ -422,6 +442,8 @@ export class MeterEngine {
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
             surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, feather,
+            burrito: me.self && !settling ? this.burritoWatch.update(entries, me, s.worldTime) : null,
+            teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
             card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
                               power: cardCall.power || null, held: cardCall.held || null, note: cardCall.note || null,

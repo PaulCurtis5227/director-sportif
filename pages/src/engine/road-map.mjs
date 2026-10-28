@@ -144,43 +144,97 @@ export class RoadMap {
     }
 
     /*
-     * The next non-pavement stretch ahead on this road in the direction of travel, within maxM:
-     * {surface, style, inM, lengthM}, or null. (Only the current road: where it ends is a junction.)
+     * The next non-pavement stretch ahead in the direction of travel, within maxM: {surface, style, inM, lengthM,
+     * open}, or null. Off a route the walk ends with this road (where it ends is a junction: the next road isn't
+     * known); with the route's road sections (route = {sections: [{roadId, reverse, start, end}] in riding order, road
+     * percents, as Sauce's getRoute / the route manifest; laps: true to go round again) it follows the route onto the
+     * next roads (v0.68.8; 2026-10-26: "dirt in 1 for 15" where a 285 m road's dirt ran on 1.1 km into the next road).
+     * open = the stretch goes on past where the walk ended: lengthM is only its least length.
      */
-    ahead(s, maxM = 600) {
+    ahead(s, maxM = 600, route = null) {
         const road = this.road(s.courseId, s.roadId);
         const p = roadPercent(s);
         if (!road || p == null) {
             return null;
         }
-        const here = metersAt(road, p);
-        const dir = s.reverse ? -1 : 1;
+        const legs = this.legs(s, road, p, route);
         // Walk forward in steps; later sections override earlier ones, as in styleAt().
         const stepM = 10;
-        const totalM = metersAt(road, 1);
+        const limitM = maxM + 2000;
         let run = null;
-        for (let d = stepM; d <= maxM + 2000; d += stepM) {
-            const m = here + dir * d;
-            if (m < 0 || m > totalM) {
-                break;
-            }
-            const q = percentAtMeters(road, m);
-            const style = styleAt(road, q);
-            const surface = styleCategory(style);
-            if (!run) {
-                if (surface !== 'pavement' && surface !== 'sand') {
-                    if (d > maxM) {
-                        return null;
+        let base = 0;
+        for (const leg of legs) {
+            const span = Math.abs(leg.toM - leg.fromM);
+            const dir = leg.toM >= leg.fromM ? 1 : -1;
+            for (let x = stepM; x <= span; x += stepM) {
+                const d = base + x;
+                if (d > limitM) {
+                    if (run) {
+                        run.open = true;
                     }
-                    run = {surface, style, inM: d - stepM / 2, lengthM: stepM};
+                    return run;
                 }
-            } else if (surface === run.surface) {
-                run.lengthM += stepM;
-            } else {
-                break;
+                const style = styleAt(leg.road, percentAtMeters(leg.road, leg.fromM + dir * x));
+                const surface = styleCategory(style);
+                if (!run) {
+                    if (surface !== 'pavement' && surface !== 'sand') {
+                        if (d > maxM) {
+                            return null;
+                        }
+                        run = {surface, style, inM: d - stepM / 2, lengthM: stepM, open: false};
+                    }
+                } else if (surface === run.surface) {
+                    run.lengthM += stepM;
+                } else {
+                    return run;
+                }
             }
+            base += span;
+        }
+        if (run) {
+            run.open = true;   // the road (or the route) ran out first
         }
         return run;
+    }
+
+    /*
+     * The stretches of road ahead: [{road, fromM, toM}] (toM < fromM: ridden in reverse). This road to its end, or
+     * along the route: to the end of your section, then each next section (round the lap again with laps).
+     */
+    legs(s, road, p, route) {
+        const here = metersAt(road, p);
+        const toEnd = {road, fromM: here, toM: s.reverse ? 0 : metersAt(road, 1)};
+        const list = route && Array.isArray(route.sections) ? route.sections : null;
+        if (!list || !list.length) {
+            return [toEnd];
+        }
+        const eps = 0.002;
+        const i = list.findIndex(x => x.roadId === s.roadId && !!x.reverse === !!s.reverse &&
+                                      p >= Math.min(x.start, x.end) - eps && p <= Math.max(x.start, x.end) + eps);
+        if (i < 0) {
+            return [toEnd];   // not where the route says: this road only
+        }
+        const sec = list[i];
+        const legs = [{road, fromM: here, toM: metersAt(road, s.reverse ? Math.min(sec.start, sec.end) : Math.max(sec.start, sec.end))}];
+        const lapStart = Math.max(0, list.findIndex(x => !x.leadin));
+        let k = i + 1;
+        for (let n = 0; n < list.length; n++, k++) {
+            if (k >= list.length) {
+                if (!route.laps) {
+                    break;
+                }
+                k = lapStart;
+            }
+            const x = list[k];
+            const r = this.road(s.courseId, x.roadId);
+            if (!r) {
+                break;
+            }
+            const lo = metersAt(r, Math.min(x.start, x.end));
+            const hi = metersAt(r, Math.max(x.start, x.end));
+            legs.push({road: r, fromM: x.reverse ? hi : lo, toM: x.reverse ? lo : hi});
+        }
+        return legs;
     }
 }
 
