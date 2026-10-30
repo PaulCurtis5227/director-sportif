@@ -198,6 +198,12 @@ export class GapCurve {
         }
     }
 
+    /* A rider's smoothed share starts over (Position after a gap opening: the old share still held the gap's cost). */
+    resetShare(athleteId) {
+        const r = this.riders.get(athleteId);
+        if (r) r.share = null;
+    }
+
     /*
      * The group-relative zero for Position: what the best-placed rider in your group really saves right now
      * (SHARE_PCT of the smoothed shares of riders in your group, its front rider left out), and your own share.

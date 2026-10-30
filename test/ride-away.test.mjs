@@ -39,3 +39,43 @@ test('ride away: the front leaving while the rest stay is "shatter", held for a 
     assert.equal(run(20, steady, w, 13).state, 'shatter', 'held');
     assert.equal(run(12 + RIDE_AWAY.holdS + 2, steady, w, 21), null);
 });
+
+// riders with their own speeds (km/h): [lead at t, speed] per rider
+const tickV = (t, riders) => {
+    const me = {athleteId: 'me', gapDistance: 0, state: {worldTime: t * 1000, speed: 33, roadId: 1, reverse: false}};
+    return {me, entries: [me, ...riders.map(([d, kmh], i) => ({athleteId: `r${i}`, gapDistance: -d,
+        state: {worldTime: t * 1000, speed: kmh, roadId: 1, reverse: false}}))]};
+};
+
+test('ride away: one rider coming past plus a lone rider up the road is not a shatter (2026-10-29, a line of 5)', () => {
+    const w = new RideAwayWatch();
+    let r = null;
+    for (let t = 0; t <= 15; t++) {
+        // three steady wheels, one rider passing at +0.85 m/s, one rider 30 m up drifting off at 0.65 m/s
+        const {me, entries} = tickV(t, [[2.3, 33], [5.2, 33], [8.0, 33], [1.3 + 0.85 * t, 36.1], [30 + 0.65 * t, 35.3]]);
+        r = w.update(entries, me, t * 1000);
+    }
+    assert.equal(r, null);
+});
+
+test('ride away: a lead that jumps beyond the riders\' speeds is a data jump, not riders leaving', () => {
+    const w = new RideAwayWatch();
+    let r = null;
+    for (let t = 0; t <= 15; t++) {
+        // everyone at your speed; at t = 5 two of them jump 35 m up the road (the gaps switching source, as at 8:02)
+        const jump = t >= 5 ? 35 : 0;
+        const {me, entries} = tickV(t, [[2, 33], [3, 33], [4, 33], [5, 33], [6 + jump, 33], [6.5 + jump, 33]]);
+        r = w.update(entries, me, t * 1000);
+    }
+    assert.equal(r, null);
+});
+
+test('ride away: two or more riders leaving at their real speed is still a shatter', () => {
+    const w = new RideAwayWatch();
+    let r = null;
+    for (let t = 0; t <= 12; t++) {
+        const {me, entries} = tickV(t, [[2, 33], [3, 33], [4, 33], [5, 33], [10 + 1.2 * t, 37.3], [12 + 1.2 * t, 37.3]]);
+        r = w.update(entries, me, t * 1000);
+    }
+    assert.equal(r && r.state, 'shatter');
+});

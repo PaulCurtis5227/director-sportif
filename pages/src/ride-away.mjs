@@ -19,12 +19,19 @@
  * Measured per rider, not on the group's front: the group splits and joins tick to tick when it stretches (100 riders,
  * then 16, then 42), so its front jumps. Each rider up to RIDE_AWAY.maxAheadM ahead on your road is followed by id:
  * their lead over you now vs RIDE_AWAY.windowS ago.
+ *
+ * v0.50.0 (2026-10-29 Tour of Watopia stage 4, 'group shattering' in a steady line of 5): with 5 riders the 90th
+ * percentile IS the fastest one, so one rider coming past you (1.3 -> 9.7 m in 10 s) plus a lone rider 38 m up was a
+ * shatter. Now RIDE_AWAY.leaveRiders+ riders must be leaving at frontMps+. And a lead that moved in a way their speed
+ * can't explain (RIDE_AWAY.jumpMps off the speed difference: 0.9 -> 39.6 m in 10 s at +0.9 m/s, gaps switching from a
+ * road Sauce has no map for) is a data jump, not a rider leaving: left out.
  *   new RideAwayWatch().update(entries, me, wt) -> {state: 'away' | 'shatter', mps (median), front, riders} or null
  */
 import {leads} from './engine/wheels.mjs';
 
 export const RIDE_AWAY = {windowS: 10, maxAheadM: 40, awayMps: 0.3, minRiders: 3,
-                          frontMps: 0.8, spreadMps: 1.0, shatterRiders: 5, holdS: 20};
+                          frontMps: 0.8, spreadMps: 1.0, shatterRiders: 5, holdS: 20,
+                          leaveRiders: 2, jumpMps: 2};
 
 const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
 
@@ -34,7 +41,7 @@ export class RideAwayWatch {
     }
 
     reset() {
-        this.hist = [];        // [{wt, rel: Map(athleteId -> meters ahead of you)}], the oldest about windowS back
+        this.hist = [];        // [{wt, rel: Map(athleteId -> {d: meters ahead of you, dv: their speed − yours, m/s})}], the oldest about windowS back
         this.shatterAt = null; // when the split was last seen (wt)
         this.last = null;
     }
@@ -50,7 +57,7 @@ export class RideAwayWatch {
             const x = lead.get(o);
             if (x == null) continue;
             const d = x - mine;
-            if (d > 0.5 && d <= RIDE_AWAY.maxAheadM) rel.set(o.athleteId, d);
+            if (d > 0.5 && d <= RIDE_AWAY.maxAheadM) rel.set(o.athleteId, {d, dv: ((t.speed || 0) - (s.speed || 0)) / 3.6});
         }
         this.hist.push({wt, rel});
         while (this.hist.length > 2 && this.hist[1].wt <= wt - RIDE_AWAY.windowS * 1000) this.hist.shift();
@@ -58,16 +65,19 @@ export class RideAwayWatch {
         const dt = (wt - old.wt) / 1000;
         const rates = [];
         if (dt >= RIDE_AWAY.windowS * 0.6 && dt <= RIDE_AWAY.windowS * 3) {
-            for (const [id, d] of rel) {
-                const d0 = old.rel.get(id);
-                if (d0 != null) rates.push((d - d0) / dt);
+            for (const [id, now] of rel) {
+                const then = old.rel.get(id);
+                if (!then) continue;
+                const rate = (now.d - then.d) / dt;
+                if (Math.abs(rate - (now.dv + then.dv) / 2) <= RIDE_AWAY.jumpMps) rates.push(rate);
             }
         }
         rates.sort((a, b) => a - b);
         let out = null;
         if (rates.length >= RIDE_AWAY.minRiders) {
             const mps = quantile(rates, 0.5), front = quantile(rates, 0.9);
-            if (rates.length >= RIDE_AWAY.shatterRiders && front >= RIDE_AWAY.frontMps &&
+            const leaving = rates.filter(r => r >= RIDE_AWAY.frontMps).length;
+            if (rates.length >= RIDE_AWAY.shatterRiders && front >= RIDE_AWAY.frontMps && leaving >= RIDE_AWAY.leaveRiders &&
                 front - quantile(rates, 0.25) >= RIDE_AWAY.spreadMps) this.shatterAt = wt;
             out = mps >= RIDE_AWAY.awayMps ? {state: 'away', mps, front, riders: rates.length} : null;
         }

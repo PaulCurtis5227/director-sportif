@@ -3,7 +3,7 @@
     "id": "director-sportif",
     "name": "Director Sportif",
     "description": "Race calls and pack meters for Zwift, built on measured Zwift physics: what your spot in the pack costs (Position), watts you spend for nothing (Holding, Blocked), the gap and left/right to the wheel, and spoken calls for the pack, climbs, the finish and power-ups. Records your rides for a free report at caffecter.com, and can run OBS with the race.",
-    "version": "0.49.0",
+    "version": "0.50.0",
     "author": "PaulCurtis5227",
     "web_root": "pages",
     "windows": [

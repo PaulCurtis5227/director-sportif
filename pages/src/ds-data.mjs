@@ -27,6 +27,7 @@ const COMMON = {
     coasting: {word: '', help: 'Coasting: the draft only adds speed, it saves no pedaling watts.'},
     warming: {word: '', help: 'Filling the averaging window.'},
     draftless: {word: '', help: 'You get no draft (a TT bike in a group, or a time trial): the pack meters and their calls are off.'},
+    'no-map': {word: 'no map', help: 'Sauce has no map for this road yet (a new road): gaps are unknown until you have ridden a few seconds on it, then measured from where Zwift puts you along the road.'},
     none: {word: '', help: ''},
 };
 
@@ -302,7 +303,9 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     const alone = !(ds.groupSize >= 2);
     // no draft at all (a TT bike, a time trial): the pack meters have nothing to say (v0.40.0)
     const draftless = !settling && !alone && !!ds.draftless;
-    const common = settling ? 'settling' : alone ? 'alone' : draftless ? 'draftless' : null;
+    // a road Sauce has no map for, before its scale is learned (road-gaps.mjs): no gaps, so no pack meters (v0.50.0)
+    const noMap = !settling && ds.gapSource === 'none';
+    const common = settling ? 'settling' : noMap ? 'no-map' : alone ? 'alone' : draftless ? 'draftless' : null;
     const pack = x => (draftless ? null : x);
 
     const blockedState = common || (ds.blocked ? (ds.blockedSide ? `blocked-${ds.blockedSide}` : 'blocked') : 'clear');
@@ -310,8 +313,8 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     if (ds.passKind === 'attack') passState = ds.passAtWheel ? 'drop-back' : ds.passWide ? 'too-slow' : 'go-wide';
     else if (ds.passKind === 'defend') passState = DEFEND_STATE[ds.passWhere] || 'none';
     if (draftless) passState = 'draftless';
-    const gapState = ds.noDraftWheel ? 'no-draft' : Number.isFinite(ds.gapM) ? 'wheel' : ds.beside ? 'beside' : 'no-wheel';
-    const sideState = !Number.isFinite(ds.sideM) ? 'no-wheel' : ds.beside ? 'beside' : 'inline';
+    const gapState = noMap ? 'no-map' : ds.noDraftWheel ? 'no-draft' : Number.isFinite(ds.gapM) ? 'wheel' : ds.beside ? 'beside' : 'no-wheel';
+    const sideState = noMap ? 'no-map' : !Number.isFinite(ds.sideM) ? 'no-wheel' : ds.beside ? 'beside' : 'inline';
     const t = ds.tuck;
     // fast enough, still pedaling: in a race (or not known yet) stop pedaling; outside races the tuck is only a rest
     const ready = t && t.race === false ? 'rest' : 'stop';

@@ -40,6 +40,15 @@ export const AUTO_FRESH_S = 60;    // all the time: start only while your data i
 export const FREE_RIDE = 'free';   // `owned` for an all-the-time recording
 export const AUTO_KEEP_H = 48;     // state(): events this old are forgotten
 
+/*
+ * The laps that end an event, from Sauce's event subgroup (getEventSubgroup), when only laps can tell: not a time or
+ * distance event. null otherwise. Sauce counts a route event's laps as laps || 1 (stats.mjs _getRouteDistance).
+ */
+export function eventLapsOf(subgroup) {
+    if (!subgroup || subgroup.durationInSeconds > 0 || subgroup.distanceInMeters > 0) return null;
+    return Number.isFinite(subgroup.laps) && subgroup.laps > 0 ? subgroup.laps : 1;
+}
+
 export class AutoRecord {
     constructor({tailS = AUTO_TAIL_S, idleS = AUTO_IDLE_S, leadS = AUTO_LEAD_S, events = true, always = false} = {}) {
         this.tailS = tailS;
@@ -61,6 +70,7 @@ export class AutoRecord {
         this.ended = new Set();   // events you finished: never again, and no OBS "with the race" for them
         this.seenAt = new Map();  // sg -> when it was last noted (for state()'s expiry)
         this.sawLeft = false;     // seen with distance / time left in this event
+        this.sawLaps = false;     // seen with laps still to ride in this event (the laps finish below)
         this.hand = null;         // a recording you started: {sg} = the event it was started in (null = outside one)
     }
 
@@ -68,8 +78,13 @@ export class AutoRecord {
      * Your own state, every tick: sg = state.eventSubgroupId, finished = crossed the event's finish, left = the event's
      * remaining (null / omitted: not known, finished is taken as it comes), start = the event's start (see this.start),
      * moving = the race under way for you.
+     * laps = state.laps, eventLaps = eventLapsOf(the subgroup): the finish when remaining isn't known. 2026-10-29 Tour of
+     * Watopia stage 4 on Watopia's new roads: Sauce had no length for the route, remaining was null all ride (its own
+     * event end never fired either), and the recording ran 5 min past the line until you left the event. Zwift's own
+     * lap count went 0 -> 1 at the line. Only after laps < eventLaps was seen in this event (a count carried over
+     * never ends it).
      */
-    tick(nowMs, {sg, finished = false, left, start = null, moving = false}) {
+    tick(nowMs, {sg, finished = false, left, start = null, moving = false, laps = null, eventLaps = null}) {
         this.start = start;
         this.moving = !!moving;
         if (sg && this.owned === sg && moving) this.raced = true;
@@ -80,10 +95,15 @@ export class AutoRecord {
             this.sg = sg;
             this.finished = false;
             this.sawLeft = false;
+            this.sawLaps = false;
             this.freeStopped = false;
         }
         if (Number.isFinite(left) && left > 0) this.sawLeft = true;
         if (left !== undefined && !this.sawLeft) finished = false;   // never seen before its end: no end at all
+        if (sg && !Number.isFinite(left) && eventLaps > 0 && Number.isFinite(laps)) {
+            if (laps < eventLaps) this.sawLaps = true;
+            else if (this.sawLaps) finished = true;
+        }
         if (sg && finished && !this.finished) {
             this.finished = true;
             this.ended.add(sg);

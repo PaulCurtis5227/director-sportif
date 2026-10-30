@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MeterEngine, meterRider, SETTLING_NOTE, COASTING_NOTE} from '../pages/src/meter-engine.mjs';
 import {buildData} from '../pages/src/ds-data.mjs';
+import {engineCall} from '../pages/src/calls.mjs';
 import {riderModel, sizeFactor, WHEELS, AERO_SOCKS_FACTOR} from '../pages/src/rider-model.mjs';
 import {meterFields, fmtSide, FT_PER_M} from '../pages/src/meter-fields.mjs';
 import {UNIT_PER_M, packCostW} from '../pages/src/engine/pack-cost.mjs';
@@ -308,4 +309,74 @@ test('supertuck: race-aware (raceFor): coast in a race or not known yet, rest ou
     assert.equal(word(() => false), 'rest', 'a group ride: only a rest');
     assert.equal(word(() => null), 'stop', 'not known yet: as before');
     assert.equal(word(undefined), 'stop', 'no raceFor: as before');
+});
+
+// A bunch on a road Sauce has no map for (2026-10-29, Watopia's new roads): every gapDistance exactly 0, the list in
+// Sauce's order (riders ahead, you, behind), each state its own age. True places: `places` m ahead of you (− = behind).
+const RC_PER_M = 100;
+const noMapTick = (k, places, {gaps = 'zero'} = {}) => {
+    const wt = 100000 + k * 1000;
+    const myRc = 400000 + k * 10 * RC_PER_M;   // 36 km/h = 10 m/s
+    const me = {athleteId: 1, self: true, watching: true, gapDistance: 0,
+                state: {worldTime: wt, speed: 36, courseId: 6, roadId: 196, reverse: false, roadPosition: 0, power: 200,
+                        altitude: 100, grade: 0, draft: 120, roadCompletion: myRc, distance: 1000 + 10 * k, x: 0, y: 0}};
+    const others = places.map((d, i) => {
+        const age = [0.1, 1.1, 0.3, 0.9, 1.2, 0.2][i % 6];   // seconds old: Sauce's states arrive unevenly
+        return {athleteId: 10 + i, gapDistance: gaps === 'zero' ? 0 : gaps === 'none' ? undefined : -d,
+                state: {worldTime: wt - age * 1000, speed: 36, courseId: 6, roadId: 196, reverse: false,
+                        roadPosition: (i % 3 - 1) * 0.3 * UNIT_PER_M, power: 200, altitude: 100, grade: 0, draft: 120,
+                        roadCompletion: myRc + (d - age * 10) * RC_PER_M, x: 0, y: 0}};
+    });
+    return [...others.filter((_, i) => places[i] > 0), me, ...others.filter((_, i) => places[i] <= 0)];
+};
+
+test('bad input: every gap 0 (no map for the road) -> Gap blank, then measured; never age × speed, no gap calls', () => {
+    const places = [4, 9, 15, 22, 30, -3, -8, -14];
+    const e = new MeterEngine();
+    let r = e.update(noMapTick(0, places));
+    assert.equal(r.ds.gapSource, 'none');
+    assert.equal(r.ds.gapM, null, 'blank until the road is measured, not the 0–1 m it read on 2026-10-29');
+    assert.equal(buildData(r).meters.gap.state, 'no-map');
+    assert.equal(buildData(r).meters.position.state, 'no-map');
+    const calls = [];
+    for (let k = 1; k < 40; k++) {
+        r = e.update(noMapTick(k, places));
+        const call = engineCall(buildData(r, {now: k * 1000}), r.ds);
+        if (call) calls.push(`${call.id}/${call.state}`);
+    }
+    assert.equal(r.ds.gapSource, 'road');
+    assert.ok(Math.abs(r.ds.gapM - 4) < 0.5, `the wheel 4 m up: ${r.ds.gapM}`);
+    assert.equal(r.ds.gapApprox, true);
+    assert.equal(r.ds.groupSize, places.length + 1);
+    assert.deepEqual(calls.filter(c => /^gap\//.test(c)), [], 'a steady bunch never "shatters"');
+});
+
+test('bad input: every gap missing -> Gap blank and no gap calls (never a guess)', () => {
+    const e = new MeterEngine();
+    const calls = [];
+    let r;
+    for (let k = 0; k < 30; k++) {
+        r = e.update(noMapTick(k, [4, 9, 15, -3], {gaps: 'none'}));
+        const call = engineCall(buildData(r, {now: k * 1000}), r.ds);
+        if (call) calls.push(call.id);
+    }
+    assert.equal(r.ds.gapM, null);
+    assert.equal(r.ds.groupSize, 1);
+    assert.deepEqual(calls.filter(c => c === 'gap' || c === 'pass' || c === 'passed'), []);
+});
+
+test('position: just after a gap opening it gives no advice while it reads your spot again', () => {
+    const e = new MeterEngine();
+    const tick = wt => [rider(1, 0, 0, {self: true, wt}), rider(2, 3.2, 0, {wt}), rider(3, 8, 0, {wt}), rider(4, 13, 0, {wt})]
+        .map(o => (Object.assign(o.state, {power: 200, altitude: 100, grade: 0, draft: 60}), o));
+    e.update(tick(98000));   // you (the first tick starts the meter rider)
+    e.posQuietWt = 99000;    // a gap opening's last tick
+    e.posGapOn = true;
+    let r = e.update(tick(100000));
+    assert.equal(r.ds.positionState, 'warming');
+    assert.equal(e.posGapOn, false, 'started over on the first tick after');
+    for (let wt = 101000; wt < 99000 + 10000; wt += 1000) r = e.update(tick(wt));
+    assert.equal(r.ds.positionState, 'warming', 'still inside POSITION_TAU_S');
+    r = e.update(tick(99000 + 10000));
+    assert.notEqual(r.ds.positionState, 'warming', 'advice again once filled');
 });

@@ -77,11 +77,12 @@
 
 import {freshEntries, DraftClassifier} from './engine/riders-live.mjs';
 import {wheelsAhead, gapBehind} from './engine/wheels.mjs';
+import {RoadGaps} from './engine/road-gaps.mjs';
 import {GapCurve, groupLayout} from './engine/gap-curve.mjs';
 import {packSituation, packCostW, packCostNote, packCostState, foreAftW, UNIT_PER_M} from './engine/pack-cost.mjs';
 import {TeleportGuard} from './engine/teleport.mjs';
 import {powerComponents} from './engine/physics.mjs';
-import {spotCost, PositionSmoother, positionAdvice, positionState, noDraftSpot, GapWatch, DemandMeter, packDemandW, COAST_W, NO_DRAFT_NOTE}
+import {spotCost, PositionSmoother, POSITION_TAU_S, positionAdvice, positionState, noDraftSpot, GapWatch, DemandMeter, packDemandW, COAST_W, NO_DRAFT_NOTE}
     from './engine/position.mjs';
 export {NO_DRAFT_NOTE};
 import {HoldingMeter, holdingW, GroupMotion, HOLD_PAIR_S, HOLD_PACK_S, MOTION_MS} from './engine/holding.mjs';
@@ -158,13 +159,18 @@ export class MeterEngine {
         this.draftClass = new DraftClassifier();   // about the other riders: kept across camera changes
         this.tuckDrag = new TuckDrag();             // your tucks this session (a camera change doesn't matter: own ticks only)
         this.bendMap = new BendMap();               // the road, learned from where every rider rode: kept across camera changes
+        this.roadGaps = new RoadGaps();             // roads Sauce has no map for (its gaps all 0): kept across camera changes
+        this.gapSource = 'sauce';
         this.startRider();
     }
 
     /* A different rider (a camera change): their teleports, windows and smoothing start over. */
     startRider() {
         this.teleport = new TeleportGuard({newcomers: false});
+        this.roadGaps.restart();
         this.position = new PositionSmoother();
+        this.posQuietWt = null;   // the last tick of a gap opening / shatter: Position gives no advice for POSITION_TAU_S after
+        this.posGapOn = false;    // that was the last tick (the next one starts Position over)
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
         this.rideAway = new RideAwayWatch();   // the group ahead leaves or splits: no "ease off" / "back off" then
         this.teamHrWatch = new TeamHrWatch();     // a teammate in your race with no heart rate (pen and race)
@@ -198,7 +204,17 @@ export class MeterEngine {
         const s = me.state;
         const v = (s.speed || 0) / 3.6;
         const power = s.power || 0;
-        const entries = freshEntries(all, me);   // frozen avatars stay in the list ~15 s: read current states only
+        // on a road Sauce has no map for, its gaps are all 0: measured from the road completion instead, or none (road-gaps.mjs)
+        const fixed = this.roadGaps.update(all, me);
+        if (fixed.source !== this.gapSource) {   // what the watches saw on the other side of the change means nothing now
+            this.gapSource = fixed.source;
+            this.gapWatch.reset();
+            this.rideAway.reset();
+            this.position.reset();
+            this.posQuietWt = null;
+            this.posGapOn = false;
+        }
+        const entries = freshEntries(fixed.entries, me);   // frozen avatars stay in the list ~15 s: read current states only
         const aheadMap = wheelsAhead(entries);
         this.draftClass.update(entries, aheadMap);
         const ahead = aheadMap.get(me.athleteId) || null;
@@ -415,7 +431,8 @@ export class MeterEngine {
         const ds = {
             ts: s.worldTime,
             gapM: inline ? inline.gap : null,
-            gapApprox: !!(inline && inline.gapSource === 'distance'),
+            gapApprox: !!(inline && (inline.gapSource === 'distance' || this.gapSource === 'road')),
+            gapSource: this.gapSource,
             noDraftWheel,
             sideM,
             beside: !!(wheel && !inline),
@@ -485,6 +502,8 @@ export class MeterEngine {
         }
         // a gap opening ahead beats any advice about your own gap ("back off" while the wheel drifts off the group)
         if (gapping) {
+            this.posQuietWt = s.worldTime;
+            this.posGapOn = true;
             const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
             if (gapping.which === 'shatter') {
                 return {w: L.size < 2 ? null : w, state: 'shatter', note: 'group shattering: the riders ahead are splitting up. Do what you can: hold the front part, or the group you can'};
@@ -501,6 +520,21 @@ export class MeterEngine {
         if (L.size >= 2 && power < COAST_W) {
             this.position.reset();
             return {w: null, note: COASTING_NOTE, state: 'coasting'};
+        }
+        // just after a gap opening / shatter: Position starts over (its 10 s average still held the gap's cost: 2026-10-29,
+        // steady at 3.2 m in a line of 5, 'hold a wheel' then 'back off' as 29 W ran down to 11) and gives no advice until
+        // it has filled again
+        if (this.posQuietWt != null) {
+            if (this.posGapOn) {   // the first tick after it: your 10 s share and Position start over
+                this.gapCurve.resetShare?.(this.athleteId);
+                this.position.reset();
+            }
+            this.posGapOn = false;
+            if (s.worldTime - this.posQuietWt < POSITION_TAU_S * 1000) {
+                const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
+                return {w: L.size < 2 ? null : w, note: 'after the gap opening: reading your spot again', state: 'warming'};
+            }
+            this.posQuietWt = null;
         }
         const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
         return {w: L.size < 2 ? null : w, note: positionAdvice(w, spot.best, L, spot.boxed, undefined, spot.gapW),

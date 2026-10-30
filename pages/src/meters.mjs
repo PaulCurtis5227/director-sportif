@@ -101,6 +101,10 @@
  * with your team tag in your race, no heart rate for 20 s; pen and race, every 2 min).
  * v0.49.0: no heart rate is a red banner that stays until "I know Nick has no HR" (hrChecker; the user: a DQ or half
  * points, it must not get lost in the calls); you are watched too; a teammate acknowledged is quiet for the event, you get up to 3 (a new dropout only).
+ * v0.50.0 (EM v0.69.0; 2026-10-29 Tour of Watopia stage 4): roads Sauce has no map for (its gaps all 0) -> gaps from the
+ * road completion, blank ('no map') until measured (engine/road-gaps.mjs); the finish by laps when remaining is unknown
+ * (auto-record.mjs eventLapsOf); "group shattering" needs 2+ riders leaving and ignores data jumps (ride-away.mjs);
+ * Position starts over after a gap opening and gives no advice for 10 s.
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -119,7 +123,7 @@ import {RaceCards, cardEntries, loadEntry, importCard} from './race-cards-live.m
 import {CaptureRecorder} from './capture.mjs';
 import {Checkpoint, idbStore, leftovers, recoveredBlob, CHECKPOINT_S} from './engine/checkpoint.mjs';
 import {SaveQueue, holdSaves} from './save-queue.mjs';
-import {AutoRecord, AUTO_LEAD_S, AUTO_TAIL_S} from './engine/auto-record.mjs';
+import {AutoRecord, AUTO_LEAD_S, AUTO_TAIL_S, eventLapsOf} from './engine/auto-record.mjs';
 import {ObsClient} from './engine/obs-client.mjs';
 import {VideoClock, obsActive, obsPlanText} from './video-clock.mjs';
 import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-card.mjs';
@@ -128,7 +132,7 @@ import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 import {hrAckText} from './team-hr.mjs';
 
-export const DS_VERSION = '0.49.0';
+export const DS_VERSION = '0.50.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -497,7 +501,7 @@ export async function main() {
             const e = x && x.eventId != null ? await Common.rpc.getEvent(x.eventId).catch(() => null) : null;
             const startMs = x && (Number.isFinite(x.ts) ? x.ts : Date.parse(x.eventSubgroupStart));
             return {eventName: (e && e.name) || null, subgroup: (x && x.subgroupLabel) || null, eventType: (e && e.eventType) || null,
-                    startMs: Number.isFinite(startMs) ? startMs : null};
+                    startMs: Number.isFinite(startMs) ? startMs : null, laps: eventLapsOf(x)};
         }).catch(e => {
             console.warn('event for the title', e);
             return null;
@@ -934,7 +938,8 @@ export async function main() {
             auto.tick(lastTick, {sg: r.me.state.eventSubgroupId,
                                  finished: r.me.remainingType === 'event' && Number.isFinite(r.me.remaining) && r.me.remaining <= 0,
                                  left: r.me.remainingType === 'event' ? r.me.remaining : null,
-                                 start: eventStart(mySg), moving: Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0});
+                                 start: eventStart(mySg), moving: Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0,
+                                 laps: r.me.state.laps, eventLaps: evInfo.sg === mySg && evInfo.value ? evInfo.value.laps : null});
             autoCheck();
             obsTickConnect();
             obsRaceCheck(Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0);

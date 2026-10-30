@@ -48,8 +48,10 @@ below). A display may override them with the rider's own thresholds.
 Common states, used by every meter with nothing to read: `alone` (no group) · `settling` (just teleported)
 · `coasting` (under 30 W in a group) · `warming` (filling the window) · `draftless` (you get no draft at all: 0 W on a
 wheel for 20 s, a TT bike in a group or a time trial; Position, Holding, Pack cost, Blocked and Passing, and their
-calls, plus move up, habits and the finish's wheel calls, v0.40.0) · `none` (nothing to show here). No word is shown
-for them; the value is 0 (watt meters) or blank (the rest).
+calls, plus move up, habits and the finish's wheel calls, v0.40.0) · `no-map` (a road Sauce has no map for, its gaps all
+0, until the road is measured from your own riding: the pack meters, Gap and L/R; v0.50.0, word "no map") · `none`
+(nothing to show here). No word is shown for them (except `no-map`); the value is 0 (watt meters) or blank (the rest).
+Once measured, Gap is `approx` (from the road completion, ~0.3 m off at 5–15 m).
 
 | Meter (key) | Value | Unit | States → word | Level (warn / alarm) |
 |---|---|---|---|---|
