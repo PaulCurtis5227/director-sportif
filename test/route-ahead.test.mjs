@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {routeProfile, profileAhead, speedAt, withSpeeds, RouteAhead, routeSections} from '../pages/src/route-ahead.mjs';
+import {routeProfile, profileAhead, speedAt, withSpeeds, RouteAhead, routeSections, curvyStretch, S_CURVE} from '../pages/src/route-ahead.mjs';
 import {nextClimb} from '../pages/src/engine/director.mjs';
 
 /*
@@ -119,4 +119,51 @@ test('the route roads in order for the surface ahead: welds dropped, laps kept',
     await new Promise(res => setTimeout(res, 0));
     assert.equal(ra.sections({routeId: 5}).sections.length, 3);
     assert.equal(ra.sections({}), null, 'off a route');
+});
+
+/*
+ * A traced route (Sauce's CurvePath.trace walks the road in small steps; x/y/z in cm): 300 m straight, then an S of
+ * two opposite 75° bends of radius 20 m (~26 m each), then straight again.
+ */
+function tracedRoute() {
+    const pts = [];
+    let x = 0, y = 0, a = 0;
+    const step = 0.5;
+    const turnAt = d => (d >= 300 && d < 326.2 ? 1 : d >= 326.2 && d < 352.4 ? -1 : 0);
+    for (let d = 0; d <= 700; d += step) {
+        pts.push([x * 100, y * 100, 0]);
+        a += turnAt(d) * step / 20;
+        x += Math.cos(a) * step;
+        y += Math.sin(a) * step;
+    }
+    return {zToAlt: z => z / 100, sections: [{}], curvePath: {nodes: [{index: 0}],
+        trace: (cb) => pts.forEach(p => cb({stepNode: p, index: 0}))}};
+}
+const at = d => ({routeId: 1, routeDistance: d, routeEnd: 700, laps: 0});
+
+test('cut the S: the route traced with its direction; a twisting stretch ahead is found, a straight road is not', () => {
+    const prof = routeProfile(tracedRoute());
+    const near = profileAhead(prof, at(220), 400);
+    assert.ok(near.every(p => Number.isFinite(p.a) || p.d < 6), 'the road direction on every traced point');
+    const s = curvyStretch(near, () => S_CURVE.paveDeg);
+    assert.ok(s, 'an S of 2 x 75 deg = 150 deg: past the pavement line');
+    assert.ok(s.startM >= 78 && s.startM <= 95, `where the turning starts, the S at 80 m ahead (${s.startM} m; 5 m points, 10° to count)`);
+    assert.ok(s.turnDeg >= S_CURVE.paveDeg && s.turnDeg < 160, `turning ${s.turnDeg}: the first window past the line`);
+    assert.equal(s.s, true, 'both ways: an S');
+    assert.equal(curvyStretch(profileAhead(prof, at(20), 200), () => S_CURVE.paveDeg), null, 'straight road ahead');
+    assert.equal(curvyStretch(profileAhead(prof, at(310), 300), () => S_CURVE.paveDeg), null, 'already in it: no call');
+    // dirt calls it from 90 deg: half the S (one 75 deg bend) is not enough on pavement
+    const half = profileAhead(prof, at(220), 400).filter(p => p.d < 107);
+    assert.equal(curvyStretch(half, () => S_CURVE.paveDeg), null);
+    assert.equal(curvyStretch(half, () => 60)?.s, false, 'one bend: a hairpin, not an S');
+});
+
+test('cut the S: the call words, in seconds; a hairpin is "cut the bend"', async () => {
+    const {directorCalls} = await import('../pages/src/ds-data.mjs');
+    const {callWords} = await import('../pages/src/calls.mjs');
+    const s = directorCalls({sCurve: {inS: 6.4, turnDeg: 150, s: true, dirt: true}}).find(c => c.id === 'bend');
+    assert.equal(callWords(s), 'cut the S in 6');
+    const h = directorCalls({sCurve: {inS: 4, turnDeg: 130, s: false, dirt: false}}).find(c => c.id === 'bend');
+    assert.equal(callWords(h), 'cut the bend in 4');
+    assert.equal(directorCalls({}).find(c => c.id === 'bend'), undefined);
 });

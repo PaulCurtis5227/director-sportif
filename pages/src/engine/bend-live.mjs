@@ -39,6 +39,8 @@ export const CORRIDOR_ALONG_M = [-2, 1];   // riders beside you (along-track m) 
 export const OUTSIDE_M = 0.3;          // this far outside the local bunch centre counts as "on the outside"
 export const NEIGHBOUR_ALONG_M = 15;
 export const WHEEL_AHEAD_M = 6;       // a rider this close ahead is a wheel you can take
+export const BEND_IN_BACK_M = 30;     // the road over this far behind you…
+export const BEND_IN_DEG = 3;         // …turned this much the same way: you're in the bend, no bend "ahead"
 const XY_CCW_IS_RIGHT = true;
 const SAVED_WEIGHT = 20;
 const SPOT_CAP = 400;
@@ -140,8 +142,53 @@ export class BendMap {
         }
     }
 
-    /* The road ahead as [{d (m from you), a (x/y direction, deg), alt (m), v (riders' mean m/s)}], from the pooled spots. */
-    roadAhead(s, maxM = 200) {
+    /*
+     * The stretches of road ahead in bins, rising (Sauce flips roadCompletion in reverse, so it rises the way you
+     * ride): [{roadId, reverse, from, to (null = open)}]. Off a route: this road on (bins wrap: a loop road). On a
+     * route (route-ahead.mjs routeSections: road percents): to the end of your section, then the route's next sections.
+     * 2026-10-30: the road straight on past a junction drew a right bend while the route turned left.
+     */
+    legs(s, route = null) {
+        const bin0 = Math.floor(s.roadCompletion / BEND_BIN);
+        const open = [{roadId: s.roadId, reverse: !!s.reverse, from: bin0, to: null}];
+        const list = route && Array.isArray(route.sections) ? route.sections : null;
+        if (!list || !list.length) {
+            return open;
+        }
+        const rc = (x, p) => (x.reverse ? 1 - p : p) * 1e6;
+        const span = x => {
+            const lo = Math.min(x.start, x.end);
+            const hi = Math.max(x.start, x.end);
+            return x.reverse ? [rc(x, hi), rc(x, lo)] : [rc(x, lo), rc(x, hi)];
+        };
+        const pct = s.reverse ? 1 - s.roadCompletion / 1e6 : s.roadCompletion / 1e6;
+        const eps = 0.002;
+        const i = list.findIndex(x => x.roadId === s.roadId && !!x.reverse === !!s.reverse &&
+                                      pct >= Math.min(x.start, x.end) - eps && pct <= Math.max(x.start, x.end) + eps);
+        if (i < 0) {
+            return open;   // not where the route says: this road only
+        }
+        const out = [{roadId: s.roadId, reverse: !!s.reverse, from: bin0, to: Math.floor(span(list[i])[1] / BEND_BIN)}];
+        const lapStart = Math.max(0, list.findIndex(x => !x.leadin));
+        for (let n = 1, k = i + 1; n < list.length; n++, k++) {
+            if (k >= list.length) {
+                if (!route.laps) {
+                    break;
+                }
+                k = lapStart;
+            }
+            const x = list[k];
+            const [a, b] = span(x);
+            out.push({roadId: x.roadId, reverse: !!x.reverse, from: Math.floor(a / BEND_BIN), to: Math.floor(b / BEND_BIN)});
+        }
+        return out;
+    }
+
+    /*
+     * The road ahead as [{d (m from you), a (x/y direction, deg), alt (m), v (riders' mean m/s)}], from the pooled
+     * spots. route: your route's sections (followed past junctions), or null (this road on).
+     */
+    roadAhead(s, maxM = 200, route = null) {
         const me = this.self;
         if (me.length < 2) {
             return null;
@@ -153,32 +200,36 @@ export class BendMap {
             return null;
         }
         const dir = [(b.x - a.x) / L, (b.y - a.y) / L];
-        const bin0 = Math.floor(s.roadCompletion / BEND_BIN);
         // ahead = a higher roadCompletion, in reverse too: Sauce flips it for reverse riders (zwift.mjs 1005000 −
         // roadTime), so it rises the way you ride. Walking down in reverse read the road behind you (v0.68.3: "steep
         // in 16" at 59 km/h on a descent, no climb for 13 min)
-        const step = 1;
         const pts = [];
         let prev = {x: b.x, y: b.y};
         let d = 0;
         let missing = 0;
-        for (let k = 0; k < 160 && d <= maxM; k++) {
-            const sp = this.spots.get(bendKey(s.courseId, s.roadId, s.reverse, bin0 + step * k));
-            if (!sp || sp.n < 3) {
-                if (++missing > 8) {
-                    break;
+        let k = 0;
+        walk: for (const leg of this.legs(s, route)) {
+            for (let bin = leg.from; leg.to == null || bin <= leg.to; bin++) {
+                if (k++ >= 160 || d > maxM) {
+                    break walk;
                 }
-                continue;
+                const sp = this.spots.get(bendKey(s.courseId, leg.roadId, leg.reverse, bin));
+                if (!sp || sp.n < 3) {
+                    if (++missing > 8) {
+                        break walk;
+                    }
+                    continue;
+                }
+                missing = 0;
+                const c = {x: sp.sx / sp.n, y: sp.sy / sp.n};
+                // Skip spots behind you (the bin you're in, or a direction mix-up).
+                if (pts.length === 0 && ((c.x - b.x) * dir[0] + (c.y - b.y) * dir[1]) <= 0) {
+                    continue;
+                }
+                d += Math.hypot(c.x - prev.x, c.y - prev.y) / 100;
+                prev = c;
+                pts.push({d, a: deg(Math.atan2(sp.uy, sp.ux)), alt: sp.na ? sp.salt / sp.na : null, v: sp.na ? sp.sv / sp.na : null});
             }
-            missing = 0;
-            const c = {x: sp.sx / sp.n, y: sp.sy / sp.n};
-            // Skip spots behind you (the bin you're in, or a direction mix-up).
-            if (pts.length === 0 && ((c.x - b.x) * dir[0] + (c.y - b.y) * dir[1]) <= 0) {
-                continue;
-            }
-            d += Math.hypot(c.x - prev.x, c.y - prev.y) / 100;
-            prev = c;
-            pts.push({d, a: deg(Math.atan2(sp.uy, sp.ux)), alt: sp.na ? sp.salt / sp.na : null, v: sp.na ? sp.sv / sp.na : null});
         }
         return pts.length >= 3 ? {pts, a0: deg(Math.atan2(dir[1], dir[0])), dir, pos: b} : null;
     }
@@ -189,8 +240,8 @@ export class BendMap {
      * when the road has turned BEND_START_DEG from its direction just before, and ends where it stops
      * turning (8° back from its maximum) or turns the other way.
      */
-    bendsAhead(s, maxM = 200) {
-        const road = this.roadAhead(s, maxM);
+    bendsAhead(s, maxM = 200, route = null) {
+        const road = this.roadAhead(s, maxM, route);
         if (!road) {
             return [];
         }
@@ -228,9 +279,58 @@ export class BendMap {
         return out;
     }
 
-    /* The first bend of at least minDeg ahead, or null. */
-    nextBend(s, maxM = 200, minDeg = BEND_MIN_DEG) {
-        return this.bendsAhead(s, maxM).find(b => Math.abs(b.angleDeg) >= minDeg) || null;
+    /*
+     * How far the road turned over the last backM up to you (x/y degrees, + = CCW): the pooled spots' directions there
+     * and here (not your own two samples: a sideways move of 0.5 m reads as 3°). null when the spots are missing.
+     */
+    turnedBehind(s, backM = BEND_IN_BACK_M) {
+        const bin0 = Math.floor(s.roadCompletion / BEND_BIN);
+        const spot = bin => {
+            const sp = this.spots.get(bendKey(s.courseId, s.roadId, s.reverse, bin));
+            return sp && sp.n >= 3 ? sp : null;
+        };
+        let k0 = 0;
+        while (k0 <= 8 && !spot(bin0 - k0)) {
+            k0++;
+        }
+        const here = spot(bin0 - k0);
+        if (!here) {
+            return null;
+        }
+        let prev = {x: here.sx / here.n, y: here.sy / here.n};
+        let d = 0;
+        let missing = 0;
+        for (let k = k0 + 1; k < k0 + 40; k++) {
+            const sp = spot(bin0 - k);
+            if (!sp) {
+                if (++missing > 8) {
+                    return null;
+                }
+                continue;
+            }
+            missing = 0;
+            const c = {x: sp.sx / sp.n, y: sp.sy / sp.n};
+            d += Math.hypot(c.x - prev.x, c.y - prev.y) / 100;
+            prev = c;
+            if (d >= backM) {
+                return wrapDeg(deg(Math.atan2(here.uy, here.ux)) - deg(Math.atan2(sp.uy, sp.ux)));
+            }
+        }
+        return null;
+    }
+
+    /*
+     * The first bend of at least minDeg ahead, or null; null too while you're already in it: inside a long curve the
+     * road ahead always turns another 5° 15–20 m on, so the bend seemed to start there all the way round (2026-10-30:
+     * "inside right in 2" for 30 s through a 120° sweep). route: your route's sections (roadAhead).
+     */
+    nextBend(s, maxM = 200, minDeg = BEND_MIN_DEG, route = null) {
+        const b = this.bendsAhead(s, maxM, route).find(x => Math.abs(x.angleDeg) >= minDeg) || null;
+        const t = b ? this.turnedBehind(s) : null;
+        if (t != null && Math.sign(t) === Math.sign(b.angleDeg) && Math.abs(t) >= BEND_IN_DEG) {
+            return null;
+        }
+        return b;
     }
 }
 

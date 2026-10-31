@@ -37,6 +37,8 @@ export const TEAM_HR = {
 };
 
 const tag = t => (typeof t === 'string' ? t.trim().toLowerCase() : '');
+/* Your team tag as isTeammate() compares it ('' = none). */
+export const teamTag = athlete => tag(athlete && athlete.team);
 const nameOf = a => [a.fullname, a.sanitizedFullname, Array.isArray(a.name) ? a.name.join(' ') : a.name]
     .filter(x => typeof x === 'string').join(' ').toLowerCase();
 /* Your team: the same tag, or your tag as a word in their name. */

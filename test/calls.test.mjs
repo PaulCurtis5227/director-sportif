@@ -40,7 +40,7 @@ test('calls are the meters\' own words (docs/DS-DATA.md): active, a word or two,
     assert.equal(dsCall(blocked).word, 'ease off');
     assert.equal(dsCall(alongside).word, 'drop back');
     assert.equal(dsCall(defend).word, 'block left');
-    assert.equal(dsCall(data({passing: {value: 1.5, state: 'rider-behind'}})).word, 'hold line');
+    assert.equal(dsCall(data({passing: {value: 1.5, state: 'rider-behind'}})), null, 'no hold line (v0.51.0: nothing to do)');
     for (const d of [attack, blocked, alongside, defend]) {
         const c = dsCall(d);
         assert.ok(c.word.length <= 12, `"${c.word}" is short`);

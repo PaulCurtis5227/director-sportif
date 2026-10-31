@@ -105,6 +105,18 @@
  * road completion, blank ('no map') until measured (engine/road-gaps.mjs); the finish by laps when remaining is unknown
  * (auto-record.mjs eventLapsOf); "group shattering" needs 2+ riders leaving and ignores data jumps (ride-away.mjs);
  * Position starts over after a gap opening and gives no advice for 10 s.
+ * v0.51.0 (EM v0.70.0; 2026-10-30 ride): bend calls follow your route past a junction (engine/bend-live.mjs legs) and
+ * stay quiet once you're in the bend (turnedBehind: a long sweep read as "inside right in 2" for 30 s); an estimated
+ * gap is named "Est. gap" instead of a "~" on the number. Gap shown wheel to wheel (ds-data.mjs BIKE_LENGTH_M 1.5:
+ * Zwift's draft starts to fall below 1.5 m center to center), below 0 = overlapping (no word); the engine stays center to center.
+ * Supertuck words in races only: "supertuck in N" (seconds at the speed you're gaining, within 15 s: meter-engine
+ * TUCK_SOON) replaces "pedal on", "coast" stays; group rides, free rides and not-known-yet say nothing.
+ * No "hold line" (nothing to do); "block left / right" in races only, never a teammate. Practice race (Calls tab,
+ * practiceRace): every ride counts as a race (raceFor true): race-only calls on, not-a-race behavior off; the window says so. On a free ride with a route, the route's end is
+ * the finish line (meter-engine finishType: Sauce remainingType route, restarting each lap; 2026-10-09 checked). No draft on a
+ * wheel (draftless) = a TT frame for the tuck, whatever the bike setting (the Hanzo, 2026-10-30). Pack cost priced
+ * with your pavement Crr: on dirt it read ~4x (a tight spot 96 W vs 22), dragging Holding ~75 W low (dirt-crr.mjs). "cut the S in N" / "cut the bend" (bend call; route-ahead.mjs curvyStretch
+ * on the route traced every 5 m: dirt 90°+ per 100 m, pavement 120°+; curve-line.mjs: dirt S curves +2 m, the best line 4–6 m).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -132,7 +144,7 @@ import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 import {hrAckText} from './team-hr.mjs';
 
-export const DS_VERSION = '0.50.0';
+export const DS_VERSION = '0.51.0';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -202,6 +214,7 @@ export const SETTING_DEFAULTS = {
     myFrcKJ: 15,
     autoRecordEvents: false,   // record every event you join (capture format); you turn it on
     recordAlways: false,       // and record all the time outside events (a file per free ride; you turn it on)
+    practiceRace: false,       // every ride counts as a race: the race-only calls on, the not-a-race ones off
     obsEnabled: false,         // connect to OBS (its WebSocket server) for the video clocks
     obsUrl: 'ws://127.0.0.1:4455',
     obsPassword: '',           // OBS's WebSocket password: kept in this window's settings on this computer
@@ -400,6 +413,8 @@ export async function main() {
     // Race or not, per event (eventSubgroupId): looked up once; no event = not a race (free ride)
     const eventTypes = new Map();   // subgroup id -> eventType | 'pending' | null (lookup failed)
     const raceFor = me => {
+        // practice race (the user, 2026-10-30: race skills need practice): every ride counts as a race
+        if (Common.settingsStore.get('practiceRace')) return true;
         const sg = me && me.state && me.state.eventSubgroupId;
         if (!sg) return false;
         if (!eventTypes.has(sg)) {
@@ -967,14 +982,16 @@ export async function main() {
         const card = raceCards.card;
         const ev = mySg && evInfo.sg === mySg && evInfo.value ? evInfo.value : null;
         const inEvent = !!s.eventSubgroupId;
+        // practice race on: said wherever the line is free, so it isn't forgotten on a group ride
+        const practice = Common.settingsStore.get('practiceRace') ? 'practice race' : null;
         const penText = !data.call && data.self && inPen(r.me) ? cycleText([
             eventText({eventName: ev && ev.eventName, subgroup: ev && ev.subgroup, routeName, routeId, inEvent}),
             cardText({cardName: card && card.name, inEvent}),
             obsState.hidden ? null : obsState.textContent,
             bikeText(BIKES.find(b => b.id === (Common.settingsStore.get('bike') || DEFAULT_BIKE)),
                      WHEELS.find(w => w.id === (Common.settingsStore.get('wheels') || DEFAULT_WHEELS))),
-            hint.hidden ? null : hint.textContent]) : null;
-        const idle = !penText && !said.text ? (!data.self ? 'watching another rider: no calls' : hint.hidden ? '—' : hint.textContent) : null;
+            hint.hidden ? null : hint.textContent, practice]) : null;
+        const idle = !penText && !said.text ? (!data.self ? 'watching another rider: no calls' : practice || (hint.hidden ? '—' : hint.textContent)) : null;
         setText(el.word, penText || said.text || idle);
         el.word.classList.toggle('quiet', !!(penText || idle));
         el.word.classList.toggle('warn', !penText && said.level === 'warn');

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {MeterEngine, meterRider, SETTLING_NOTE, COASTING_NOTE} from '../pages/src/meter-engine.mjs';
 import {buildData} from '../pages/src/ds-data.mjs';
 import {engineCall} from '../pages/src/calls.mjs';
+import {allWords} from '../pages/src/grid-fields.mjs';
 import {riderModel, sizeFactor, WHEELS, AERO_SOCKS_FACTOR} from '../pages/src/rider-model.mjs';
 import {meterFields, fmtSide, FT_PER_M} from '../pages/src/meter-fields.mjs';
 import {UNIT_PER_M, packCostW} from '../pages/src/engine/pack-cost.mjs';
@@ -183,7 +184,9 @@ test('stale riders (frozen avatars) are not the wheel', () => {
 test('fields: gap, side and pack cost format for the Grid, with the meter\'s word under the value', () => {
     const x = shown({gapM: 4.234, gapApprox: true, sideM: -0.3, beside: false, packW: 11.6, packState: 'room',
         groupSize: 8});
-    assert.equal(field('ds-gap').format(x), '~4.2');
+    assert.equal(field('ds-gap').format(x), '2.7', 'wheel to wheel: 4.23 m center to center less a 1.5 m bike');
+    assert.equal(field('ds-gap').shortName(x), 'Est. gap', 'estimated: the name says so, the number stays narrow');
+    assert.equal(field('ds-gap').shortName(shown({gapM: 4.2, gapApprox: false})), 'Gap');
     assert.equal(field('ds-side').format(x), `L ${(0.3 * FT_PER_M).toFixed(1)}`);
     assert.equal(field('ds-side', {sideUnit: 'm'}).format(x), 'L 0.30');
     assert.equal(field('ds-side', {sideUnit: 'm'}).suffix, 'm');
@@ -252,10 +255,11 @@ test('surface: dirt on the Zwift map adds its rolling resistance, so Holding rea
     assert.equal(dirt.surface, 'dirt');
     assert.equal(none.surface, null);
     assert.ok(Math.abs(pave.holdingW - none.holdingW) < 1e-6, 'pavement = no map');
-    // Zwift Insider: road tyres 0.016 on dirt vs 0.004 on pavement, at 40 km/h for 75 + 5 kg; the pack cost is extra
-    // rolling resistance too (pack-cost.mjs), so it grows with the surface, as in the Data Tap
-    assert.ok(dirt.packW > pave.packW, 'rough road: the pack spot costs more');
-    const want = (0.016 - 0.004) * 80 * G * 40 / 3.6 + (dirt.packW - pave.packW);
+    // Zwift Insider: road tyres 0.016 on dirt vs 0.004 on pavement, at 40 km/h for 75 + 5 kg (riders confirm it:
+    // dirt − pavement +0.0115, research/2026-10-30/dirt-crr.mjs). The pack costs the same on dirt (+0.0022 vs +0.0027
+    // in Crr): priced with your pavement Crr (it read ~4x on dirt before)
+    assert.ok(Math.abs(dirt.packW - pave.packW) < 1e-6, `the same pack cost on dirt (${dirt.packW} vs ${pave.packW})`);
+    const want = (0.016 - 0.004) * 80 * G * 40 / 3.6;
     assert.ok(Math.abs(pave.holdingW - dirt.holdingW - want) < 1, `dirt reads ${pave.holdingW - dirt.holdingW} W less (want ${want})`);
     const gravel = new MeterEngine({roadMap: map('DIRT'), modelFor: me => riderModel({athlete: me.athlete, bike: 'gravel'})});
     const gPave = new MeterEngine({roadMap: map('NORMAL'), modelFor: me => riderModel({athlete: me.athlete, bike: 'gravel'})});
@@ -263,9 +267,19 @@ test('surface: dirt on the Zwift map adds its rolling resistance, so Holding rea
     assert.ok(dg > 0 && dg < 20, `gravel tyres barely notice dirt (${dg} W)`);
 });
 
+test('gap: wheel to wheel, overlapping wheels below 0 (no word of its own)', () => {
+    const tight = shown({gapM: 1.2, groupSize: 8});
+    assert.equal(field('ds-gap').format(tight), '-0.3');
+    assert.equal(field('ds-gap').label(tight), '', 'no word: Blocked says ease off when it costs');
+    assert.equal(tight.dsData.meters.gap.centerM, 1.2, 'the engine center-to-center gap rides along');
+    const ok = shown({gapM: 1.65, groupSize: 8});
+    assert.equal(field('ds-gap').format(ok), '0.1', 'six inches between wheels');
+    assert.equal(field('ds-gap').label(ok), '');
+});
+
 test('fields: imperial shows the gap in ft and closing speeds in mph', () => {
     const x = shown({gapM: 3, passKmh: 3.2, passKind: 'attack', groupSize: 2});
-    assert.equal(field('ds-gap', {imperial: true}).format(x), (3 * FT_PER_M).toFixed(1));
+    assert.equal(field('ds-gap', {imperial: true}).format(x), (1.5 * FT_PER_M).toFixed(1), '3 m center to center = 1.5 m wheel to wheel');
     assert.equal(field('ds-gap', {imperial: true}).suffix, 'ft');
     assert.equal(field('ds-pass', {imperial: true}).format(x), `↑${(3.2 / 1.609344).toFixed(1)}`);
     assert.equal(field('ds-pass', {imperial: true}).suffix, 'mph');
@@ -294,7 +308,7 @@ test('a wheel that gives no draft (hand cycle): Position blank with why, not "ea
     assert.equal(field('ds-position').label(shown(r.ds)), 'change wheel');
 });
 
-test('supertuck: race-aware (raceFor): coast in a race or not known yet, rest outside races', () => {
+test('supertuck: race only (raceFor): coast in a race; outside one or not known yet, no word', () => {
     const fast = () => {
         const me = rider(1, 0, 0, {self: true});
         Object.assign(me.state, {speed: 62, grade: -0.05, power: 200, draft: 0, altitude: 100});
@@ -307,8 +321,92 @@ test('supertuck: race-aware (raceFor): coast in a race or not known yet, rest ou
     };
     assert.equal(word(() => true), 'stop', 'a race: stop pedaling');
     assert.equal(word(() => false), 'rest', 'a group ride: only a rest');
-    assert.equal(word(() => null), 'stop', 'not known yet: as before');
-    assert.equal(word(undefined), 'stop', 'no raceFor: as before');
+    assert.equal(word(() => null), 'rest', 'not known yet: no word (the user, 2026-10-30: race only)');
+    assert.equal(word(undefined), 'rest', 'no raceFor: no word');
+});
+
+test('no draft on a wheel (a TT bike, whatever the setting): no supertuck at all (2026-10-30, the Hanzo)', () => {
+    const e = new MeterEngine({raceFor: () => true});
+    let out = null;
+    // 25 s on a wheel 2 m ahead with 0 W of draft (the bike setting left at its road default), then a fast descent
+    for (let k = 0; k < 30; k++) {
+        const me = rider(1, 0, 0, {self: true, wt: 10000 + k * 1000});
+        const descent = k >= 25;
+        Object.assign(me.state, {speed: descent ? 52 + (k - 25) : KMH, grade: descent ? -0.05 : 0, power: 250, draft: 0,
+                                 altitude: 500 - k});
+        out = e.update([me, rider(2, 2, 0, {wt: 10000 + k * 1000})]);
+    }
+    assert.equal(out.ds.draftless, true);
+    assert.equal(out.ds.tuck.state, 'frame', 'a TT frame: no tuck, so no \"supertuck in N\" either');
+});
+
+test('supertuck in N: seconds to tuck speed while you gain it, nothing when you never get there (2026-10-30)', () => {
+    // alone on a 4% descent, speeds per second: gaining 1 km/h a second from 48, or stuck at 46–48
+    const ride = (speeds, race = true) => {
+        const e = new MeterEngine({raceFor: () => race});
+        let out = null;
+        speeds.forEach((kmh, i) => {
+            const me = rider(1, 0, 0, {self: true, wt: 10000 + i * 1000});
+            Object.assign(me.state, {speed: kmh, grade: -0.04, power: 250, draft: 0, altitude: 500 - i * 0.5});
+            out = e.update([me]);
+        });
+        return buildData(out).meters.tuck;
+    };
+    const gaining = ride([48, 49, 50, 51, 52]);
+    assert.equal(gaining.state, 'soon');
+    assert.equal(gaining.inS, 6, '6 km/h short at 1 km/h a second');
+    assert.equal(gaining.word, 'supertuck in 6');
+    assert.equal(field('ds-tuck').label({dsData: {meters: {tuck: gaining}}}), 'supertuck in 6');
+    assert.equal(allWords({meters: {tuck: gaining}}).text, 'supertuck in 6');
+    const stuck = ride([46, 47, 48, 47.5, 47]);
+    assert.equal(stuck.state, 'build', 'not gaining: no word');
+    assert.equal(allWords({meters: {tuck: stuck}}).text, null);
+    assert.equal(stuck.value, 11, 'the meter still shows the km/h short');
+    assert.equal(ride([48, 49, 50, 51, 52], false).state, 'build', 'a group ride or free ride: no word at all');
+    assert.equal(ride([48, 49, 50, 51, 52], null).state, 'build', 'not known to be a race: no word');
+    const far = ride([45, 45.3, 45.6, 45.9, 46.2]);
+    assert.equal(far.state, 'build', '12 km/h short at 0.3 km/h a second: 39 s away is not soon');
+});
+
+test('block left / right: in a race only, never a teammate, never straight behind (2026-10-30)', () => {
+    // a rider level with you on your right, 3 km/h faster (the held band), and a wheel ahead so you're in a group
+    const tick = (e, k, {lat = 0.8, ahead = -0.5, team = null} = {}) => {
+        const me = rider(1, 0, 0, {self: true, wt: 10000 + k * 1000});
+        me.athlete = {team: 'Dinos'};
+        const o = rider(2, ahead, lat, {wt: 10000 + k * 1000});
+        o.state.speed = KMH + 3;
+        o.athlete = {team};
+        return e.update([me, o, rider(3, 3, 0, {wt: 10000 + k * 1000})]);
+    };
+    const state = (race, opts) => {
+        const e = new MeterEngine({raceFor: () => race});
+        let out = null;
+        for (let k = 0; k < 4; k++) out = tick(e, k, opts);
+        return buildData(out).meters.passing.state;
+    };
+    assert.equal(state(true), 'rider-right', 'a race: block right');
+    assert.equal(state(false), 'none', 'a group ride or free ride: nothing (practice race turns raceFor on)');
+    assert.equal(state(null), 'none', 'not known to be a race: nothing');
+    assert.equal(state(true, {team: 'dinos'}), 'none', 'a teammate: never');
+    assert.equal(state(true, {lat: 0, ahead: -3}), 'none', 'straight behind: nothing to do');
+});
+
+test('practice race on a free ride: the route end is the finish line', () => {
+    // 1 km from the end of the route (Sauce: remainingType route on a free ride; 2026-10-09: it restarts each lap)
+    const finale = (race, {type = 'route', sg = 0} = {}) => {
+        const e = new MeterEngine({raceFor: () => race});
+        let out = null;
+        for (let k = 0; k < 3; k++) {
+            const me = rider(1, 0, 0, {self: true, wt: 10000 + k * 1000});
+            Object.assign(me, {remaining: 1000 - k * 10, remainingMetric: 'distance', remainingType: type});
+            me.state.eventSubgroupId = sg;
+            out = e.update([me, rider(2, 3, 0, {wt: 10000 + k * 1000})]);
+        }
+        return out.ds.finale;
+    };
+    assert.equal(finale(true), 'run-in', 'practice race (raceFor true, no event): the run-in to the route end');
+    assert.equal(finale(false), null, 'a plain free ride: the route end is no finish');
+    assert.equal(finale(true, {type: 'event', sg: 7}), 'run-in', 'an event: its own finish, as before');
 });
 
 // A bunch on a road Sauce has no map for (2026-10-29, Watopia's new roads): every gapDistance exactly 0, the list in
@@ -379,4 +477,38 @@ test('position: just after a gap opening it gives no advice while it reads your 
     assert.equal(r.ds.positionState, 'warming', 'still inside POSITION_TAU_S');
     r = e.update(tick(99000 + 10000));
     assert.notEqual(r.ds.positionState, 'warming', 'advice again once filled');
+});
+
+test('cut the S from the route ahead: called ~10 s out, quiet once you are in it (2026-10-30)', async () => {
+    const {RouteAhead} = await import('../pages/src/route-ahead.mjs');
+    // 300 m straight, then an S of two opposite 75° bends of radius 20 m, then straight (x/y/z in cm, as Sauce traces)
+    const pts = [];
+    let x = 0, y = 0, a = 0;
+    for (let d = 0; d <= 700; d += 0.5) {
+        pts.push([x * 100, y * 100, 0]);
+        a += (d >= 300 && d < 326.2 ? 1 : d >= 326.2 && d < 352.4 ? -1 : 0) * 0.5 / 20;
+        x += Math.cos(a) * 0.5;
+        y += Math.sin(a) * 0.5;
+    }
+    const route = {zToAlt: z => z / 100, sections: [{}], curvePath: {nodes: [{index: 0}], trace: cb => pts.forEach(p => cb({stepNode: p, index: 0}))}};
+    const e = new MeterEngine({routeAhead: new RouteAhead(() => route)});
+    const tick = (k, d) => {
+        const me = rider(1, 0, 0, {self: true, wt: 10000 + k * 1000});
+        Object.assign(me.state, {routeId: 7, routeDistance: d, routeEnd: 700, laps: 0, speed: 36, altitude: 0, grade: 0});
+        return e.update([me]);
+    };
+    tick(0, 100);
+    await new Promise(r => setTimeout(r, 0));   // the route loads
+    const seen = [];
+    for (let k = 1; k <= 25; k++) {
+        const d = 100 + k * 10;   // 10 m a second
+        const out = tick(k, d);
+        seen.push([d, out.ds.sCurve]);
+    }
+    const first = seen.find(([, sc]) => sc);
+    assert.ok(first, 'called before the S');
+    assert.ok(first[0] >= 180 && first[0] <= 290, `first called at ${first[0]} m (the S starts at 300): ${JSON.stringify(first[1])}`);
+    assert.equal(first[1].s, true);
+    assert.ok(first[1].inS <= 10.5, `within 10 s (${first[1].inS})`);
+    assert.equal(seen.find(([d]) => d === 320)[1], null, 'in the S: no call');
 });

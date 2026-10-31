@@ -59,15 +59,16 @@ Once measured, Gap is `approx` (from the road completion, ~0.3 m off at 5–15 m
 | Holding (`holding`) | power beyond what keeping your place needed, 10 s (pair) / 20 s (3+) | W | `hold` hold (within the band) · `easy` easy (over the band: pushing for nothing) · `blocked` ease off (over the band because you're blocked: the same word as Blocked) · `moving-up` moving up (over the band while moving up: the price of the move, not waste) · `drifting` drifting (under the band) | 20 / 40 W |
 | Pack cost (`pack`) | watts your spot costs beyond Zwift's draft | W | `front` front · `room` room · `tight` tight (< 3.5 m to the wheel) · `crowded` crowded (2+ riders close ahead) · `boxed` boxed in · `group` in the group · `pair` with one (value null) | 25 / 40 W |
 | Blocked (`blocked`) | watts lost to blocking, 10 s (on fast descents, 45+ km/h and 1%+ down, only within 5.5 m of the wheel or alongside a rider: further back the spikes don't follow the gap; v0.42.0) | W | `clear` (no word) · `blocked` ease off (pushing into the wheel) · `blocked-left` / `blocked-right` drop back (stuck alongside a rider on that side) | 10 / 30 W |
-| Passing (`passing`) | closing speed on the rider (0 with nobody closing) | km/h | `too-slow` go harder (you, closing 1–5 km/h: 5+ goes through) · `go-wide` go wide (you, in line with them) · `drop-back` drop back (you, glued to their wheel) · `rider-left` block left · `rider-right` block right · `rider-behind` hold line (a rider creeping up on you: staying in their way costs them far more than you) · `none` | — |
-| Gap (`gap`) | to the wheel in line, center to center (null beyond 25 m) | m | `wheel` (blank) · `beside` beside (none in line) · `no-wheel` no wheel · `no-draft` no draft | — |
+| Passing (`passing`) | closing speed on the rider (0 with nobody closing) | km/h | `too-slow` go harder (you, closing 1–5 km/h: 5+ goes through) · `go-wide` go wide (you, in line with them) · `drop-back` drop back (you, glued to their wheel) · `rider-left` block left · `rider-right` block right · `none` | — |
+| Gap (`gap`) | to the wheel in line, wheel to wheel (center to center less a 1.5 m bike; below 0 = overlapping; null beyond 25 m; v0.51.0) | m | `wheel` (blank) · `beside` beside (none in line) · `no-wheel` no wheel · `no-draft` no draft | — |
 | Left / right (`side`) | you to the right (+) or left (−) of the wheel | m | `inline` (blank) · `beside` beside · `no-wheel` (blank) | — |
-| Tuck (`tuck`) | km/h still needed to tuck (0 when fast enough; blank off a descent) | km/h | `build` pedal on · `stop` coast (fast enough: stop pedaling; in a race, or the event type not known yet) · `rest` rest (fast enough, but not a race: the tuck saves legs, not time; no call) · `tuck` tuck (in it) · `draft` in draft · `frame` no tuck (TT / MTB) · `none` | — |
+| Tuck (`tuck`) | km/h still needed to tuck (0 when fast enough; blank off a descent) | km/h | words in a race only (v0.51.0): `soon` supertuck in N (gaining speed, tuck speed within 15 s; the word with its seconds is in `tuck.word`, `tuck.inS`) · `stop` coast (fast enough: stop pedaling) · `build` (no word: short of tuck speed, or not a race) · `rest` (no word: fast enough, not a race or not known yet) · `tuck` tuck (in it) · `draft` in draft · `frame` no tuck (TT / MTB, or no draft at all on a wheel: a TT bike whatever the setting) · `none` | — |
 | Group (`group`) | riders in your group, you included | riders | — | — |
 | CdA (`cda`) | the air drag area the meters use | m² | `model` (bike × your size) · `yours` (your own CdA) · `guessed` (height or weight hidden) | — |
 
 Extra fields a meter may carry beside `value / state / level`:
-- `gap.approx: true`: the gap came from positions, not Sauce's time gap (can be meters off; shown as "~").
+- `gap.centerM`: the same gap center to center (what the engine reads; before v0.51.0 this was the value).
+- `gap.approx: true`: the gap came from positions, not Sauce's time gap (can be meters off; the Grid names it "Est. gap").
 - `tuck.drag: {tuck: 0.273, coast: 0.275, tuckS: 7, coastS: 12}`: the measured CdA in the tuck vs coasting.
 - `position.save: 12`: watts the advised move saves (= value today; kept separate in case they diverge).
 
@@ -99,7 +100,7 @@ if there is one ("steep in 25", "AERO in 12"); the chime is the call `id`'s own 
 | Your pass (`pass`) | `too-slow` go harder · `drop-back` drop back (`go-wide` is shown on the Passing meter, never called: v0.34.0) | — | 70 |
 | Gap opening (`gap`) | `opening` gap opening (Position `gapping`) · `shatter` group shattering (Position `shatter`) | — | 75 |
 | Blocked (`blocked`) | `wheel` ease off · `left` / `right` drop back | — | 65 |
-| Being passed (`passed`) | `left` block left · `right` block right · `behind` hold line | — | 60 |
+| Being passed (`passed`) | `left` block left · `right` block right (in a race or practice race only, never a teammate; straight behind: no call, v0.51.0) | — | 60 |
 | Tuck (`tuck`) | `stop` coast | — | 40 |
 | Move up (`moveUp`) | `prep` climb · `move` move up · `hold` hold spot · `late` stay in line | in: to the climb | 40 / 80 / 60 / 30 |
 | Nudge (`nudge`) | `wheel` ease off · `middle` use edge · `front` sit in · `line` get in line · `crowd` give room (under 1 m off the wheel at full draft for 10 s: ~5 W for the same speed; v0.41.0) | — | 18–22 |
@@ -108,7 +109,7 @@ if there is one ("steep in 25", "AERO in 12"); the chime is the call `id`'s own 
 | Burritos (`burrito`) | `cone` burrito, move over (an active burrito 1–8.5 m ahead of you, within a quarter of that aside: measured 2026-10-27) · `done` burritos done (90% of your race fired theirs; 10 s) | — | 72 / 30 |
 | Teammate HR (`teamHr`) | `missing` "Nick: no heart rate" (you, or a teammate: your team tag, your race; none for 20 s; said at the start and every 2 min until acknowledged in the window: a teammate once per event, you up to 3 times) · `back` "Nick: heart rate back" (once) | — | 74 / 30 |
 | Climb pacing (`pacing`) | `steep` steep (a part averaging 5%+; on a climb only 1.5 points steeper than where you are) · `top` over top (after 30 s of climbing, 5–15 s out) | in: to the steep part / the top; for: how long it's steep | 35 |
-| Bend (`bend`) | `open-left` / `open-right` inside left / right (the inside is open: moving over gains ground after the draft it costs) · `outside-left` / `outside-right` stay close (you're on the outside: you'll lose ground) | in: to the bend (inside only) | 45 |
+| Bend (`bend`) | `open-left` / `open-right` inside left / right (the inside is open: moving over gains ground after the draft it costs) · `outside-left` / `outside-right` stay close (you're on the outside: you'll lose ground) · `cut-s` cut the S / `cut-bend` cut the bend (v0.51.0: a stretch ahead twisting enough to steer a shorter line: dirt 90°+ per 100 m, pavement 120°+; your route's geometry; replaces the others) | in: to the bend (inside, cut) | 45 (cut 46) |
 | Surface (`surface`) | `wood` · `dirt` · `cobbles` · `brick` (the word is the surface) | in: to it; for: how long | 20 |
 
 `<name>` is the power-up: AERO · VAN · GHOST · BURRITO · ARROWS · FEATHER (the word uses the same name).

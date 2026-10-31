@@ -50,7 +50,8 @@ export function packSituation(entries, me, lead = null) {
 
 /*
  * The pack cost (W) for a situation in a group of `size` with `ahead` riders in front of you at v (m/s); 0 alone or
- * in a pair. It is extra rolling resistance, so rough roads and gravel tyres pay more: × rider.crr / ROAD_CRR.
+ * in a pair. It is extra rolling resistance: × rider.crr / ROAD_CRR, with your PAVEMENT Crr (heavier riders and slower
+ * tyres pay more; a rough surface does not: the pack extra is the same on dirt, 2026-10-30 dirt-crr.mjs).
  */
 export function packCostW(sit, L, v, rider = null) {
     if (!sit || !L || !(L.size >= 3)) return 0;

@@ -24,17 +24,20 @@ export const TRACE_STEP_M = 5;   // the traced profile: a point every this many 
  */
 function traceProfile(path, zToAlt) {
     const out = [];
-    let d = 0, prev = null, lastPush = -Infinity;
+    let d = 0, prev = null, lastPush = -Infinity, lastP = null;
+    // a: the road's direction (x/y degrees) from the point before: how much it turns ahead (curvyStretch)
+    const dir = p => (lastP ? Math.atan2(p[1] - lastP[1], p[0] - lastP[0]) * 180 / Math.PI : null);
     path.trace(x => {
         const p = x.stepNode;
         if (prev) d += Math.hypot(p[0] - prev[0], p[1] - prev[1], p[2] - prev[2]) / 100;
         prev = p;
         if (d - lastPush >= TRACE_STEP_M) {
-            out.push({d, alt: zToAlt(p[2]), node: x.index});
+            out.push({d, alt: zToAlt(p[2]), node: x.index, a: dir(p)});
             lastPush = d;
+            lastP = p;
         }
     }, 1 / 64);
-    if (prev && d > lastPush) out.push({d, alt: zToAlt(prev[2]), node: path.nodes.length - 1});
+    if (prev && d > lastPush) out.push({d, alt: zToAlt(prev[2]), node: path.nodes.length - 1, a: dir(prev)});
     return out;
 }
 
@@ -80,15 +83,15 @@ function tracedProfile(r) {
         const s = sections[nodes[p.node] && nodes[p.node].index];
         return s && !s.leadin && !s.weld;
     };
-    const first = pts.map(p => ({d: p.d, alt: p.alt}));
+    const first = pts.map(p => ({d: p.d, alt: p.alt, a: p.a}));
     let cycle = null;
     if (r.supportedLaps) {
         const i0 = Math.max(0, pts.findIndex(isLap));
         const d0 = pts[i0].d;
         const weld = r.lapWeldPath && typeof r.lapWeldPath.trace === 'function' ?
-            traceProfile(r.lapWeldPath, r.zToAlt).map(p => ({d: p.d, alt: p.alt})) : [];
+            traceProfile(r.lapWeldPath, r.zToAlt).map(p => ({d: p.d, alt: p.alt, a: p.a})) : [];
         const wLen = weld.length ? weld.at(-1).d : 0;
-        cycle = [...weld, ...pts.slice(i0).map(p => ({d: p.d - d0 + wLen, alt: p.alt}))]
+        cycle = [...weld, ...pts.slice(i0).map(p => ({d: p.d - d0 + wLen, alt: p.alt, a: p.a}))]
             .filter((p, i, a) => i === 0 || p.d > a[i - 1].d);
     }
     return {first, cycle};
@@ -114,13 +117,73 @@ export function profileAhead(prof, s, maxM = 3000) {
             const d = p.d + offs;
             if (d <= 0) continue;
             if (d > maxM) return out;
-            out.push({d, alt: p.alt});
+            out.push(p.a != null ? {d, alt: p.alt, a: p.a} : {d, alt: p.alt});
         }
         if (!prof.cycle) break;
         offs += cur.at(-1).d;
         cur = prof.cycle;
     }
     return out;
+}
+
+/*
+ * "Cut the S" (the user, 2026-10-30: "dirt S curves. Steering through that has to be a big win"). Measured on Watopia
+ * (research/2026-10-30/curve-line.mjs, line ridden per 100 m vs riders not steering there): steering gains pavement /
+ * dirt +0.85 / +1.27 m through 60–120° of turning, +1.22 / +2.03 m at 120°+; the best line 4–6 m. Worth the ~10 W
+ * steering costs (steer-cost.mjs) on dirt from ~90°, on pavement only at 120°+ (S curves, hairpins).
+ */
+export const S_CURVE = {
+    winM: 100,        // the stretch: its turning summed both ways (an S counts each bend)
+    dirtDeg: 90,      // on dirt / gravel from this much turning
+    paveDeg: 120,     // on pavement
+    fromM: 15,        // called while the stretch starts this far ahead…
+    toM: 150,         // …to this far
+    stepM: 10,
+    sideDeg: 30,      // turns at least this much each way: an S (else one bend: a hairpin)
+    callS: 10,        // no call more than this many seconds before it
+    inM: 30,          // the road under you (the next 30 m) already turning this much: you're in it, no call
+    inDeg: 30,        // (the 2026-10-30 bend lesson: inside a long curve the next one always seems just ahead)
+    beginDeg: 10,     // the stretch starts where the road has turned this much (the seconds count to there)
+};
+
+/*
+ * The first stretch ahead that twists enough: pts [{d (m from you), a (road direction, deg)}] (profileAhead of a traced
+ * route), minDegAt(startM, endM) -> the turning needed there (by surface). {startM, endM, turnDeg, s (both ways)} or null.
+ */
+export function curvyStretch(pts, minDegAt, o = S_CURVE) {
+    const p = (pts || []).filter(x => Number.isFinite(x.a));
+    if (p.length < 4) return null;
+    const wrap = x => ((x + 540) % 360) - 180;
+    const turning = (start, end) => {
+        let turn = 0, left = 0, right = 0, prev = null;
+        for (const x of p) {
+            if (x.d < start) continue;
+            if (x.d > end) break;
+            if (prev != null) {
+                const dA = wrap(x.a - prev);
+                turn += Math.abs(dA);
+                if (dA > 0) left += dA; else right -= dA;
+            }
+            prev = x.a;
+        }
+        return {turn, left, right};
+    };
+    if (turning(0, o.inM).turn >= o.inDeg) return null;
+    for (let start = o.fromM; start <= o.toM; start += o.stepM) {
+        const end = start + o.winM;
+        const t = turning(start, end);
+        if (t.turn >= minDegAt(start, end)) {
+            // where the road starts turning inside the window (the window can open 40+ m before it: "in 9" meant 13 s)
+            let at = start, acc = 0, prev = null;
+            for (const x of p) {
+                if (x.d < start) continue;
+                if (prev != null && (acc += Math.abs(wrap(x.a - prev))) >= o.beginDeg) { at = x.d; break; }
+                prev = x.a;
+            }
+            return {startM: at, endM: end, turnDeg: t.turn, s: t.left >= o.sideDeg && t.right >= o.sideDeg};
+        }
+    }
+    return null;
 }
 
 const RHO = 1.225;

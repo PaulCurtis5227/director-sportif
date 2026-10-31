@@ -82,7 +82,7 @@ test('passing, blocked, gap and tuck states from the engine\'s reading', () => {
     assert.equal(at({passKind: 'attack', passKmh: 2.4, passWide: false}).passing.state, 'go-wide');
     assert.equal(at({passKind: 'attack', passKmh: 2.4, passWide: true}).passing.state, 'too-slow');
     assert.equal(at({passKind: 'defend', passKmh: 2, passWhere: 'on your right'}).passing.state, 'rider-right');
-    assert.equal(at({passKind: 'defend', passKmh: 2, passWhere: 'behind'}).passing.state, 'rider-behind');
+    assert.equal(at({passKind: 'defend', passKmh: 2, passWhere: 'behind'}).passing.state, 'none', 'straight behind: no hold line');
     assert.equal(at({}).passing.value, 0, 'in a group, nobody closing: 0');
     assert.equal(at({blocked: true, blockedSide: 'left', blockedW: 50}).blocked.state, 'blocked-left');
     assert.equal(at({blockedW: 0}).blocked.state, 'clear');
@@ -91,9 +91,9 @@ test('passing, blocked, gap and tuck states from the engine\'s reading', () => {
     const tuck = at({tuck: {state: 'build', needKmh: 1.3, drag: {tucked: {cda: 0.27, s: 7}, coast: {cda: 0.28, s: 12}}}}).tuck;
     assert.deepEqual([tuck.value, tuck.state], [1.3, 'build']);
     assert.deepEqual(tuck.drag, {tuck: 0.27, coast: 0.28, tuckS: 7, coastS: 12});
-    assert.deepEqual([at({tuck: {state: 'ready', needKmh: 0}}).tuck.value, at({tuck: {state: 'ready'}}).tuck.state], [0, 'stop']);
+    assert.deepEqual([at({tuck: {state: 'ready', needKmh: 0}}).tuck.value, at({tuck: {state: 'ready'}}).tuck.state], [0, 'rest']);
     assert.equal(at({tuck: {state: 'draft'}}).tuck.value, null);
-    assert.deepEqual(['stop', 'rest', 'stop'], [true, false, null].map(race => at({tuck: {state: 'ready', needKmh: 0, race}}).tuck.state));
+    assert.deepEqual(['stop', 'rest', 'rest'], [true, false, null].map(race => at({tuck: {state: 'ready', needKmh: 0, race}}).tuck.state));
     assert.equal(at({tuck: {state: 'ready', needKmh: 0, race: false}}).tuck.value, 0);
 });
 

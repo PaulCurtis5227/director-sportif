@@ -17,6 +17,14 @@ export const DATA_VERSION = 1;
 export const CHANNEL = 'director-sportif/v1';
 
 /*
+ * Gap is shown wheel to wheel, as riders think of it (the user, 2026-10-30: "6 inches in a tight pack"); the engine's
+ * gaps stay center to center. Zwift's draft knows the bike's length (research/2026-10-30/draft-overlap.mjs): a
+ * follower keeps all of it down to 1.5 m center to center, 88% at 1–1.25 m, 31% at 0–0.25 m. Below 0: overlapping.
+ */
+export const BIKE_LENGTH_M = 1.5;
+export const wheelGap = centerM => (Number.isFinite(centerM) ? centerM - BIKE_LENGTH_M : null);
+
+/*
  * Every meter's states: the word a display shows (active words for advice; '' = nothing to show) and a one-line
  * help for tooltips (the long explanation, no numbers). The common states (alone, settling, coasting, warming, draftless, none)
  * show no word.
@@ -66,7 +74,8 @@ export const VOCAB = {
     blocked: {
         ...COMMON,
         clear: {word: '', help: 'Not blocked.'},
-        blocked: {word: 'ease off', help: 'Pushing into the wheel: the watts vanish. Ease off or steer to space.'},
+        blocked: {word: 'ease off', help: 'Pushing into the wheel: the watts vanish. It happens anywhere within 2 m of ' +
+                 'their wheel, overlapped or not, and nearly stops further back. Ease off to 2 m+ or steer to space.'},
         'blocked-left': {word: 'drop back', help: 'Stuck alongside a rider on your left: drop back, pass where there is room.'},
         'blocked-right': {word: 'drop back', help: 'Stuck alongside a rider on your right: drop back, pass where there is room.'},
     },
@@ -74,14 +83,13 @@ export const VOCAB = {
         ...COMMON,
         'too-slow': {word: 'go harder', help: 'Closing on a rider too slowly gets you held: go with 5+ km/h more, or wait.'},
         'go-wide': {word: 'go wide', help: 'In line with the rider you are closing on: go wide (1.5 m+) or with 5+ km/h more.'},
-        'drop-back': {word: 'drop back', help: 'Glued to their wheel: pulling out here gets you held. Drop to 3–5 m, pull out to the edge, come by fast.'},
-        'rider-left': {word: 'block left', help: 'A rider creeping up on your left: staying in their way costs them far more than you.'},
-        'rider-right': {word: 'block right', help: 'A rider creeping up on your right: staying in their way costs them far more than you.'},
-        'rider-behind': {word: 'hold line', help: 'A rider creeping up behind you: staying in their way costs them far more than you.'},
+        'drop-back': {word: 'drop back', help: 'Glued to their wheel: pulling out here gets you held. Drop back to 1.5–3.5 m between wheels, pull out to the edge, come by fast.'},
+        'rider-left': {word: 'block left', help: 'In a race, a rider creeping up on your left: ease over into their way. Being held costs them far more than you.'},
+        'rider-right': {word: 'block right', help: 'In a race, a rider creeping up on your right: ease over into their way. Being held costs them far more than you.'},
     },
     gap: {
         ...COMMON,
-        wheel: {word: '', help: 'To the wheel in line in front of you.'},
+        wheel: {word: '', help: 'From your front wheel to the back wheel in line in front of you (below 0: overlapping).'},
         beside: {word: 'beside', help: 'No rider in line: the nearest is beside you.'},
         'no-wheel': {word: '', help: 'No wheel within 25 m.'},
         'no-draft': {word: 'no draft', help: 'This wheel gives no draft (a hand cycle or recumbent?).'},
@@ -94,9 +102,11 @@ export const VOCAB = {
     },
     tuck: {
         ...COMMON,
-        build: {word: 'pedal on', help: 'Speed still needed to supertuck (58 km/h on −3% or steeper, out of the draft).'},
+        build: {word: '', help: 'Speed still needed to supertuck (58 km/h on −3% or steeper, out of the draft).'},
+        soon: {word: 'supertuck', help: 'You reach supertuck speed in that many seconds at the speed you are gaining: ' +
+               'keep pedaling until then, then coast.'},
         stop: {word: 'coast', help: 'Fast enough to supertuck: stop pedaling. In a race the tuck is about as aero as the AERO power-up.'},
-        rest: {word: 'rest', help: 'Fast enough to supertuck, but not in a race: outside races the tuck saves your legs, not time (pedaling is faster).'},
+        rest: {word: '', help: 'Fast enough to supertuck, but not in a race (or not known yet): no call, coast if you like.'},
         tuck: {word: 'tuck', help: 'In the supertuck.'},
         draft: {word: 'in draft', help: 'No supertuck in the draft.'},
         frame: {word: 'no tuck', help: 'No supertuck on a TT or MTB frame.'},
@@ -119,7 +129,7 @@ export const VOCAB = {
         ahead: {word: '', help: 'Riders ahead of you in your race who have not fired their burrito yet (everyone got one): ' +
                 'each can take your draft for 20 s. Near the front, fewer are ahead of you.'},
         cone: {word: 'move over', help: 'A burrito fired just ahead of you: no draft for 20 s in a short wedge behind it ' +
-               '(1–8.5 m back, a quarter of that either side). Move a lane over, or sit 9 m+ back.'},
+               '(up to 7 m behind their wheel, a quarter of that either side). Move a lane over, or sit 7.5 m+ back.'},
         done: {word: 'done', help: 'Nearly everyone has fired their burrito: safe to slide back into the bunch.'},
         clear: {word: '', help: 'No burrito active near you.'},
     },
@@ -227,6 +237,10 @@ export function directorCalls(ds) {
                   for: pc.state === 'steep' ? roundIn(pc.forS) : null, priority: 35});
     }
     // a bend: the inside open (move over: it gains ground) or you're on the outside (stay close: you'll lose ground)
+    // a stretch that twists enough to steer a shorter line (engine sCurve): "cut the S in 5" (a hairpin: "cut the bend")
+    const sc = ds && ds.sCurve;
+    if (sc) out.push({id: 'bend', state: sc.s ? 'cut-s' : 'cut-bend', word: sc.s ? 'cut the S' : 'cut the bend',
+                      in: roundIn(sc.inS), for: null, priority: 46});
     const b = ds && ds.bend;
     if (b && (b.state === 'open' || b.state === 'outside')) {
         out.push({id: 'bend', state: `${b.state}-${b.side}`, word: b.state === 'open' ? `inside ${b.side}` : 'stay close',
@@ -291,7 +305,7 @@ function meter(key, value, state, extra = {}) {
     return {value: shown, state, level: v == null ? null : rangeLevel(v, warn, alarm) || null, ...extra};
 }
 
-const DEFEND_STATE = {'on your left': 'rider-left', 'on your right': 'rider-right', behind: 'rider-behind'};
+const DEFEND_STATE = {'on your left': 'rider-left', 'on your right': 'rider-right'};   // straight behind: no call (v0.51.0)
 
 /*
  * The data object from one engine tick (meter-engine.mjs update -> {me, ds}). The call is added by the caller
@@ -316,9 +330,13 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     const gapState = noMap ? 'no-map' : ds.noDraftWheel ? 'no-draft' : Number.isFinite(ds.gapM) ? 'wheel' : ds.beside ? 'beside' : 'no-wheel';
     const sideState = noMap ? 'no-map' : !Number.isFinite(ds.sideM) ? 'no-wheel' : ds.beside ? 'beside' : 'inline';
     const t = ds.tuck;
-    // fast enough, still pedaling: in a race (or not known yet) stop pedaling; outside races the tuck is only a rest
-    const ready = t && t.race === false ? 'rest' : 'stop';
-    const tuckState = !t ? 'none' : {build: 'build', ready, tucked: 'tuck', draft: 'draft', frame: 'frame'}[t.state] || 'none';
+    // words only in a race (the user, 2026-10-30: "if the rider wants to coast, he will coast"): outside one, or not
+    // known yet, the meter still reads but says nothing
+    const race = !!(t && t.race === true);
+    const ready = race ? 'stop' : 'rest';
+    const soonS = race && t.state === 'build' && Number.isFinite(t.inS) ? roundIn(t.inS) : null;
+    const tuckState = !t ? 'none' : soonS != null ? 'soon' :
+        {build: 'build', ready, tucked: 'tuck', draft: 'draft', frame: 'frame'}[t.state] || 'none';
     const tuckValue = !t ? null : t.state === 'build' ? t.needKmh : t.state === 'ready' || t.state === 'tucked' ? 0 : null;
     const drag = t && t.drag && t.drag.tucked ? {
         tuck: t.drag.tucked.cda, coast: t.drag.coast ? t.drag.coast.cda : null,
@@ -335,9 +353,12 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
             pack: meter('pack', pack(ds.packW), draftless ? common : ds.packState || common || 'none'),
             blocked: meter('blocked', pack(ds.blockedW), blockedState),
             passing: meter('passing', pack(ds.passKmh) ?? (common ? null : 0), passState),
-            gap: meter('gap', ds.gapM, gapState, ds.gapApprox ? {approx: true} : {}),
+            // below 0 = overlapping wheels: no word of its own (Blocked says "ease off" when it costs; the user, 2026-10-30)
+            gap: meter('gap', wheelGap(ds.gapM), gapState, {centerM: fin(ds.gapM), ...(ds.gapApprox ? {approx: true} : {})}),
             side: meter('side', ds.sideM, sideState),
-            tuck: meter('tuck', tuckValue, tuckState, drag ? {drag} : {}),
+            // "supertuck in 6": the word carries the seconds (a display word, no chime: the "coast" chime stays the call)
+            tuck: meter('tuck', tuckValue, tuckState, {...(drag ? {drag} : {}),
+                        ...(soonS != null ? {inS: soonS, word: `supertuck in ${soonS}`} : {})}),
             group: meter('group', ds.groupSize, 'none'),
             cda: meter('cda', ds.cda, ds.cdaState || 'model'),
             surface: meter('surface', ds.surfaceW, ds.surfaceId || 'none'),

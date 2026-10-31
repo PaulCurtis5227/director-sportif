@@ -45,7 +45,8 @@ export const CALL_TYPES = [
     {id: 'pacing', label: 'Climb pacing', hint: 'a steep part ahead (when and how long), the top of the climb close',
      tones: [600, 800]},
     {id: 'bend', label: 'Bends', hint: 'a bend ahead: "inside left / right" when the inside is open and moving over ' +
-     'gains ground (after the draft it costs), "stay close" when you are on the outside and will lose ground',
+     'gains ground (after the draft it costs), "stay close" when you are on the outside and will lose ground; ' +
+     '"cut the S" / "cut the bend" before a stretch that twists enough to steer a shorter line (dirt S curves most)',
      tones: [700, 940]},
     {id: 'teamHr', label: 'Teammate HR', hint: 'you or a teammate in your race (your team tag) with no heart rate for 20 s: ' +
      'in the pen, so they can pair a strap, and in the race (some races disqualify for it); every 2 min until you ' +
@@ -179,7 +180,7 @@ export function dsCall(data, extra = [], {finale = null} = {}) {
     const blk = m.blocked && m.blocked.state;
     if (blk === 'blocked') c.push(call('blocked', 'wheel', wordOf('blocked', blk)));
     if (blk === 'blocked-left' || blk === 'blocked-right') c.push(call('blocked', blk.slice(8), wordOf('blocked', blk)));
-    if (pass === 'rider-left' || pass === 'rider-right' || pass === 'rider-behind') {
+    if (pass === 'rider-left' || pass === 'rider-right') {
         c.push(call('passed', pass.slice(6), wordOf('passing', pass)));
     }
     if (m.position && m.position.state === 'gapping') c.push(call('gap', 'opening', wordOf('position', 'gapping')));

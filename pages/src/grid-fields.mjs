@@ -54,10 +54,10 @@ function wordFields() {
  */
 export const ADVICE = {
     blocked: ['blocked', 'blocked-left', 'blocked-right'],
-    passing: ['too-slow', 'go-wide', 'drop-back', 'rider-left', 'rider-right', 'rider-behind'],
+    passing: ['too-slow', 'go-wide', 'drop-back', 'rider-left', 'rider-right'],
     position: ['shatter', 'gapping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'unsteady', 'no-draft', 'sit-in'],
     holding: ['easy', 'blocked'],
-    tuck: ['build', 'stop', 'rest'],
+    tuck: ['soon', 'stop'],
     frc: ['low', 'empty'],
     burrito: ['cone'],
 };
@@ -76,7 +76,8 @@ export function allWords(data, hold = null) {
     if (data.call) said.push({src: 'call', word: callWords(data.call), level: ''});
     for (const [k, states] of Object.entries(ADVICE)) {
         const e = data.meters?.[k];
-        if (e && states.includes(e.state) && wordOf(k, e.state)) said.push({src: k, word: wordOf(k, e.state), level: e.level || ''});
+        const w = e && states.includes(e.state) ? e.word || wordOf(k, e.state) : '';   // e.word: a word with a number
+        if (w) said.push({src: k, word: w, level: e.level || ''});
     }
     let shown = said;
     if (hold) {

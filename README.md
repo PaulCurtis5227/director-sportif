@@ -20,14 +20,14 @@ from Sauce and tells you, in a word or two, what to do now. Its meters show on a
 
 Each shows a number, and a word under it when there's something to do ("back off", "ease off", "block left").
 
-- **Position**: what your spot in the group costs you in watts, against the best spot at your speed (4–6 m back on a
+- **Position**: what your spot in the group costs you in watts, against the best spot at your speed (2.5–4.5 m between wheels on a
   fast descent, not on the wheel). Blank behind a rider who gives no draft (a hand cycle): "change wheel".
 - **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
 - **Blocked**: watts lost pushing into the wheel ahead. On fast descents sitting close costs the most of all: ease off to 5 m or more.
 - **Passing**: the closing speed when you creep up on a rider at the speed that gets you held, or one creeps up on you.
-- **Gap**, **L/R**: to the wheel in front.
+- **Gap**, **L/R**: to the wheel in front. Gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
 - **Tuck**: the speed still needed for a supertuck; **Tuck drag**: your drag in the tuck against coasting.
 - **Surface**: the watts the road under you costs your tyres beyond pavement (wood, dirt, cobbles…).
 - **FRC**: your reserve above FTP, from your power ("low", "empty").
@@ -41,7 +41,7 @@ Watt meters read 0 with nothing to read (alone); distance meters go blank.
 Each kind reaches you the way you pick in the settings: a chime (its own sound), your computer's voice, or both; the
 windows always show it. Times are in seconds, never meters.
 
-- **The pack**: "go harder", "go wide", "drop back" (your pass), "block left" / "hold line" (a rider creeping up),
+- **The pack**: "go harder", "go wide", "drop back" (your pass), "block left" / "block right" (in a race, a rider creeping up beside you),
   "ease off" (blocked).
 - **Climbs**: "climb in 90", "move up" 60–45 s before it, "hold spot" or "stay in line"; "steep in 20 for 30",
   "over top in 15". From your route: it works alone, from the start.
@@ -49,12 +49,13 @@ windows always show it. Times are in seconds, never meters.
   going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
   hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
-- **The road**: "dirt in 15 for 40"; "coast" when you're fast enough to supertuck; bends: "inside left in 6" when the
-  inside is open and moving over gains ground, "stay close" when you're on the outside of the bunch.
+- **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "inside left in 6" when the
+  inside is open and moving over gains ground, "stay close" when you're on the outside of the bunch; "cut the S in 5" before
+  a stretch that twists enough for a steered line to pay (on your route: dirt S curves most, where the best line gains 4–6 m).
 - **Habits**, now and then: "use edge", "sit in", "get in line", "ease off", "give room" (under a meter off the wheel).
 
 On a bike that gets no draft (a TT bike in a group ride, or any bike in a time trial) the pack calls go quiet by
-themselves after 20 s on a wheel with no draft: no "gap opening", "drop back" or "hold line" for a draft you don't get.
+themselves after 20 s on a wheel with no draft: no "gap opening" or "drop back" for a draft you don't get.
 
 When you join an event, the Director Sportif window asks whether its bike type is right (Sauce doesn't say which bike
 you ride); in a time trial a bike that isn't a TT bike turns it red.
@@ -77,7 +78,9 @@ Sauce quit.
 1. **Choose how you hear the calls.** Out of the box the main calls are spoken (the gap, your pass, blocked, move
    up, steep, the finish, power-ups, race card, surfaces) and a few kinds chime. Director Sportif's gear ▸ **Calls**:
    tick **Voice** and / or **Chime** per kind. Bends and habits are off to start with; a chime alone suits being
-   passed.
+   passed. Some calls are for races only (block left / right, supertuck); tick **Practice race** to hear them on
+   group rides and free rides too, to practice (the window says "practice race" while it's on). On a free ride
+   with a route, the end of the route (each lap) is the finish line for the finish calls.
 2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
    use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
    Zwift profile's FTP and 15 kJ).

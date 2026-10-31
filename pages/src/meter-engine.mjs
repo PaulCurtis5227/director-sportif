@@ -33,6 +33,7 @@
  *                 wood, brick… add their rolling resistance to every meter (2026-10-12 group ride: dirt and wooden
  *                 bridges on the front read +45 W Holding as if pavement)
  *   tuck          the supertuck (engine/supertuck.mjs): {state: 'tucked' | 'ready' | 'build' | 'draft' | 'frame', needKmh,
+ *                 inS (build: seconds to tuck speed at the speed you are gaining, when within TUCK_SOON.soonS; else null),
  *                 race (raceFor: true / false / null),
  *                 drag: TuckDrag result (CdA in the tuck vs coasting, this session)} or null off a descent / settling
  *   moveUp        the climb ahead (engine/director.mjs MoveUpCoach, from the Data Tap): {state: 'prep' | 'move' |
@@ -58,6 +59,8 @@
  *   bend          a bend ahead (engine/bend-live.mjs bendCue, from the Data Tap; v0.40.0): {state: 'open' (the inside
  *                 is open: moving over gains ground) | 'outside' (you're on the outside: stay close), side ('left' |
  *                 'right', the bend's way), inS, moveM, gainM, lossM} or null; the same state two ticks running
+ *   sCurve        a stretch ahead that twists enough to steer a shorter line (route-ahead.mjs curvyStretch, your route's
+ *                 geometry; v0.51.0): {inS, turnDeg (over 100 m), s (bends both ways), dirt} or null; replaces bend
  *   feather       the feather power-up you hold, for the steepest 30 s ahead (engine/powerup-cue.mjs featherCue, from
  *                 the Data Tap; v0.41.0): {state: 'ready' | 'fire', inS (to the steepest part), grade} or null
  *   pacing        the climb ahead (engine/pacing-cue.mjs, from the Data Tap): {state: 'steep' (a steep part ahead:
@@ -89,17 +92,23 @@ import {HoldingMeter, holdingW, GroupMotion, HOLD_PAIR_S, HOLD_PACK_S, MOTION_MS
 import {BlockWatch, blockedNote, besideRider, passSituation, passNote, PassWatch, WIDE_M} from './engine/blocking.mjs';
 import {surfaceExtraCrr} from './engine/road-map.mjs';
 import {tuckState, TuckDrag} from './engine/supertuck.mjs';
+
+/*
+ * "supertuck in N" (the user, 2026-10-30: "pedal on" 6–13 km/h short on a descent that never got there meant nothing):
+ * seconds to tuck speed at the speed you gained over the last windowS, shown only when it's within soonS.
+ */
+export const TUCK_SOON = {windowS: 3, minGainKmhS: 0.2, soonS: 15};
 import {BendMap, lateralSituation, bendCue} from './engine/bend-live.mjs';
 import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
 import {predictedCap, crowdingCue} from './engine/draft-live.mjs';
 import {featherCue} from './engine/powerup-cue.mjs';
-import {withSpeeds, secsAlong} from './route-ahead.mjs';
+import {withSpeeds, secsAlong, curvyStretch, S_CURVE} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
 import {RideAwayWatch} from './ride-away.mjs';
 import {BurritoWatch} from './burrito.mjs';
-import {TeamHrWatch} from './team-hr.mjs';
+import {TeamHrWatch, isTeammate, teamTag} from './team-hr.mjs';
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
 import {remainingOnSurface} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
@@ -164,11 +173,27 @@ export class MeterEngine {
         this.startRider();
     }
 
+    /* Seconds until you reach tuck speed at the rate you're gaining it (your last TUCK_SOON.windowS), when within soonS; else null. */
+    tuckIn(s, needKmh) {
+        const h = this.tuckSpeeds;
+        if (Number.isFinite(s.worldTime) && Number.isFinite(s.speed) && (!h.length || s.worldTime > h.at(-1).wt)) {
+            h.push({wt: s.worldTime, kmh: s.speed});
+        }
+        while (h.length > 2 && h[1].wt <= s.worldTime - TUCK_SOON.windowS * 1000) h.shift();
+        if (!(needKmh > 0) || h.length < 2) return null;
+        const dt = (h.at(-1).wt - h[0].wt) / 1000;
+        if (dt < TUCK_SOON.windowS - 1) return null;
+        const gain = (h.at(-1).kmh - h[0].kmh) / dt;
+        const inS = gain >= TUCK_SOON.minGainKmhS ? needKmh / gain : null;
+        return inS != null && inS <= TUCK_SOON.soonS ? inS : null;
+    }
+
     /* A different rider (a camera change): their teleports, windows and smoothing start over. */
     startRider() {
         this.teleport = new TeleportGuard({newcomers: false});
         this.roadGaps.restart();
         this.position = new PositionSmoother();
+        this.tuckSpeeds = [];
         this.posQuietWt = null;   // the last tick of a gap opening / shatter: Position gives no advice for POSITION_TAU_S after
         this.posGapOn = false;    // that was the last tick (the next one starts Position over)
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
@@ -239,7 +264,9 @@ export class MeterEngine {
         const surface = this.roadMap ? this.roadMap.at(s)?.surface ?? null : null;
         const base = this.modelFor(me);
         const model = {...base, crr: base.crr + (surface ? surfaceExtraCrr(surface, base.tyre || 'road') : 0)};
-        const packW = packCostW(sit, L, v, {massKg: model.massKg, cda: model.cda, crr: model.crr});
+        // pack cost priced with your pavement Crr: riders pay the same pack extra on dirt as on pavement (2026-10-30, 6
+        // recordings: +0.0022 vs +0.0027 in Crr); with the surface in, a tight spot read 96 W on dirt vs 22 W on pavement
+        const packW = packCostW(sit, L, v, {massKg: model.massKg, cda: model.cda, crr: base.crr});
         const c = powerComponents({v, grade: s.grade || 0, massKg: model.massKg, cda: model.cda, crr: model.crr,
                                    draftW: s.draft || 0});
         const spot = spotCost(this.gapCurve, L, c, s, v, me.athleteId, packW);   // the same pack cost as Holding
@@ -269,8 +296,14 @@ export class MeterEngine {
         const ac = this.accel, dtAc = ac && Number.isFinite(s.worldTime) ? (s.worldTime - ac.wt) / 1000 : null;
         const accelKmhS = dtAc > 0 && dtAc < 5 ? ac.a + (1 - Math.exp(-dtAc / 2)) * (((s.speed || 0) - ac.kmh) / dtAc - ac.a) : ac ? ac.a : 0;
         if (!ac || dtAc !== 0) this.accel = {wt: s.worldTime, kmh: s.speed || 0, a: dtAc > 0 && dtAc < 5 ? accelKmhS : 0};
-        const passRead = settling || L.size < 2 ? this.pass.update(null) :
-            this.pass.update(passSituation(entries, me, undefined, {accelKmhS}));
+        // a rider creeping up on you: "block left / right" in a race (or practice race) only, never a teammate; straight
+        // behind there is nothing to do (the user, 2026-10-30: "hold line" said don't do anything)
+        const passSit = settling || L.size < 2 ? null : passSituation(entries, me, undefined, {accelKmhS});
+        const d = passSit && passSit.defend;
+        if (d && (this.raceFor(me) !== true || d.where === 'behind' || isTeammate(d.rider && d.rider.athlete, teamTag(me.athlete)))) {
+            passSit.defend = null;
+        }
+        const passRead = this.pass.update(passSit);
         const pass = !away ? passRead : {...passRead, attack: null, defend: away.state === 'shatter' ? null : passRead.defend};
         // the road ahead (yours only: the learned road follows your own track, the route is yours). Its seconds use
         // steady inputs: your flat speed (smoothed ~30 s while the road is within ±2%) and effort (power, ~60 s)
@@ -293,7 +326,7 @@ export class MeterEngine {
                                            crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
                 aheadFrom = 'route';
             } else {
-                const road = this.bendMap.roadAhead(s, 800);
+                const road = this.bendMap.roadAhead(s, 800, this.routeAhead ? this.routeAhead.sections(s) : null);
                 if (road && road.pts && road.pts.length) {
                     roadAhead = road.pts;
                     aheadFrom = 'riders';
@@ -312,15 +345,18 @@ export class MeterEngine {
         const easeModel = {cda: model.cda * (s.activePowerUp === 'AERO' ? 0.75 : 1), crr: model.crr, massKg: model.massKg};
         const settledFtp = (toLineM, near) => near && fit.ftpW > 0 &&
             sprintSettled(entries, me, toLineM, {decelMs2: decelAt(fit.ftpW, v, easeModel), kickKmh: ftpKick});
+        // practice race on a free ride (raceFor true with no event): your route's end is the finish line (Sauce: lead-in
+        // + one lap, the route distance starts over each lap). A free ride otherwise has no line (v0.34.0)
+        const finishType = me.remainingType === 'route' && !s.eventSubgroupId && this.raceFor(me) === true ? 'event' : me.remainingType;
         // seconds to the line along the road ahead (its climbs and descents): the last-wheel call is timed by it
-        const inEventFinish = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 3000;
+        const inEventFinish = finishType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 3000;
         const toLineS = inEventFinish ? secsAlong(roadAhead, me.remaining, this.pace.vFlat ?? v) : null;
         // the power-up you hold, on any bike (v0.46.1; the user, 2026-10-26: "if we have a power up yes the call should
         // come": AERO on the Hanzo cut the drag 0.25 -> 0.17). On a TT bike the next arch takes it (tt: race card calls)
         const held = me.gameState ? me.gameState.availablePowerUp || null : null;
         const tt = base.bike === 'tt';
         const finish = settling || !me.self ? null : this.sprintCoach.update({
-            wt: s.worldTime, remaining: me.remaining, remainingMetric: me.remainingMetric, remainingType: me.remainingType,
+            wt: s.worldTime, remaining: me.remaining, remainingMetric: me.remainingMetric, remainingType: finishType,
             v, power, held, bike: base.bike, toLineS,
             group: {size: L.size, ahead: L.ahead, vGroup: L.vGroup}, wheels: sprintWheels(entries, me),
             canSteer: !!s.canSteer, q: draftQ, closer: fastCloser(entries, me), frc, ftpW: fit.ftpW, model: easeModel,
@@ -338,8 +374,13 @@ export class MeterEngine {
             // right ahead doubled the scale and halved the seconds (Urumaze 2026-10-06: 149 -> 72 s in 2 s).
             this.moveUpCoach.update({profile: roadAhead, v: aheadFrom === 'route' && roadAhead[0] ? roadAhead[0].v : vA,
                                      grade: s.grade || 0, group: L, exactFoot: aheadFrom === 'route'});
-        const tuckIn = {kmh: s.speed, grade: s.grade, power, draft: s.draft || 0, bike: base.bike, powerUp: s.activePowerUp};
-        const tuck = settling ? null : tuckState(tuckIn);
+        // no draft at all on a wheel: a TT bike, whatever the settings say, and a TT frame can't supertuck (2026-10-30:
+        // "pedal on" on the Hanzo, the bike setting not TT)
+        const tuckIn = {kmh: s.speed, grade: s.grade, power, draft: s.draft || 0, bike: draftless ? 'tt' : base.bike,
+                        powerUp: s.activePowerUp};
+        const tuck0 = settling ? null : tuckState(tuckIn);
+        const tuckSoonS = me.self ? this.tuckIn(s, tuck0 && tuck0.state === 'build' ? tuck0.needKmh : null) : null;
+        const tuck = tuck0 && tuck0.state === 'build' ? {...tuck0, inS: tuckSoonS} : tuck0;
         if (me.self) {
             this.tuckDrag.update({wt: s.worldTime, v, alt: s.altitude, dist: s.distance, power, massKg: model.massKg,
                                   crr: model.crr, kind: settling ? null : TuckDrag.kind(tuck, tuckIn), powerUp: s.activePowerUp});
@@ -350,7 +391,7 @@ export class MeterEngine {
             crowdingCue({q: draftQ, aheadGap: ahead.gap, aheadLane: ahead.lane, ahead20: ahead.counts[2],
                          powerUp: s.activePowerUp, behindGap: gapBehind(entries, me.athleteId)}).state === 'crowding');
         // habits (yours only): quiet before a climb, in the finish (2 km) and under a power-up, as in the Data Tap
-        const finale = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 2000;
+        const finale = finishType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 2000;
         const nudge = settling || !me.self ? null : this.nudgeCoach.update({
             wt: s.worldTime, size: L.size, ahead: L.ahead, holdW: hold.w, relMs: Number.isFinite(L.vGroup) ? v - L.vGroup : 0,
             depthM: lateralDepth(entries, me), q: draftQ, gapAhead: L.gapAhead ?? null, positionW: pos.w, crowding,
@@ -400,7 +441,7 @@ export class MeterEngine {
                 const dir = [(p2.x - p1.x) / L1, (p2.y - p1.y) / L1];
                 let turn = Math.atan2(p2.y - p1.y, p2.x - p1.x) - Math.atan2(p1.y - p0.y, p1.x - p0.x);
                 turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-                const b = this.bendMap.nextBend(s);
+                const b = this.bendMap.nextBend(s, 200, undefined, this.routeAhead ? this.routeAhead.sections(s) : null);
                 const lat = b ? lateralSituation(entries, me, dir, Math.sign(b.angleDeg), turn / ((L0 + L1) / 200)) : null;
                 const cue = bendCue(b, lat, {v, q: draftQ ?? 0, cap: cap ?? 0.14, cda: model.cda,
                                              fRollN: model.crr * model.massKg * 9.80665});
@@ -410,6 +451,20 @@ export class MeterEngine {
                             moveM: cue.moveM, gainM: cue.gainM, lossM: cue.lossM};
                 }
                 this.bendLast = key;
+            }
+        }
+        // cut the S: a stretch ahead that twists enough for a steered line to pay (route-ahead.mjs curvyStretch, from the
+        // route's own geometry, traced every 5 m): dirt from S_CURVE.dirtDeg, pavement from paveDeg. It replaces the bend call.
+        let sCurve = null;
+        if (me.self && !settling && v > 5 && aheadFrom === 'route' && roadAhead) {
+            const rough = x => x === 'dirt' || x === 'gravel';
+            const run = this.roadMap ? this.roadMap.ahead(s, S_CURVE.toM + S_CURVE.winM, this.routeAhead ? this.routeAhead.sections(s) : null) : null;
+            const roughAt = (a, b) => !!run && rough(run.surface) && run.inM <= b && (run.open || run.inM + run.lengthM >= a);
+            const c = curvyStretch(roadAhead, (a, b) => (roughAt(a, b) ? S_CURVE.dirtDeg : S_CURVE.paveDeg));
+            const inS = c ? secsAlong(roadAhead, c.startM, vAhead) : null;
+            if (c && inS != null && inS <= S_CURVE.callS) {
+                sCurve = {inS, turnDeg: Math.round(c.turnDeg), s: c.s, dirt: roughAt(c.startM, c.endM)};
+                bend = null;
             }
         }
         // the feather you hold: at the steepest 30 s ahead
@@ -458,7 +513,7 @@ export class MeterEngine {
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
-            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, feather,
+            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather,
             burrito: me.self && !settling ? this.burritoWatch.update(entries, me, s.worldTime) : null,
             teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
@@ -475,7 +530,7 @@ export class MeterEngine {
                 remainingM: Number.isFinite(me.remaining) ? me.remaining : null} : null,
             // the finish (calls.mjs FINALE_CALLS): 'run-in' (an event's last FINALE_M), 'sprint' (after your jump), 'done'
             // (past the line, still in the event), else null
-            finale: !me.self || settling || me.remainingType !== 'event' || me.remainingMetric !== 'distance' ||
+            finale: !me.self || settling || finishType !== 'event' || me.remainingMetric !== 'distance' ||
                 !Number.isFinite(me.remaining) ? null : me.remaining <= 0 ? 'done' : this.sprintCoach.jumped ? 'sprint' :
                 me.remaining < FINALE_M ? 'run-in' : null,
             draftQ,

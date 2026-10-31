@@ -235,7 +235,7 @@ export function passSituation(entries, me, lead = leads(entries), {accelKmhS = 0
             if (!out.attack || Math.abs(along) < Math.abs(out.attack.alongM)) out.attack = {where, closeKmh: dv, alongM: along, latM: lat, atWheel, rider: o};
         }
         if (-dv >= HELD_KMH[0] && -dv < HELD_KMH[1] && (level || (along < 0 && along >= -PASS_BEHIND_M))) {
-            if (!out.defend || Math.abs(along) < Math.abs(out.defend.alongM)) out.defend = {where, closeKmh: -dv, alongM: along, latM: lat};
+            if (!out.defend || Math.abs(along) < Math.abs(out.defend.alongM)) out.defend = {where, closeKmh: -dv, alongM: along, latM: lat, rider: o};
         }
     }
     if (out.attack) {

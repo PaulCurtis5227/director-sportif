@@ -37,7 +37,7 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
     const m = (x, key) => (x && x.dsData && x.dsData.meters ? x.dsData.meters[key] || null : null);
     const word = key => x => {
         const e = m(x, key);
-        return e ? wordOf(key, e.state) : '';
+        return e ? e.word || wordOf(key, e.state) : '';
     };
     // the meter's description, then what its word means right now
     const tip = (key, about) => () => {
@@ -54,14 +54,16 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
     };
     return [{
         id: 'ds-gap',
-        shortName: 'Gap',
+        // estimated (read from positions): the name says so, not a "~" that widens the number (the user, 2026-10-30)
+        shortName: x => (m(x, 'gap')?.approx ? 'Est. gap' : 'Gap'),
         longName: 'Gap to the wheel in front',
-        tooltip: tip('gap', 'Meters to the rider in line in front of you, center to center (blank beyond 25 m). ' +
-            '"~" = read from positions, which can be meters off.'),
+        tooltip: tip('gap', 'From your front wheel to the back wheel of the rider in line in front of you (blank ' +
+            'beyond 25 m). Below 0 your wheels overlap, and Zwift cuts your draft for it. ' +
+            '"Est. gap" = read from positions, which can be meters off.'),
         format: x => {
             const e = m(x, 'gap');
             const g = num(e && Number.isFinite(e.value) ? dist(e.value) : null, 1);
-            return g == null ? null : `${e.approx ? '~' : ''}${g}`;
+            return g;
         },
         label: word('gap'),
         suffix: imperial ? 'ft' : 'm',
@@ -89,7 +91,7 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         shortName: 'Position',
         longName: 'Position: what your spot costs against the best spot at your speed',
         tooltip: tip('position', 'Watts of draft your spot misses against the best spot at your speed, over 10 s (on a ' +
-            'fast descent the best spot is 4–6 m back, not on the wheel). 0 alone or coasting.'),
+            'fast descent the best spot is 2.5–4.5 m between wheels, not on the wheel). 0 alone or coasting.'),
         format: watts('position', true),
         label: word('position'),
         suffix: 'W',
