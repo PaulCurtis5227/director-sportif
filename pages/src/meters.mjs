@@ -117,6 +117,24 @@
  * wheel (draftless) = a TT frame for the tuck, whatever the bike setting (the Hanzo, 2026-10-30). Pack cost priced
  * with your pavement Crr: on dirt it read ~4x (a tight spot 96 W vs 22), dragging Holding ~75 W low (dirt-crr.mjs). "cut the S in N" / "cut the bend" (bend call; route-ahead.mjs curvyStretch
  * on the route traced every 5 m: dirt 90°+ per 100 m, pavement 120°+; curve-line.mjs: dirt S curves +2 m, the best line 4–6 m).
+ * v0.52.0 (2026-10-31 Tour of Watopia stage 4 marks): "group shattering" needs a quarter of the riders ahead leaving, the
+ * nearest within 15 m, seen twice in 10 s (ride-away.mjs: 4 of 5 marked calls were bad); the distance to the finish from
+ * Zwift's own progress when Sauce has none (progress-left.mjs): finish calls, "1.5 km to go" and Finish in the race index
+ * on routes Sauce has no length for; a race index too short for YouTube says so instead of nothing. Position reads the
+ * wheel in line (the Gap meter's) and its note says the range wheel to wheel ("back off" at a shown 3 m was a rider half
+ * a lane over); bridging to riders up the road (bridge.mjs) quiets Position advice, "easy" and the Blocked cue. Grid
+ * units under the number, small, as on Sauce's own grid.
+ * v0.53.0: the Bridge button (setting bridgeButton; bridge.mjs BridgeCoach + bridge-plan.mjs): you say you want to bridge,
+ * the director plans it for the least FRC along the road ahead ("bridge now", "bridge on the climb in N", "last chance
+ * to bridge", "too far to bridge"), then "attack", "hold N", "made it"; in the finish too (on before the line), never above
+ * what you have left (FTP + (max power − FTP) × FRC share; setting myPmaxW, empty = 4.5 × FTP). Under 3 s up the road, or
+ * closed within 5 s: assumed bridgeable, no call.
+ * Also (the rest of the 2026-10-31 marks): the Gap meter is "Wheel gap"; "gap opening" from the riders ahead needs them
+ * 0.5 m/s away, seen twice in 10 s (ride-away.mjs); the feather's target held on the road and spent once passed, its
+ * seconds at your climbing speed (powerup-cue.mjs FeatherPick); no "drop back" while the gap to the wheel closes at 5+
+ * km/h; Blocked counts spikes only near a wheel at any speed (blocking.mjs).
+ * v0.53.1: meters show a decimal only under 10 (1.5 but 20; meter-fields.mjs fmtShort): Wheel gap, L/R, Passing, Tuck.
+ * v0.53.2: FRC, Speed and Grade keep their decimal (the user: the precision is useful there).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -142,9 +160,10 @@ import {titleQuery, prepareTitle, showTitle, hideTitle} from './engine/title-car
 import {recButton, eventText, cardText, bikeText, inPen, cycleText} from './panel.mjs';
 import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
+import {ProgressLeft} from './progress-left.mjs';
 import {hrAckText} from './team-hr.mjs';
 
-export const DS_VERSION = '0.51.0';
+export const DS_VERSION = '0.53.2';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -212,9 +231,11 @@ export const SETTING_DEFAULTS = {
     myCda: null,
     myFtpW: null,        // empty: your Zwift profile's FTP
     myFrcKJ: 15,
+    myPmaxW: null,       // empty: 4.5 × FTP (the bridge plan's ceiling as FRC goes)
     autoRecordEvents: false,   // record every event you join (capture format); you turn it on
     recordAlways: false,       // and record all the time outside events (a file per free ride; you turn it on)
     practiceRace: false,       // every ride counts as a race: the race-only calls on, the not-a-race ones off
+    bridgeButton: false,       // a Bridge button in the window (you say you want to bridge; bridge.mjs)
     obsEnabled: false,         // connect to OBS (its WebSocket server) for the video clocks
     obsUrl: 'ws://127.0.0.1:4455',
     obsPassword: '',           // OBS's WebSocket password: kept in this window's settings on this computer
@@ -442,7 +463,8 @@ export async function main() {
         raceCards,
         // Your FTP and FRC for the FRC meter (settings; FTP from your Zwift profile when not set)
         fitnessFor: me => ({ftpW: Number(settings.myFtpW) > 0 ? Number(settings.myFtpW) : me.athlete && me.athlete.ftp,
-                            frcJ: (Number(settings.myFrcKJ) > 0 ? Number(settings.myFrcKJ) : 15) * 1000}),
+                            frcJ: (Number(settings.myFrcKJ) > 0 ? Number(settings.myFrcKJ) : 15) * 1000,
+                            pMaxW: Number(settings.myPmaxW) > 0 ? Number(settings.myPmaxW) : null}),
     });
     const hrCheck = hrChecker({watch: engine.teamHrWatch, refit: () => requestAnimationFrame(fitWindow)});
     // Calls (calls.mjs): each type delivered as its settings say (text / chime / voice).
@@ -468,6 +490,8 @@ export async function main() {
             readDelivery();
         } else if (['obsEnabled', 'obsUrl', 'obsPassword'].includes(key)) {
             obsReconnect();
+        } else if (key === 'bridgeButton') {
+            showBridge();
         }
     });
     const speaker = new Speaker();
@@ -605,10 +629,13 @@ export async function main() {
         if (obs && obs.connected) obs.chapter(title).catch(() => {});   // OBS 30.2+ Hybrid MP4 only; elsewhere ignored
     };
     const saveIndex = () => {
-        const text = raceIndex.text(), startMs = raceIndex.startMs;
+        const text = raceIndex.text(), startMs = raceIndex.startMs, moments = raceIndex.log.items.length;
         raceIndex.log.reset();
         keepIndex();
-        if (!text) return;
+        if (!text) {   // 2026-10-31: one moment (Race start), nothing saved and nothing said
+            if (startMs != null) obsNote(`race index not saved: ${moments} moment${moments === 1 ? '' : 's'} in the video, YouTube needs 2 besides the start`);
+            return;
+        }
         const name = `ds-video-${stamp(startMs)}-youtube-chapters.txt`;
         download(new Blob([text + '\n'], {type: 'text/plain'}), name);
         obsNote(`race index saved: ${name} (paste it into the YouTube description)`);
@@ -776,6 +803,20 @@ export async function main() {
     };
     const recBtn = content.querySelector('button.rec');
     const markBtn = content.querySelector('button.mark');
+    // Bridge (bridge.mjs): you tell the director you want to go across; it turns itself off once you're on (or cancelled)
+    const bridgeBtn = content.querySelector('button.bridge');
+    const showBridge = () => {
+        const on = !!Common.settingsStore.get('bridgeButton');
+        if (!on) engine.bridgeArmed = false;
+        bridgeBtn.hidden = !on;
+        bridgeBtn.classList.toggle('on', !!engine.bridgeArmed);
+        requestAnimationFrame(fitWindow);
+    };
+    bridgeBtn.addEventListener('click', () => {
+        engine.bridgeArmed = !engine.bridgeArmed;
+        showBridge();
+    });
+    showBridge();
     // recording shows on the button ("● 12:03", red; panel.mjs recButton); what auto-record does is its tooltip
     const showRec = () => {
         const b = recButton({recording: !!rec, startedAt: rec && rec.startedAt, saving, now: Date.now()});
@@ -922,12 +963,19 @@ export async function main() {
             el.word.className = 'call-word quiet';
         }
     }, 1000);
+    // Sauce's distance to the finish missing (a route it has no length for): from Zwift's own progress (progress-left.mjs);
+    // the recording keeps the list as Sauce gave it
+    const progressLeft = new ProgressLeft();
+    const eventLaps = sg => (evInfo.sg === sg && evInfo.done && evInfo.value ? evInfo.value.laps : undefined);
     Common.subscribe('nearby', list => {
-        const r = engine.update(list);
+        const i = Array.isArray(list) ? list.findIndex(o => o && o.self) : -1;
+        const mine = i >= 0 ? progressLeft.fill(list[i], {laps: eventLaps(list[i].state && list[i].state.eventSubgroupId)}) : null;
+        const r = engine.update(mine && mine !== list[i] ? list.map((o, k) => (k === i ? mine : o)) : list);
         if (!r) {
             return;
         }
         lastTick = Date.now();
+        if (bridgeBtn.classList.contains('on') !== !!engine.bridgeArmed) showBridge();   // made it: the engine turned it off
         bikeCheck.update(r.me);
         hrCheck.update(r.me, r.ds && r.ds.teamHr);
         const data = buildData(r);

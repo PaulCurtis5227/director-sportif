@@ -64,18 +64,18 @@ test('units follow Sauce\'s imperial switch (help text)', () => {
 
 test('delivery: per call type; the old voice switch carries over, being passed gets the chime alone', () => {
     const chimesOn = ['callGapChime', 'callTuckChime', 'callMoveUpChime', 'callSprintChime', 'callWheelChime',
-                      'callPowerupChime', 'callCardChime', 'callBurritoChime', 'callTeamHrChime'];
+                      'callPowerupChime', 'callCardChime', 'callBurritoChime', 'callTeamHrChime', 'callBridgeChime'];
     // a fresh install: the main calls spoken, the same chimes (v0.43.0)
     const fresh = deliveryDefaults({});
-    const voiceOn = ['callGapVoice', 'callPassVoice', 'callBlockedVoice', 'callMoveUpVoice', 'callPacingVoice',
+    const voiceOn = ['callGapVoice', 'callPassVoice', 'callBlockedVoice', 'callMoveUpVoice', 'callBridgeVoice', 'callPacingVoice',
                      'callSprintVoice', 'callPowerupVoice', 'callCardVoice', 'callSurfaceVoice', 'callBurritoVoice', 'callTeamHrVoice'];
     assert.ok(Object.entries(fresh).every(([k, v]) => v === (chimesOn.includes(k) || voiceOn.includes(k))), JSON.stringify(fresh));
     assert.deepEqual(deliveryFor(fresh, 'passed'), {chime: false, voice: false}, 'being passed: nothing until chosen');
     assert.deepEqual(deliveryFor(fresh, 'wheel'), {chime: true, voice: false}, 'take the wheel: a chime only');
     // an existing install with its own choices (here: voice off everywhere): a new call type doesn't turn the voice on
     const off = deliveryDefaults({callPassVoice: false});
-    assert.ok(Object.entries(off).every(([k, v]) => v === chimesOn.includes(k)),
-        'an existing install: only the gap, tuck, move-up, finish, take-the-wheel, power-up, race card, burrito and teammate HR chimes are on');
+    assert.ok(Object.entries(off).every(([k, v]) => v === (chimesOn.includes(k) || k === 'callBridgeVoice')),
+        'an existing install: only the gap, tuck, move-up, finish, take-the-wheel, power-up, race card, burrito, teammate HR and bridge chimes are on, and the bridge voice (only after you press Bridge)');
     assert.equal(deliveryDefaults({speakCalls: false}).callGapVoice, false, 'the old switch off: stays off');
     const old = deliveryDefaults({speakCalls: true, speechChime: true});
     assert.deepEqual(deliveryFor(old, 'pass'), {chime: true, voice: true});

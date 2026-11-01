@@ -27,7 +27,7 @@ Each shows a number, and a word under it when there's something to do ("back off
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
 - **Blocked**: watts lost pushing into the wheel ahead. On fast descents sitting close costs the most of all: ease off to 5 m or more.
 - **Passing**: the closing speed when you creep up on a rider at the speed that gets you held, or one creeps up on you.
-- **Gap**, **L/R**: to the wheel in front. Gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
+- **Wheel gap**, **L/R**: to the wheel in front. Wheel gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
 - **Tuck**: the speed still needed for a supertuck; **Tuck drag**: your drag in the tuck against coasting.
 - **Surface**: the watts the road under you costs your tyres beyond pavement (wood, dirt, cobbles…).
 - **FRC**: your reserve above FTP, from your power ("low", "empty").
@@ -80,11 +80,14 @@ Sauce quit.
    tick **Voice** and / or **Chime** per kind. Bends and habits are off to start with; a chime alone suits being
    passed. Some calls are for races only (block left / right, supertuck); tick **Practice race** to hear them on
    group rides and free rides too, to practice (the window says "practice race" while it's on). On a free ride
-   with a route, the end of the route (each lap) is the finish line for the finish calls.
+   with a route, the end of the route (each lap) is the finish line for the finish calls. Tick **Bridge button** for a
+   **Bridge** button in the window: press it when you want to go across to the riders up the road, and the director
+   says when and where it costs you the least FRC (a climb ahead is cheap, a descent dear), the watts to hold on the
+   way, and "made it" (the button turns itself off).
 2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
    use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
    Zwift profile's FTP and 15 kJ).
-3. **Lay out the Grid.** It starts with Position, Holding, Blocked, Gap and L/R, numbers only (the words are on the
+3. **Lay out the Grid.** It starts with Position, Holding, Blocked, Wheel gap and L/R, numbers only (the words are on the
    Director Sportif window). Its gear adds, removes and orders slots, shows a meter's word under it if you want it
    there, and sets the yellow / red ranges. Place it over Zwift, or capture it in OBS.
 

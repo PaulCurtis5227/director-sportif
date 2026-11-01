@@ -24,6 +24,13 @@
  * power-up (the user: "on the alp there are arches mid climb": a feather still held there gets you nothing new), whichever
  * comes first (limitM; climbTopM): a part FEATHER_BETTER steeper than the best within FEATHER_LOOK_M is the one: 'wait'
  * (keep it, no call) until it comes within FEATHER_LOOK_M.
+ * v0.70.1 (DS v0.53.0; the user, 2026-10-31 Tour of Watopia stage 4: the feather countdown rose 85 -> 95 s, and "FEATHER
+ * now" ran 40 s): (1) a steep part just past FEATHER_LOOK_M looked like the steepest 30 s INSIDE it, cut at the edge
+ * (~596 m) and moving with you: the meters stayed put, you slowed on the climb, the seconds rose. A best part that runs
+ * into the steeper one past the edge is that part: 'wait' until it's in. (2) FeatherPick holds the target where it is on
+ * the road (a new one must be FEATHER_BETTER steeper), "fire" only from FEATHER_FIRE_M before it to FEATHER_FIRE_AFTER_S
+ * into it, and a target passed with the feather unused is spent: nothing again on that climb unless a part
+ * FEATHER_BETTER steeper comes (the steepest 30 s just ahead of you slid along a long even drag: fire, ready, fire).
  */
 
 export const AERO_BEST_S = 25;          // seconds from the line
@@ -34,6 +41,7 @@ export const FEATHER_MIN_GRADE = 0.03;  // a climb worth a feather
 export const FEATHER_LOOK_M = 600;
 export const FEATHER_FIRE_M = 20;       // this close to the steep part = fire now
 export const FEATHER_BETTER = 0.01;     // a steeper part further up is worth keeping it for when this much steeper
+export const FEATHER_FIRE_AFTER_S = 10;  // FeatherPick: "fire" up to this far into the steep part, then it's spent
 export const CLIMB_RISE_M = 10;         // climbTopM: a climb rises this much ...
 export const CLIMB_DROP_M = 15;         // ... and ends where the road has dropped this far below its top,
 export const CLIMB_DROP_SHARE = 0.25;   // and this share of what it climbed: the dips inside Epic KOM (28 m of 363 m
@@ -92,7 +100,7 @@ export function steepestAhead(pts, {vNow = 5, lookM = FEATHER_LOOK_M, sec = FEAT
         if (dist > 0 && t >= sec * 0.66) {
             const grade = rise / dist;
             if (!best || grade > best.grade + 1e-6) {   // a tie (a steady grade): the first, not rounding noise
-                best = {startM: p[i].d, grade, secs: t};
+                best = {startM: p[i].d, grade, secs: t, endM: p[i].d + dist};
             }
         }
     }
@@ -142,8 +150,9 @@ export function featherCue({held, profile, v, grade = 0, archM = null}) {
     const s = steepestAhead(profile, {vNow: v, lookM: Math.min(FEATHER_LOOK_M, arch)});
     const limitM = Math.min(climbTopM(profile), arch);
     const far = steepestAhead(profile, {vNow: v, lookM: limitM});
+    // a part FEATHER_BETTER steeper up the climb, or the best part in sight running into it (cut at the look's edge)
     if (far && far.startM > FEATHER_LOOK_M && far.grade >= FEATHER_MIN_GRADE &&
-        (!s || far.grade >= s.grade + FEATHER_BETTER)) {
+        (!s || far.grade >= s.grade + FEATHER_BETTER || s.endM >= far.startM)) {
         return {state: 'wait', startM: far.startM, grade: far.grade,
                 text: `Feather: keep it for the steeper part in ${Math.round(far.startM)} m (${(far.grade * 100).toFixed(1)}% for ~30 s)`};
     }
@@ -156,4 +165,51 @@ export function featherCue({held, profile, v, grade = 0, archM = null}) {
     }
     return {state: 'ready', startM: s.startM, grade: s.grade,
             text: `Feather: fire in ${Math.round(s.startM)} m, at the steepest part (${pct}% for ~30 s)`};
+}
+
+/*
+ * The feather cue held still (v0.70.1, see the top): featherCue's target kept where it is on the road (odoM = your
+ * distance ridden, m), "fire" from FEATHER_FIRE_M before it to FEATHER_FIRE_AFTER_S into it, spent once passed unused.
+ *   new FeatherPick().update(cue (featherCue), {odoM, v}) -> {state, startM, grade, text} (the cue's shape)
+ */
+export class FeatherPick {
+    constructor() {
+        this.reset();
+    }
+
+    reset() {
+        this.target = null;   // {atM (odo), grade}
+        this.spent = null;    // the grade of a target passed unused
+    }
+
+    update(cue, {odoM, v = 5} = {}) {
+        if (!cue || !cue.state || !Number.isFinite(odoM)) {   // no climb (or not held): start over
+            this.reset();
+            return cue || none;
+        }
+        if (cue.state === 'wait') {
+            this.target = null;
+            return cue;
+        }
+        const atM = odoM + cue.startM;
+        if (this.spent != null && cue.grade < this.spent + FEATHER_BETTER) {
+            return none;
+        }
+        if (!this.target || cue.grade >= this.target.grade + FEATHER_BETTER) {
+            this.target = {atM, grade: cue.grade};
+            this.spent = null;
+        }
+        const toM = this.target.atM - odoM;
+        if (toM < -FEATHER_FIRE_AFTER_S * Math.max(v, 2)) {
+            this.spent = this.target.grade;
+            this.target = null;
+            return none;
+        }
+        const pct = (this.target.grade * 100).toFixed(1);
+        if (toM <= FEATHER_FIRE_M) {
+            return {state: 'fire', startM: Math.max(0, toM), grade: this.target.grade, text: `FIRE FEATHER NOW — steepest part (${pct}% for ~30 s)`};
+        }
+        return {state: 'ready', startM: toM, grade: this.target.grade,
+                text: `Feather: fire in ${Math.round(toM)} m, at the steepest part (${pct}% for ~30 s)`};
+    }
 }

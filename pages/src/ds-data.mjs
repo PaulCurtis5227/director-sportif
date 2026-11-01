@@ -22,6 +22,17 @@ export const CHANNEL = 'director-sportif/v1';
  * follower keeps all of it down to 1.5 m center to center, 88% at 1–1.25 m, 31% at 0–0.25 m. Below 0: overlapping.
  */
 export const BIKE_LENGTH_M = 1.5;
+
+/* The bridge call's words by state (bridge.mjs BridgeCoach); "later" takes its seconds as the call's in */
+export const BRIDGE_WORDS = {
+    now: () => 'bridge now',
+    last: () => 'last chance to bridge',
+    later: b => (b.climb ? 'bridge on the climb' : 'bridge'),
+    far: () => 'too far to bridge',
+    attack: () => 'attack',
+    hold: b => (b.powerW ? `hold ${b.powerW}` : null),
+    made: () => 'made it',
+};
 export const wheelGap = centerM => (Number.isFinite(centerM) ? centerM - BIKE_LENGTH_M : null);
 
 /*
@@ -45,6 +56,7 @@ export const VOCAB = {
         good: {word: 'stay', help: 'Good spot: within a few watts of the best spot at your speed.'},
         'sit-in': {word: 'sit in', help: 'You are on the front: sitting in behind a wheel saves this much.'},
         shatter: {word: 'shattering', help: 'The group is breaking up ahead of you: do what you can (hold the front part, or the group you can). No advice about your gap meanwhile.'},
+        bridging: {word: '', help: 'Bridging to the riders up the road: no advice about your gap to the wheel you caught meanwhile.'},
         gapping: {word: 'gap opening', help: 'A hole is opening in front of your wheel (or the next one): close it or go round, or you are gapped.'},
         'too-close': {word: 'back off', help: 'Too close to the wheel: ease back to the best gap (or drift to the back of the bunch).'},
         boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
@@ -230,6 +242,13 @@ export function directorCalls(ds) {
     const th = ds && ds.teamHr;
     if (th && th.say && th.names.length) {
         out.push({id: 'teamHr', state: th.state, word: teamHrWord(th), in: null, for: null, priority: th.state === 'missing' ? 74 : 30});
+    }
+    // the bridge you asked for (the Bridge button; bridge.mjs BridgeCoach): when to go, pacing on the way, made it
+    const br = ds && ds.bridge;
+    const brWord = br && BRIDGE_WORDS[br.state] ? BRIDGE_WORDS[br.state](br) : null;
+    if (brWord) {
+        out.push({id: 'bridge', state: br.state === 'hold' ? `hold-${br.powerW}` : br.state, word: brWord,
+                  in: br.state === 'later' ? roundIn(br.inS) : null, for: null, priority: br.state === 'later' ? 50 : 68});
     }
     const pc = ds && ds.pacing;
     if (pc && (pc.state === 'steep' || pc.state === 'top')) {

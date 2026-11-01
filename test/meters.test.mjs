@@ -10,7 +10,7 @@ import {buildData} from '../pages/src/ds-data.mjs';
 import {engineCall} from '../pages/src/calls.mjs';
 import {allWords} from '../pages/src/grid-fields.mjs';
 import {riderModel, sizeFactor, WHEELS, AERO_SOCKS_FACTOR} from '../pages/src/rider-model.mjs';
-import {meterFields, fmtSide, FT_PER_M} from '../pages/src/meter-fields.mjs';
+import {meterFields, fmtSide, fmtShort, FT_PER_M} from '../pages/src/meter-fields.mjs';
 import {UNIT_PER_M, packCostW} from '../pages/src/engine/pack-cost.mjs';
 import {RoadMap} from '../pages/src/engine/road-map.mjs';
 import {G} from '../pages/src/engine/physics.mjs';
@@ -185,8 +185,8 @@ test('fields: gap, side and pack cost format for the Grid, with the meter\'s wor
     const x = shown({gapM: 4.234, gapApprox: true, sideM: -0.3, beside: false, packW: 11.6, packState: 'room',
         groupSize: 8});
     assert.equal(field('ds-gap').format(x), '2.7', 'wheel to wheel: 4.23 m center to center less a 1.5 m bike');
-    assert.equal(field('ds-gap').shortName(x), 'Est. gap', 'estimated: the name says so, the number stays narrow');
-    assert.equal(field('ds-gap').shortName(shown({gapM: 4.2, gapApprox: false})), 'Gap');
+    assert.equal(field('ds-gap').shortName(x), 'Est. wheel gap', 'estimated: the name says so, the number stays narrow');
+    assert.equal(field('ds-gap').shortName(shown({gapM: 4.2, gapApprox: false})), 'Wheel gap');
     assert.equal(field('ds-side').format(x), `L ${(0.3 * FT_PER_M).toFixed(1)}`);
     assert.equal(field('ds-side', {sideUnit: 'm'}).format(x), 'L 0.30');
     assert.equal(field('ds-side', {sideUnit: 'm'}).suffix, 'm');
@@ -212,6 +212,25 @@ test('fields: the tooltip says what the word means right now', () => {
     assert.equal(f.label({dsData: data}), 'back off');
     assert.match(f.tooltip(), /Now: Too close to the wheel/);
     assert.doesNotMatch(field('ds-position').tooltip(), /Now:/, 'no data yet: the description only');
+});
+
+test('numbers: a decimal only under 10', () => {
+    assert.equal(fmtShort(1.5), '1.5');
+    assert.equal(fmtShort(20.3), '20');
+    assert.equal(fmtShort(9.94), '9.9');
+    assert.equal(fmtShort(9.96), '10', 'not 10.0');
+    assert.equal(fmtShort(-0.3), '-0.3');
+    assert.equal(fmtShort(-12.6), '-13');
+    assert.equal(fmtShort(-0.04), '0.0', 'never -0.0');
+    assert.equal(fmtShort(0), '0.0');
+    assert.equal(fmtShort(null), null);
+    assert.equal(fmtSide(4, 'ft'), `R ${(4 * FT_PER_M).toFixed(0)}`);
+    assert.equal(fmtSide(-1.26, 'm'), 'L 1.3');
+    assert.equal(fmtSide(-0.994, 'm'), 'L 0.99');
+    const gap = valueM => ({dsData: {meters: {gap: {value: valueM}}}});
+    assert.equal(field('ds-gap', {imperial: true}).format(gap(0.46)), '1.5');
+    assert.equal(field('ds-gap', {imperial: true}).format(gap(6.2)), '20');
+    assert.equal(field('ds-frc').format({dsData: {meters: {frc: {value: 12.3}}}}), '12.3', 'FRC keeps its decimal');
 });
 
 test('side: right behind the wheel reads 0', () => {

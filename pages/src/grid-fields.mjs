@@ -26,7 +26,7 @@ export const METER_OF = {
 };
 
 const NAMES = {
-    position: 'Position', holding: 'Holding', pack: 'Pack cost', blocked: 'Blocked', passing: 'Passing', gap: 'Gap',
+    position: 'Position', holding: 'Holding', pack: 'Pack cost', blocked: 'Blocked', passing: 'Passing', gap: 'Wheel gap',
     side: 'L/R', tuck: 'Tuck', surface: 'Surface', frc: 'FRC', demand: 'Demand', burrito: 'Burritos',
 };
 

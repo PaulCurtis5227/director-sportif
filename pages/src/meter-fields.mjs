@@ -16,14 +16,24 @@ export const KMH_PER_MPH = 1.609344;
 
 const num = (v, digits = 0) => (Number.isFinite(v) ? v.toFixed(digits) : null);
 
-/* Sideways offset in the chosen unit: "L 1.2" / "R 0.4" / "0.0" right behind the wheel. */
+/*
+ * A number at a glance (the user, 2026-11-01): the decimal only where it says something, 1.5 but 20 (was 20.3). Under
+ * 9.95 one decimal, else whole: 9.96 reads 10, not 10.0. Never "-0.0".
+ */
+export function fmtShort(v) {
+    if (!Number.isFinite(v)) return null;
+    const s = v.toFixed(Math.abs(v) < 9.95 ? 1 : 0);
+    return Number(s) === 0 ? s.replace('-', '') : s;
+}
+
+/* Sideways offset in the chosen unit: "L 1.2" / "R 0.4" / "0.0" right behind the wheel; under 1 m in meters, 2 decimals. */
 export function fmtSide(sideM, unit = 'ft') {
     if (!Number.isFinite(sideM)) return null;
     const k = unit === 'm' ? 1 : FT_PER_M;
     const d = Math.abs(sideM) * k;
-    const digits = unit === 'm' ? 2 : 1;
-    if (Number(d.toFixed(digits)) === 0) return (0).toFixed(digits);
-    return `${sideM < 0 ? 'L' : 'R'} ${d.toFixed(digits)}`;
+    const text = unit === 'm' && d < 0.995 ? d.toFixed(2) : fmtShort(d);
+    if (Number(text) === 0) return text;
+    return `${sideM < 0 ? 'L' : 'R'} ${text}`;
 }
 
 /*
@@ -55,15 +65,14 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
     return [{
         id: 'ds-gap',
         // estimated (read from positions): the name says so, not a "~" that widens the number (the user, 2026-10-30)
-        shortName: x => (m(x, 'gap')?.approx ? 'Est. gap' : 'Gap'),
+        shortName: x => (m(x, 'gap')?.approx ? 'Est. wheel gap' : 'Wheel gap'),
         longName: 'Gap to the wheel in front',
         tooltip: tip('gap', 'From your front wheel to the back wheel of the rider in line in front of you (blank ' +
             'beyond 25 m). Below 0 your wheels overlap, and Zwift cuts your draft for it. ' +
-            '"Est. gap" = read from positions, which can be meters off.'),
+            '"Est. wheel gap" = read from positions, which can be meters off.'),
         format: x => {
             const e = m(x, 'gap');
-            const g = num(e && Number.isFinite(e.value) ? dist(e.value) : null, 1);
-            return g;
+            return e && Number.isFinite(e.value) ? fmtShort(dist(e.value)) : null;
         },
         label: word('gap'),
         suffix: imperial ? 'ft' : 'm',
@@ -125,7 +134,7 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
             const e = m(x, 'passing');
             if (!e || !Number.isFinite(e.value)) return null;
             const defend = /^rider-/.test(e.state);
-            return e.value > 0 ? `${defend ? '↓' : '↑'}${speed(e.value).toFixed(1)}` : '0';
+            return e.value > 0 ? `${defend ? '↓' : '↑'}${fmtShort(speed(e.value))}` : '0';
         },
         label: word('passing'),
         suffix: imperial ? 'mph' : 'km/h',
@@ -139,7 +148,7 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         format: x => {
             const e = m(x, 'tuck');
             if (!e || !Number.isFinite(e.value)) return null;
-            return e.value > 0 ? `+${speed(e.value).toFixed(1)}` : '0';
+            return e.value > 0 ? `+${fmtShort(speed(e.value))}` : '0';
         },
         label: word('tuck'),
         suffix: imperial ? 'mph' : 'km/h',

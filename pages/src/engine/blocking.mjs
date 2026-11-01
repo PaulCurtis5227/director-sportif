@@ -32,6 +32,11 @@
  * v0.68.6 (DS 0.45.0, the 2026-10-25 ride): the passing cue compares speeds at your state time (accelKmhS: a bunch
  * speeding up read 1–4 km/h "closing" from states a second apart; "drop back" 17 times in that event, 3 after) and stays
  * quiet when your group goes through with you (WITH_N).
+ * v0.70.1 (DS v0.53.0; the user, 2026-10-31 84:00: "blocked" at 40–42 km/h, −3%, 5–8 m off the wheel): the close rule at
+ * every speed. research/2026-10-31/descent-spikes.mjs (2 races + 2 group rides): 5.5–10 m off the wheel, spikes are 5–8%
+ * of windows and leave −1…+4 W at every speed under 45 km/h, flat or down (0–2 m: 23–57%, 10–33 W). Far back a spike is
+ * the draft swinging, not a wheel you push into. So a spike counts only within FAST_DESCENT_CLOSE_M of the wheel in line,
+ * with a rider 0–3 m ahead (tick.ahead3), or alongside.
  */
 
 import {leads} from './wheels.mjs';
@@ -39,9 +44,7 @@ import {UNIT_PER_M} from './pack-cost.mjs';
 
 export const SPIKE_W = 80;          // a tick whose balance exceeds this lost power to blocking
 export const BLOCK_WINDOW_S = 10;   // what the lost watts are averaged over
-export const FAST_DESCENT_KMH = 45;      // a tick this fast...
-export const FAST_DESCENT_GRADE = -0.01; // ...on a road this steep down or steeper counts spikes only...
-export const FAST_DESCENT_CLOSE_M = 5.5;  // ...this close to the wheel in line (further back: the draft swinging)
+export const FAST_DESCENT_CLOSE_M = 5.5;  // spikes count only this close to the wheel in line (further back: the draft swinging; any speed since v0.70.1)
 export const BLOCK_CUE_W = 10;      // the cue: this many watts lost over the window...
 export const BLOCK_CUE_N = 2;       // ...in at least this many spike ticks
 export const BESIDE_ALONG_M = 1;    // a rider overlapping you along the road (wheels level within a meter)...
@@ -101,7 +104,7 @@ export class BlockWatch {
     /*
      * tick: {wt (ms), v (m/s), alt (m), power, draft (W), massKg, bodyKg (optional: your weight, for the feather), cda,
      * crr, packW (the steady pack cost now), wheelGapM (m to the wheel in line, pack-cost.mjs packSituation; null =
-     * none within 25 m), behind (true when someone is ahead of you in your group), beside
+     * none within 25 m), ahead3 (riders 0–3 m ahead, packSituation), behind (true when someone is ahead of you in your group), beside
      * (besideRider() or null), powerUp (applied through POWER_UPS; an unknown one restarts the watch), coffee}.
      * Returns {lostW (W lost to spikes over BLOCK_WINDOW_S, null until there is a window), spikes (count in the
      * window), blocked (the cue), beside (the rider level with you now, or null), tickW (this tick's balance or null)}.
@@ -129,10 +132,9 @@ export class BlockWatch {
         const res = (a.p + this.last.p) / 2 + (a.d + this.last.d) / 2 -
             0.5 * RHO * (e0.cda * a.v ** 3 + e1.cda * tick.v ** 3) / 2 - G * (e0.crr * e0.m * a.v + e1.crr * e1.m * tick.v) / 2 -
             (0.5 * m * (tick.v ** 2 - a.v ** 2) + m * G * (tick.alt - a.alt)) / dt;
-        // a fast descent: only close to the wheel (or alongside) is a spike the cost of where you are
-        const fastDescent = (a.v + tick.v) / 2 * 3.6 >= FAST_DESCENT_KMH && grade <= FAST_DESCENT_GRADE;
-        const close = !!tick.beside || (Number.isFinite(tick.wheelGapM) && tick.wheelGapM < FAST_DESCENT_CLOSE_M);
-        if ((tick.behind || tick.beside) && (!fastDescent || close) && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
+        // anywhere (v0.70.1): only close to the wheel, a rider just ahead, or alongside is a spike the cost of where you are
+        const close = !!tick.beside || tick.ahead3 > 0 || (Number.isFinite(tick.wheelGapM) && tick.wheelGapM < FAST_DESCENT_CLOSE_M);
+        if ((tick.behind || tick.beside) && close && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
         return this.read(tick.wt, res);
     }
 
@@ -248,7 +250,10 @@ export function passSituation(entries, me, lead = leads(entries), {accelKmhS = 0
             if ((o.state.speed || 0) - tv >= out.attack.closeKmh - WITH_KMH) n++;
         }
         if (n >= WITH_N) out.attack = null;
-        else delete out.attack.rider;
+        else {
+            out.attack.id = target.athleteId;
+            delete out.attack.rider;
+        }
     }
     return out;
 }

@@ -30,6 +30,7 @@ html.grid .tile.wrap .value {
 
 html.grid .tile.wrap .reading {
     font-size: 0.6em;
+    align-items: flex-start;   /* words read from the left */
 }
 
 /* no data: the Director Sportif window isn't open (or its rider is gone) */

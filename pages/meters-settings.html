@@ -71,6 +71,10 @@
                     <key>FRC:</key>
                     <input type="number" name="myFrcKJ" min="5" max="40" step="0.5" value="15" style="--size: 5"/> kJ
                 </label>
+                <label title="Your max power (W, a few seconds) from WKO or similar (Pmax). What you can still put out falls toward FTP as your FRC goes: the bridge plan never asks for more than that. Empty: 4.5 × FTP">
+                    <key>Max power:</key>
+                    <input type="number" name="myPmaxW" min="300" max="2500" step="10" placeholder="4.5× FTP" style="--size: 5"/> W
+                </label>
             </form>
 
             <form id="calls" class="section tab" data-id="calls">
@@ -81,6 +85,10 @@
                 <label title="Every ride counts as a race: race-only calls (block left / right, supertuck in N, coast, teammate heart rate) play in group rides and free rides too, and the not-in-a-race behavior is off. On a free ride with a route, the end of the route (each lap) is the finish line for the finish calls. Real races don't change. The Director Sportif window says PRACTICE while it's on.">
                     <key>Practice race:</key>
                     <input type="checkbox" name="practiceRace"/>
+                </label>
+                <label title="A Bridge button in the Director Sportif window: press it when you want to go across to the riders up the road. The director then says when and where the bridge costs the least FRC (a climb ahead is cheap, a descent dear), with an attack to start it so your group doesn't come with you, then the watts to hold, and made it. Off: no button and no bridge calls.">
+                    <key>Bridge button:</key>
+                    <input type="checkbox" name="bridgeButton"/>
                 </label>
             </form>
 

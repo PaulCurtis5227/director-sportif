@@ -89,7 +89,7 @@ import {spotCost, PositionSmoother, POSITION_TAU_S, positionAdvice, positionStat
     from './engine/position.mjs';
 export {NO_DRAFT_NOTE};
 import {HoldingMeter, holdingW, GroupMotion, HOLD_PAIR_S, HOLD_PACK_S, MOTION_MS} from './engine/holding.mjs';
-import {BlockWatch, blockedNote, besideRider, passSituation, passNote, PassWatch, WIDE_M} from './engine/blocking.mjs';
+import {BlockWatch, blockedNote, besideRider, passSituation, passNote, PassWatch, WIDE_M, GO_KMH} from './engine/blocking.mjs';
 import {surfaceExtraCrr} from './engine/road-map.mjs';
 import {tuckState, TuckDrag} from './engine/supertuck.mjs';
 
@@ -102,11 +102,14 @@ import {BendMap, lateralSituation, bendCue} from './engine/bend-live.mjs';
 import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
 import {predictedCap, crowdingCue} from './engine/draft-live.mjs';
-import {featherCue} from './engine/powerup-cue.mjs';
+import {featherCue, FeatherPick} from './engine/powerup-cue.mjs';
 import {withSpeeds, secsAlong, curvyStretch, S_CURVE} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
 import {RideAwayWatch} from './ride-away.mjs';
+import {BridgeWatch, BridgeCoach} from './bridge.mjs';
+import {planBridge} from './bridge-plan.mjs';
+import {BIKE_LENGTH_M} from './ds-data.mjs';
 import {BurritoWatch} from './burrito.mjs';
 import {TeamHrWatch, isTeammate, teamTag} from './team-hr.mjs';
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
@@ -147,7 +150,7 @@ export class MeterEngine {
      * roadMap: Zwift's road surfaces (engine/road-map.mjs RoadMap); none = everything is pavement.
      * routeAhead: your route's profile (route-ahead.mjs RouteAhead); none = the road learned from the riders only.
      * raceCards: the race card for your event's route (race-cards-live.mjs RaceCards); none = no card calls.
-     * fitnessFor(me): {ftpW, frcJ} for the FRC meter (default: the Zwift profile's FTP, 15 kJ).
+     * fitnessFor(me): {ftpW, frcJ, pMaxW (null: 4.5 × FTP)} for the FRC meter and the bridge (default: the Zwift profile's FTP, 15 kJ).
      * raceFor(me): true in a race event (Zwift's race physics), false outside one, null not known yet. The supertuck
      * pays only in races (Zwift Insider: about as aero as the AERO power-up there; outside races no drag cut, measured).
      */
@@ -198,6 +201,8 @@ export class MeterEngine {
         this.posGapOn = false;    // that was the last tick (the next one starts Position over)
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
         this.rideAway = new RideAwayWatch();   // the group ahead leaves or splits: no "ease off" / "back off" then
+        this.bridge = new BridgeWatch();       // you're closing on riders up the road: no gap advice to the wheel you caught
+        this.bridgeCoach = new BridgeCoach();  // the bridge call, while bridgeArmed (the window's Bridge button)
         this.teamHrWatch = new TeamHrWatch();     // a teammate in your race with no heart rate (pen and race)
         this.burritoWatch = new BurritoWatch();   // burritos fired in your event: the cone ahead, how many are still to come
         this.accel = null;    // {wt, kmh, a}: your acceleration (km/h per s, ~2 s), to time-align the passing cue's speeds
@@ -207,7 +212,9 @@ export class MeterEngine {
         this.motion = new GroupMotion();
         this.block = new BlockWatch();
         this.pass = new PassWatch();
+        this.wheelHist = [];   // [{wt, id, gap}]: the wheel in line, ~4 s, for how fast you're really closing on it
         this.moveUpCoach = new MoveUpCoach();
+        this.featherPick = new FeatherPick();   // the feather's target held where it is on the road (spent once passed)
         this.climbClock = new ClimbClock();   // how long you've been climbing ("over top" only after a real climb)
         this.draftlessWatch = new DraftlessWatch();   // you get no draft at all (a TT bike, a time trial): pack calls off
         this.bendLast = null;                 // the bend cue's state last tick (called once it holds two ticks)
@@ -235,6 +242,7 @@ export class MeterEngine {
             this.gapSource = fixed.source;
             this.gapWatch.reset();
             this.rideAway.reset();
+            this.bridge.reset();
             this.position.reset();
             this.posQuietWt = null;
             this.posGapOn = false;
@@ -247,7 +255,10 @@ export class MeterEngine {
         const inline = near(ahead && ahead.inline);
         const layout = groupLayout(entries);
         this.gapCurve.ingest(entries, layout);
-        const L = layout.get(me.athleteId) || {size: 1, ahead: 0, vGroup: null, gapAhead: null};
+        const layoutL = layout.get(me.athleteId) || {size: 1, ahead: 0, vGroup: null, gapAhead: null};
+        // Position's gap is the wheel in line when there is one, the one the Gap meter shows (2026-10-31: "back off" at a
+        // shown 3.1 m because a rider half a lane over was 0.4 m ahead; 110 of 350 "back off" ticks were on another rider)
+        const L = inline ? {...layoutL, gapAhead: inline.gap} : layoutL;
         const settling = this.teleport.settling(me.athleteId, {wt: s.worldTime, x: s.x, y: s.y, v});
         this.bendMap.ingest(all);
 
@@ -281,18 +292,21 @@ export class MeterEngine {
         // "ease off", "drop back" or "drift back"
         if (settling || L.size < 2) this.rideAway.reset();
         const away = settling || L.size < 2 ? null : this.rideAway.update(entries, me, s.worldTime);
+        if (settling) this.bridge.reset();
+        const upRoad = settling ? null : this.bridge.update(entries, me, s.worldTime);
+        const bridging = upRoad && upRoad.closing ? upRoad : null;
         const pos = this.readPosition(s, spot, L, settling, power, noDraft.spot, away && away.state === 'shatter' ? {which: 'shatter'} :
-            gapping || (away && {which: 'group', mps: away.mps}));
+            gapping || (away && {which: 'group', mps: away.mps}) || (bridging && {which: 'bridge', ...bridging}));
         if (settling) this.block.reset();
         const blkRead = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
                                        massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
-                                       wheelGapM: sit ? sit.wheelGap : null,
+                                       wheelGapM: sit ? sit.wheelGap : null, ahead3: sit ? sit.ahead3 : 0,
                                        behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
                                        powerUp: s.activePowerUp, coffee: s.coffeeStop});
         // the measured loss stays (blockedW); only the cue goes while they ride away
-        const blk = away && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
+        const blk = (away || bridging) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
         const holdRead = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
-        const hold = away && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
+        const hold = (away || bridging) && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
         const ac = this.accel, dtAc = ac && Number.isFinite(s.worldTime) ? (s.worldTime - ac.wt) / 1000 : null;
         const accelKmhS = dtAc > 0 && dtAc < 5 ? ac.a + (1 - Math.exp(-dtAc / 2)) * (((s.speed || 0) - ac.kmh) / dtAc - ac.a) : ac ? ac.a : 0;
         if (!ac || dtAc !== 0) this.accel = {wt: s.worldTime, kmh: s.speed || 0, a: dtAc > 0 && dtAc < 5 ? accelKmhS : 0};
@@ -303,6 +317,19 @@ export class MeterEngine {
         if (d && (this.raceFor(me) !== true || d.where === 'behind' || isTeammate(d.rider && d.rider.athlete, teamTag(me.athlete)))) {
             passSit.defend = null;
         }
+        // closing on the wheel at GO_KMH+ by the gap over the last 2–4 s: you're coming through, whatever the speeds say
+        // (2026-10-31 43:20: "drop back" at 0.8 m, +4.7 km/h by speed, 11.9 -> 0.8 m in 7 s = +5.7 as they took your
+        // draft on the climb; you went straight past)
+        if (inline && Number.isFinite(s.worldTime)) {
+            if (this.wheelHist.length && this.wheelHist.at(-1).id !== inline.id) this.wheelHist = [];
+            if (!this.wheelHist.length || s.worldTime > this.wheelHist.at(-1).wt) this.wheelHist.push({wt: s.worldTime, id: inline.id, gap: inline.gap});
+            while (this.wheelHist.length > 1 && this.wheelHist[0].wt < s.worldTime - 4000) this.wheelHist.shift();
+        } else {
+            this.wheelHist = [];
+        }
+        const wh0 = this.wheelHist[0], whN = this.wheelHist.at(-1);
+        const wheelCloseKmh = wh0 && whN.wt - wh0.wt >= 2000 ? (wh0.gap - whN.gap) / ((whN.wt - wh0.wt) / 1000) * 3.6 : null;
+        if (passSit && passSit.attack && whN && passSit.attack.id === whN.id && wheelCloseKmh >= GO_KMH) passSit.attack = null;
         const passRead = this.pass.update(passSit);
         const pass = !away ? passRead : {...passRead, attack: null, defend: away.state === 'shatter' ? null : passRead.defend};
         // the road ahead (yours only: the learned road follows your own track, the route is yours). Its seconds use
@@ -337,6 +364,18 @@ export class MeterEngine {
         let frc = null;
         const fit = me.self ? this.fitnessFor(me) || {} : {};
         if (me.self && fit.ftpW > 0 && fit.frcJ > 0) frc = this.frcBalance.update(s.worldTime, power, fit);
+        // the bridge you asked for (the Bridge button): when and where it costs the least FRC, then pacing (bridge.mjs)
+        // in the finish too (the user, 2026-10-31: "It should be very useful during the sprint"): on before the line
+        const toLineM = me.remainingType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 ? me.remaining : null;
+        const bridgeCall = me.self && !settling && fit.ftpW > 0 ? this.bridgeCoach.update({
+            wt: s.worldTime, armed: !!this.bridgeArmed, up: upRoad, power, ftpW: fit.ftpW,
+            plan: ({going}) => (upRoad && upRoad.vGroup > 1 ? planBridge({
+                gapS: upRoad.aheadM / upRoad.vGroup, rateSps: upRoad.closeMps != null ? -upRoad.closeMps / upRoad.vGroup : 0,
+                vGroup: upRoad.vGroup, grade: s.grade || 0, profile: roadAhead, model,
+                ftpW: fit.ftpW, frcLeftJ: frc ? frc.leftJ : fit.frcJ, attack: !going, pMaxW: fit.pMaxW, frcCapJ: fit.frcJ,
+                toLineM}) : null),
+        }) : null;
+        if (bridgeCall && bridgeCall.done) this.bridgeArmed = false;
         // the finish: your draft quality (share of your cap), then the sprint coach (distance events only)
         const cap = me.athlete && me.athlete.height > 0 && me.athlete.weight > 0 ?
             predictedCap({heightCm: me.athlete.height, weightKg: me.athlete.weight}) : null;
@@ -394,7 +433,7 @@ export class MeterEngine {
         const finale = finishType === 'event' && me.remainingMetric === 'distance' && me.remaining > 0 && me.remaining < 2000;
         const nudge = settling || !me.self ? null : this.nudgeCoach.update({
             wt: s.worldTime, size: L.size, ahead: L.ahead, holdW: hold.w, relMs: Number.isFinite(L.vGroup) ? v - L.vGroup : 0,
-            depthM: lateralDepth(entries, me), q: draftQ, gapAhead: L.gapAhead ?? null, positionW: pos.w, crowding,
+            depthM: lateralDepth(entries, me), q: draftQ, gapAhead: layoutL.gapAhead ?? null, positionW: pos.w, crowding,
             quiet: !!(climb && climb.state) || finale || !!s.activePowerUp});
         // the race card for this route (yours only, in an event)
         const cardCall = settling || !me.self || !this.raceCards ? null :
@@ -477,12 +516,16 @@ export class MeterEngine {
                                                crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
             }
         }
-        const fc = me.self && !settling && featherRoad && held === 'LIGHTNESS' ?
+        const fc0 = me.self && !settling && featherRoad && held === 'LIGHTNESS' ?
             featherCue({held, profile: featherRoad, v, grade: s.grade || 0,
                         archM: this.raceCards ? this.raceCards.nextArch(s, {tt}) : null}) : null;
+        const fc = this.featherPick.update(fc0, {odoM: s.distance, v});
         // 'wait' too (no call): a steeper part is still ahead, so the finish's "FEATHER at jump" stays quiet (ds-data)
-        const feather = fc && fc.state ? {state: fc.state, inS: secsAlong(roadAhead, fc.startM, this.pace.vFlat ?? v),
-                                          grade: fc.grade} : null;
+        // the seconds: the climb's speeds, and never faster than you're riding while you climb (2026-10-31: "fire in 4" at
+        // 64 m and 15 km/h, the flat pace's seconds)
+        const feather = fc && fc.state ? {state: fc.state, grade: fc.grade,
+                                          inS: Math.max(secsAlong(featherRoad, fc.startM, this.pace.vFlat ?? v) || 0,
+                                                        (s.grade || 0) >= 0.015 ? fc.startM / Math.max(v, 2) : 0)} : null;
         const ds = {
             ts: s.worldTime,
             gapM: inline ? inline.gap : null,
@@ -513,7 +556,7 @@ export class MeterEngine {
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
-            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather,
+            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather, bridge: bridgeCall,
             burrito: me.self && !settling ? this.burritoWatch.update(entries, me, s.worldTime) : null,
             teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
@@ -560,6 +603,10 @@ export class MeterEngine {
             this.posQuietWt = s.worldTime;
             this.posGapOn = true;
             const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
+            if (gapping.which === 'bridge') {
+                return {w: L.size < 2 ? null : w, state: 'bridging',
+                        note: `bridging: ${gapping.riders} rider${gapping.riders === 1 ? '' : 's'} ${Math.round(gapping.aheadM)} m up the road, closing ${gapping.closeMps.toFixed(1)} m/s`};
+            }
             if (gapping.which === 'shatter') {
                 return {w: L.size < 2 ? null : w, state: 'shatter', note: 'group shattering: the riders ahead are splitting up. Do what you can: hold the front part, or the group you can'};
             }
@@ -592,7 +639,9 @@ export class MeterEngine {
             this.posQuietWt = null;
         }
         const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
-        return {w: L.size < 2 ? null : w, note: positionAdvice(w, spot.best, L, spot.boxed, undefined, spot.gapW),
+        const wb = {...spot.best, lo: spot.best.lo - BIKE_LENGTH_M, hi: spot.best.hi - BIKE_LENGTH_M};   // wheel to wheel, as Gap
+        const wL = L.gapAhead != null ? {...L, gapAhead: L.gapAhead - BIKE_LENGTH_M} : L;
+        return {w: L.size < 2 ? null : w, note: positionAdvice(w, wb, wL, spot.boxed, undefined, spot.gapW),
                 state: positionState(w, spot.best, L, spot.boxed, spot.gapW)};
     }
 

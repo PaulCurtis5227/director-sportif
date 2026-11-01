@@ -42,6 +42,8 @@ export const CALL_TYPES = [
      'arches that give a power-up, your notes', tones: [740, 990, 740]},
     {id: 'surface', label: 'Surfaces', hint: 'a rough surface ahead on this road (wood, dirt, cobbles…): when and how long',
      tones: [440, 440]},
+    {id: 'bridge', label: 'Bridge', hint: 'after you press Bridge (the Bridge button setting, below): when to go for the riders up the road for the least FRC ("bridge now", "bridge on the climb in 40", "last chance to bridge", "too far to bridge"), then the watts to hold on the way, and "made it"',
+     tones: [660, 990, 1320]},
     {id: 'pacing', label: 'Climb pacing', hint: 'a steep part ahead (when and how long), the top of the climb close',
      tones: [600, 800]},
     {id: 'bend', label: 'Bends', hint: 'a bend ahead: "inside left / right" when the inside is open and moving over ' +
@@ -69,7 +71,7 @@ export function deliveryKey(type, how) {
  * possible": a new rider heard nothing until they found the Calls tab). Not bends and habits (frequent, nice to have),
  * not being passed (a chime suits it), not the tuck and take-the-wheel (chime only: words come too late).
  */
-export const FRESH_VOICE = ['gap', 'pass', 'blocked', 'moveUp', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr'];
+export const FRESH_VOICE = ['gap', 'pass', 'blocked', 'moveUp', 'bridge', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr'];
 
 /*
  * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
@@ -93,6 +95,11 @@ export function deliveryDefaults(old = {}) {
         if (t.id === 'tuck' || t.id === 'wheel') {
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = false;
+            continue;
+        }
+        if (t.id === 'bridge') {   // v0.53.0: only after you press Bridge, so spoken for everyone
+            out[deliveryKey(t.id, 'chime')] = true;
+            out[deliveryKey(t.id, 'voice')] = true;
             continue;
         }
         if (['nudge', 'surface', 'pacing', 'bend'].includes(t.id)) {   // v0.17–0.19, bend v0.40.0: the voice for voice users, else off
@@ -150,7 +157,7 @@ export function localizeUnits(text, imperial) {
 }
 
 /* Call priorities (docs/DS-DATA.md; the director's move-up 80 / sprint 55–93 sit around them). */
-export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup']);   // Announcer: no wait per type
+export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge']);   // Announcer: no wait per type
 
 export const CALL_PRIORITY = {gap: 75, pass: 70, blocked: 65, passed: 60, tuck: 40};
 

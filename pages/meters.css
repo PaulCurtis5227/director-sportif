@@ -88,10 +88,11 @@ html[data-theme="transparent-dark"] .tile {
     white-space: nowrap;
 }
 
+/* the unit under the number, small and to the right, as on Sauce's own grid (the user, 2026-10-31) */
 .tile .reading {
     display: flex;
-    align-items: baseline;
-    gap: 0.2em;
+    flex-direction: column;
+    align-items: flex-end;
     line-height: 1;
     /* room for "+123 W", so the fitted window holds as the numbers change */
     min-width: 4.4em;
@@ -108,8 +109,9 @@ html[data-theme="transparent-dark"] .tile {
 }
 
 .tile .unit {
-    font-size: 0.65em;
-    opacity: 0.8;
+    font-size: 0.55em;
+    line-height: 1.1;
+    opacity: 0.82;
 }
 
 .tile.large .value {
@@ -126,7 +128,6 @@ html[data-theme="transparent-dark"] .tile {
 
 .tile.small .reading {
     min-width: 3.2em;
-    justify-content: flex-end;
 }
 
 .tile .label,
@@ -521,6 +522,16 @@ html[data-theme="transparent-dark"] #content.control {
 #content.control > button.rec.on {
     background: #c0392b;
     color: #fff;
+}
+
+/* Bridge: on while you want to go across (bridge.mjs) */
+#content.control > button.bridge.on {
+    background: #2a9d8f;
+    color: #fff;
+}
+
+#content.control > button[hidden] {
+    display: none;
 }
 
 #content.control > button.mark.flash {

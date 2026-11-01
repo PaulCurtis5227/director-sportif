@@ -30,12 +30,18 @@ test('ride away: a steady group says nothing; riders ahead drawing away is "away
     assert.equal(run(15, t => [2, 4].map(d => d + t)), null, `fewer than ${RIDE_AWAY.minRiders} riders: no reading`);
 });
 
+test('ride away: easing 3 m off the wheel in 10 s is not "away"; nor is one update of it (2026-10-31, 3 marks)', () => {
+    assert.equal(run(15, t => [2, 4, 6, 8].map(d => d + 0.3 * Math.min(t, 10))), null, 'giving the wheel room');
+    // one update with the riders 6 m further (a lead that settles back next second)
+    assert.equal(run(12, t => [2, 4, 6, 8].map(d => d + (t === 12 ? 6 : 0))), null, 'seen once');
+});
+
 test('ride away: the front leaving while the rest stay is "shatter", held for a while after', () => {
-    // 2026-10-25 start: the front riders 1+ m/s away, the ones near you not
+    // 2026-10-25 start: the wheels just ahead of you go with the front, 1+ m/s away, the others don't
     const w = new RideAwayWatch();
-    assert.equal(run(12, t => [2, 3, 4, 5, 10 + 1.2 * t, 12 + 1.2 * t], w).state, 'shatter');
+    assert.equal(run(12, t => [2, 3, 4, 5, 1 + 1.2 * t, 1.5 + 1.2 * t], w).state, 'shatter');
     // then everyone steady again: still "shatter" within holdS, gone after
-    const steady = () => [2, 3, 4, 5, 24.4, 26.4];
+    const steady = () => [2, 3, 4, 5, 15.4, 15.9];
     assert.equal(run(20, steady, w, 13).state, 'shatter', 'held');
     assert.equal(run(12 + RIDE_AWAY.holdS + 2, steady, w, 21), null);
 });
@@ -74,8 +80,46 @@ test('ride away: two or more riders leaving at their real speed is still a shatt
     const w = new RideAwayWatch();
     let r = null;
     for (let t = 0; t <= 12; t++) {
-        const {me, entries} = tickV(t, [[2, 33], [3, 33], [4, 33], [5, 33], [10 + 1.2 * t, 37.3], [12 + 1.2 * t, 37.3]]);
+        const {me, entries} = tickV(t, [[2, 33], [3, 33], [4, 33], [5, 33], [1 + 1.2 * t, 37.3], [1.5 + 1.2 * t, 37.3]]);
         r = w.update(entries, me, t * 1000);
     }
     assert.equal(r && r.state, 'shatter');
+});
+
+// a bunch of 20 ahead: lead per rider at t (s) for the 10-31 cases
+const bunch20 = t => Array.from({length: 20}, (_, i) => 1 + i * 1.5);
+
+test('ride away: two of 20 riders moving up the side is churn, not a shatter (2026-10-31 9:30)', () => {
+    const w = new RideAwayWatch();
+    let r = null;
+    for (let t = 0; t <= 15; t++) {
+        const riders = bunch20(t).map((d, i) => (i < 2 ? [d + 1.2 * t, 37.3] : [d, 33]));
+        const {me, entries} = tickV(t, riders);
+        r = w.update(entries, me, t * 1000);
+    }
+    assert.ok(!r || r.state !== 'shatter', `fewer than ${RIDE_AWAY.leaveShare * 100}% leaving`);
+});
+
+test('ride away: the front of a long bunch drawing out 20+ m up is not your group breaking (2026-10-31 13:50)', () => {
+    const w = new RideAwayWatch();
+    let r = null;
+    for (let t = 0; t <= 15; t++) {
+        // 12 riders 2–15 m up stay; 8 riders from 16 m up leave at 1 m/s
+        const riders = [...Array.from({length: 12}, (_, i) => [2 + i, 33]), ...Array.from({length: 8}, (_, i) => [16 + 2 * i + t, 36.6])];
+        const {me, entries} = tickV(t, riders);
+        r = w.update(entries, me, t * 1000);
+    }
+    assert.ok(!r || r.state !== 'shatter', `the nearest leaving rider beyond ${RIDE_AWAY.splitNearM} m`);
+});
+
+test('ride away: split signs seen once (one update) are noise; seen twice within the window is a shatter', () => {
+    // 2026-10-31: every one of 12 calls was a single update; the riders ahead swing together tick to tick
+    const w = new RideAwayWatch();
+    const at = (t, split) => [2, 3, 4, 5, ...(split ? [1 + 1.2 * 10, 1.5 + 1.2 * 10] : [1, 1.5])];
+    let r = null;
+    for (let t = 0; t <= 14; t++) {
+        const {me, entries} = tickOf(t, at(t, t === 10));
+        r = w.update(entries, me, t * 1000);
+        if (t === 10) assert.ok(!r || r.state !== 'shatter', 'once: nothing yet');
+    }
 });
