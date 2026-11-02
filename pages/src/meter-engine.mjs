@@ -29,6 +29,7 @@
  *   passAtWheel   your pass starts glued to their wheel (attack)
  *   passWide      you are already 1.5 m+ out from them (attack)
  *   blockedSide   blocked alongside a rider on your 'left' | 'right', else null
+ *   blockedStep   blocked on the wheel in line: the side to step to, 'left' | 'right'; null with no room (blocking.mjs stepSide)
  *   surface       the road surface under you from Zwift's map (engine/road-map.mjs), null until the map loads; dirt,
  *                 wood, brick… add their rolling resistance to every meter (2026-10-12 group ride: dirt and wooden
  *                 bridges on the front read +45 W Holding as if pavement)
@@ -89,7 +90,7 @@ import {spotCost, PositionSmoother, POSITION_TAU_S, positionAdvice, positionStat
     from './engine/position.mjs';
 export {NO_DRAFT_NOTE};
 import {HoldingMeter, holdingW, GroupMotion, HOLD_PAIR_S, HOLD_PACK_S, MOTION_MS} from './engine/holding.mjs';
-import {BlockWatch, blockedNote, besideRider, passSituation, passNote, PassWatch, WIDE_M, GO_KMH} from './engine/blocking.mjs';
+import {BlockWatch, blockedNote, besideRider, stepSide, passSituation, passNote, PassWatch, WIDE_M, GO_KMH} from './engine/blocking.mjs';
 import {surfaceExtraCrr} from './engine/road-map.mjs';
 import {tuckState, TuckDrag} from './engine/supertuck.mjs';
 
@@ -551,6 +552,7 @@ export class MeterEngine {
             passAtWheel: !!pass.attack?.atWheel,
             passWide: !!pass.attack && Math.abs(pass.attack.latM ?? 0) >= WIDE_M,
             blockedSide: !settling && L.size >= 2 && blk.blocked && blk.beside ? blk.beside.side : null,
+            blockedStep: !settling && L.size >= 2 && blk.blocked && !blk.beside ? stepSide(entries, me) : null,
             surface,
             tuck: tuck && {...tuck, race: this.raceFor(me) ?? null, drag: this.tuckDrag.result()},
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,

@@ -58,7 +58,7 @@ Once measured, Gap is `approx` (from the road completion, ~0.3 m off at 5–15 m
 | Position (`position`) | watts your spot saves short of the ideal spot at your speed (0 = nothing to gain; v0.31.0, was vs the best-placed rider in your group), 10 s | W | `good` stay · `sit-in` sit in (front of the group) · `shatter` shattering (the riders ahead split up; v0.45.0) · `gapping` gap opening (a hole opening ahead of your wheel or the next, or the riders ahead riding away; v0.45.0) · `too-close` back off · `boxed` drift back (boxed in: to the back, where there's room) · `close-up` close up (gap too big) · `find-wheel` find a wheel · `unsteady` hold a wheel (less draft than your gap gives: the wheel moving about, or off its line; v0.37.0) · `no-draft` change wheel (the wheel gives no draft) | 7 / 28 W (the field's quartiles in two races) |
 | Holding (`holding`) | power beyond what keeping your place needed, 10 s (pair) / 20 s (3+) | W | `hold` hold (within the band) · `easy` easy (over the band: pushing for nothing) · `blocked` ease off (over the band because you're blocked: the same word as Blocked) · `moving-up` moving up (over the band while moving up: the price of the move, not waste) · `drifting` drifting (under the band) | 20 / 40 W |
 | Pack cost (`pack`) | watts your spot costs beyond Zwift's draft | W | `front` front · `room` room · `tight` tight (< 3.5 m to the wheel) · `crowded` crowded (2+ riders close ahead) · `boxed` boxed in · `group` in the group · `pair` with one (value null) | 25 / 40 W |
-| Blocked (`blocked`) | watts lost to blocking, 10 s (on fast descents, 45+ km/h and 1%+ down, only within 5.5 m of the wheel or alongside a rider: further back the spikes don't follow the gap; v0.42.0) | W | `clear` (no word) · `blocked` ease off (pushing into the wheel) · `blocked-left` / `blocked-right` drop back (stuck alongside a rider on that side) | 10 / 30 W |
+| Blocked (`blocked`) | watts lost to blocking, 10 s (on fast descents, 45+ km/h and 1%+ down, only within 5.5 m of the wheel or alongside a rider: further back the spikes don't follow the gap; v0.42.0) | W | `clear` (no word) · `step-left` / `step-right` step left / right (held on the wheel in line: the free side, half a meter gets the watts back) · `blocked` ease off (the same with no room to step) · `blocked-left` / `blocked-right` drop back (stuck alongside a rider on that side) | 10 / 30 W |
 | Passing (`passing`) | closing speed on the rider (0 with nobody closing) | km/h | `too-slow` go harder (you, closing 1–5 km/h: 5+ goes through) · `go-wide` go wide (you, in line with them) · `drop-back` drop back (you, glued to their wheel) · `rider-left` block left · `rider-right` block right · `none` | — |
 | Gap (`gap`) | to the wheel in line, wheel to wheel (center to center less a 1.5 m bike; below 0 = overlapping; null beyond 25 m; v0.51.0) | m | `wheel` (blank) · `beside` beside (none in line) · `no-wheel` no wheel · `no-draft` no draft | — |
 | Left / right (`side`) | you to the right (+) or left (−) of the wheel | m | `inline` (blank) · `beside` beside · `no-wheel` (blank) | — |
@@ -99,7 +99,7 @@ if there is one ("steep in 25", "AERO in 12"); the chime is the call `id`'s own 
 |---|---|---|---|
 | Your pass (`pass`) | `too-slow` go harder · `drop-back` drop back (`go-wide` is shown on the Passing meter, never called: v0.34.0) | — | 70 |
 | Gap opening (`gap`) | `opening` gap opening (Position `gapping`) · `shatter` group shattering (Position `shatter`) | — | 75 |
-| Blocked (`blocked`) | `wheel` ease off · `left` / `right` drop back | — | 65 |
+| Blocked (`blocked`) | `step-left` / `step-right` step left / right · `wheel` ease off (no room) · `left` / `right` drop back | — | 65 |
 | Being passed (`passed`) | `left` block left · `right` block right (in a race or practice race only, never a teammate; straight behind: no call, v0.51.0) | — | 60 |
 | Tuck (`tuck`) | `stop` coast | — | 40 |
 | Move up (`moveUp`) | `prep` climb · `move` move up · `hold` hold spot · `late` stay in line | in: to the climb | 40 / 80 / 60 / 30 |
@@ -138,7 +138,7 @@ Answered by the user, 2026-10-16:
 1. **Words:** OK for now; a real ride will tell more.
 2. **Nothing to read:** watt meters show 0 (like Sauce's draft gauge), the others blank; no word for alone etc.
 3. **Holding vs Blocked:** blocking losses aren't in what Holding expects, so both rise together. Holding's word
-   follows the cause: blocked -> "ease off" (as Blocked), moving up -> "moving up", otherwise over the band ->
+   follows the cause: blocked -> "step left / right" or "ease off" (as Blocked), moving up -> "moving up", otherwise over the band ->
    "easy", within -> "hold", under -> "drifting".
 4. **Active words** for advice: "back off", "drift back", "change wheel", "go harder", "block left", "coast"...
 5. **Levels:** the DS's own ranges are the defaults; the rider's thresholds in the display override them.

@@ -13,7 +13,7 @@
 import * as Common from '/pages/src/common.mjs';
 import {CHANNEL, DATA_VERSION} from './ds-data.mjs';
 import {gridGroups, slotView, GRID_DEFAULT_TILES} from './grid-fields.mjs';
-import {MAX_COLUMNS, cleanTiles, fieldCatalog, layout} from './tiles.mjs';
+import {MAX_COLUMNS, cleanTiles, fieldCatalog, fitKey, layout} from './tiles.mjs';
 import {setStyles, windowFitter, tileEl, initTileEditor} from './window-ui.mjs';
 
 const doc = document.documentElement;
@@ -94,14 +94,20 @@ export async function main() {
             }
         }
     };
-    const fitter = windowFitter(content, {extras: () => [status]});
-    const fitWindow = () => {
-        if (Common.settingsStore.get('fitWindow') !== false) fitter.fit();
+    // Fit once per layout: Sauce restores the window's size, so a size you dragged stands ride to ride (v0.54.1). Fitting
+    // on every open and first tick overwrote it, at whatever size the names and the status line had just then.
+    const fitter = windowFitter(content);
+    const layoutKey = () => fitKey(tiles, columns, Common.settingsStore.get('textScale'));
+    const fitWindow = ({done = false, force = false} = {}) => {
+        const store = Common.settingsStore;
+        if (store.get('fitWindow') === false || (!force && store.get('fittedFor') === layoutKey())) return;
+        fitter.fit({force});
+        if (done) store.set('fittedFor', layoutKey());   // measured with data: this layout is fitted
     };
     render(null);
     status.textContent = WAITING;
     status.hidden = false;
-    requestAnimationFrame(fitWindow);
+    requestAnimationFrame(() => fitWindow());
 
     let lastTick = 0;
     let channel = null;
@@ -118,7 +124,7 @@ export async function main() {
         lastTick = Date.now();
         if (!status.hidden) {
             status.hidden = true;
-            requestAnimationFrame(fitWindow);
+            requestAnimationFrame(() => fitWindow({done: true}));
         }
         render(latest);
     });
@@ -138,11 +144,11 @@ export async function main() {
         const key = ev.data.key;
         if (['backgroundColor', 'solidBackground', 'backgroundAlpha', 'textScale'].includes(key)) {
             setStyles(Common.settingsStore.get(), columns);
-            requestAnimationFrame(fitWindow);
+            requestAnimationFrame(() => fitWindow({done: true}));   // only the text size changes the layout
         } else if (key === 'fitWindow') {
             setStyles(Common.settingsStore.get(), columns);
-            requestAnimationFrame(fitWindow);
-        } else if (!['/theme', 'themeOverride'].includes(key)) {
+            requestAnimationFrame(() => fitWindow({done: true, force: true}));   // switched on: fit now, as you asked
+        } else if (!['/theme', 'themeOverride', 'fittedFor'].includes(key)) {
             window.location.reload();   // the slots, columns or units changed
         }
     });

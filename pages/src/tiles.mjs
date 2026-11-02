@@ -78,6 +78,12 @@ export function moveTile(tiles, id, dir) {
 export const MAX_COLUMNS = 8;
 
 /*
+ * What the fitted window depends on (grid.mjs): the same key = the same layout, so the size Sauce restores stands.
+ */
+export const fitKey = (tiles, columns, textScale) => JSON.stringify({columns, text: Number(textScale) || 100,
+    tiles: (tiles || []).map(t => [t.field, t.size, !!t.note])});
+
+/*
  * The window's layout: how many columns and which tiles show. columns 1..MAX_COLUMNS (saved settings from before
  * v0.10.0 have only horizMode: all tiles in one row); maxTiles 0 or empty = all, else the first maxTiles of the list.
  */

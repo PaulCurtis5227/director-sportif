@@ -18,11 +18,11 @@ from Sauce and tells you, in a word or two, what to do now. Its meters show on a
 
 ## The meters
 
-Each shows a number, and a word under it when there's something to do ("back off", "ease off", "block left").
+Each shows a number, and a word under it when there's something to do ("back off", "step left", "block left").
 
 - **Position**: what your spot in the group costs you in watts, against the best spot at your speed (2.5–4.5 m between wheels on a
   fast descent, not on the wheel). Blank behind a rider who gives no draft (a hand cycle): "change wheel".
-- **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "ease off" when
+- **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "step left", "step right" or "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
 - **Blocked**: watts lost pushing into the wheel ahead. On fast descents sitting close costs the most of all: ease off to 5 m or more.
@@ -42,7 +42,7 @@ Each kind reaches you the way you pick in the settings: a chime (its own sound),
 windows always show it. Times are in seconds, never meters.
 
 - **The pack**: "go harder", "go wide", "drop back" (your pass), "block left" / "block right" (in a race, a rider creeping up beside you),
-  "ease off" (blocked).
+  "step left" / "step right" (blocked on the wheel: half a meter that way gets your watts back), "ease off" (blocked, no room).
 - **Climbs**: "climb in 90", "move up" 60–45 s before it, "hold spot" or "stay in line"; "steep in 20 for 30",
   "over top in 15". From your route: it works alone, from the start.
 - **The finish**: "top ten in 120", "get a wheel", "go first", "go wide", "dig in" (a rider closing fast), "keep

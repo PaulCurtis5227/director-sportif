@@ -86,6 +86,9 @@ test('passing, blocked, gap and tuck states from the engine\'s reading', () => {
     assert.equal(at({}).passing.value, 0, 'in a group, nobody closing: 0');
     assert.equal(at({blocked: true, blockedSide: 'left', blockedW: 50}).blocked.state, 'blocked-left');
     assert.equal(at({blockedW: 0}).blocked.state, 'clear');
+    assert.equal(at({blocked: true, blockedStep: 'left', blockedW: 50}).blocked.state, 'step-left');
+    assert.equal(at({blocked: true, blockedW: 50}).blocked.state, 'blocked', 'no room to step');
+    assert.equal(at({blocked: true, blockedSide: 'right', blockedStep: 'left', blockedW: 50}).blocked.state, 'blocked-right', 'alongside wins');
     assert.equal(at({gapM: 3, noDraftWheel: true}).gap.state, 'no-draft');
     assert.equal(at({gapM: null, beside: true}).gap.state, 'beside');
     const tuck = at({tuck: {state: 'build', needKmh: 1.3, drag: {tucked: {cda: 0.27, s: 7}, coast: {cda: 0.28, s: 12}}}}).tuck;

@@ -186,6 +186,7 @@ export function dsCall(data, extra = [], {finale = null} = {}) {
     if (['too-slow', 'drop-back'].includes(pass)) c.push(call('pass', pass, wordOf('passing', pass)));
     const blk = m.blocked && m.blocked.state;
     if (blk === 'blocked') c.push(call('blocked', 'wheel', wordOf('blocked', blk)));
+    if (blk === 'step-left' || blk === 'step-right') c.push(call('blocked', blk, wordOf('blocked', blk)));
     if (blk === 'blocked-left' || blk === 'blocked-right') c.push(call('blocked', blk.slice(8), wordOf('blocked', blk)));
     if (pass === 'rider-left' || pass === 'rider-right') {
         c.push(call('passed', pass.slice(6), wordOf('passing', pass)));

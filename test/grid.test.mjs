@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {gridGroups, slotView, GRID_DEFAULT_TILES, METER_OF} from '../pages/src/grid-fields.mjs';
 import {buildData} from '../pages/src/ds-data.mjs';
-import {fieldCatalog, cleanTiles} from '../pages/src/tiles.mjs';
+import {fieldCatalog, cleanTiles, fitKey} from '../pages/src/tiles.mjs';
 
 const me = {self: true, state: {power: 260, speed: 41.25, draft: 70, cadence: 92, heartrate: 148, grade: -0.034}};
 const data = ds => buildData({me, ds: {groupSize: 7, ...ds}});
@@ -74,4 +74,16 @@ test('no data (the Director Sportif window closed): every slot blank, no color',
     assert.equal(slotView(fields().get('ds-holding'), slot(), alone).value, '0');
     assert.equal(slotView(fields().get('ds-word-position'), slot(), alone).value, '');
     assert.equal(slotView(fields().get('ds-gap'), slot(), alone).value, '');
+});
+
+test('the Grid fits again only when its layout changes: a size you dragged stands', () => {
+    const tiles = GRID_DEFAULT_TILES;
+    const key = fitKey(tiles, 1, 100);
+    assert.equal(fitKey(tiles.map(t => ({...t, warn: 10, alarm: 30})), 1, 100), key, 'colors don\'t size the window');
+    assert.equal(fitKey(tiles, 1, undefined), key, 'no text size saved = 100%');
+    assert.notEqual(fitKey(tiles, 2, 100), key, 'columns');
+    assert.notEqual(fitKey(tiles, 1, 120), key, 'text size');
+    assert.notEqual(fitKey(tiles.slice(1), 1, 100), key, 'a slot gone');
+    assert.notEqual(fitKey(tiles.map(t => ({...t, size: 'small'})), 1, 100), key, 'a slot\'s size');
+    assert.notEqual(fitKey(tiles.map(t => ({...t, note: true})), 1, 100), key, 'a word under a slot');
 });

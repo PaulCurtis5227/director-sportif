@@ -30,12 +30,15 @@ html.grid .tile.wrap .value {
 
 html.grid .tile.wrap .reading {
     font-size: 0.6em;
-    align-items: flex-start;   /* words read from the left */
 }
 
-/* no data: the Director Sportif window isn't open (or its rider is gone) */
+/* no data: the Director Sportif window isn't open (or its rider is gone); over the tiles, so it never sizes the window */
 html.grid #status {
-    margin: 0.3em 0.5em 0;
+    position: absolute;
+    top: 0.3em;
+    left: 0.5em;
+    right: 0.5em;
+    z-index: 1;
     padding: 0.25em 0.5em;
     border-radius: 0.3em;
     background: #0006;

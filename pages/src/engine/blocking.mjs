@@ -37,6 +37,11 @@
  * of windows and leave −1…+4 W at every speed under 45 km/h, flat or down (0–2 m: 23–57%, 10–33 W). Far back a spike is
  * the draft swinging, not a wheel you push into. So a spike counts only within FAST_DESCENT_CLOSE_M of the wheel in line,
  * with a rider 0–3 m ahead (tick.ahead3), or alongside.
+ * v0.70.2 (DS v0.54.0; the 2026-11-01 block at 32:35, research/2026-11-01/block-corridor.mjs, 391k field ticks): the block
+ * has a shape. In line, closing 0.5–1.5 km/h, 1.5–3 m center to center: 65 W, a third of ticks over 80 W; half that excess
+ * gone 0.45 m aside, all of it by 0.6–0.8 m or from 3 m back. On the ride it stopped the tick you sat 0.3–0.4 m off the
+ * line. So stepSide: the way out of a block, a word right whether you meant the push or not. A pass ends once the rider's
+ * wheel is behind yours ("go wide" ran on with them 1–2 m behind you).
  */
 
 import {leads} from './wheels.mjs';
@@ -172,6 +177,51 @@ export function besideRider(entries, me, lead = leads(entries)) {
     return best;
 }
 
+/*
+ * The way out of a block: 'left' or 'right' (as you ride), or null (no wheel you're held on in line, or no room: then
+ * "ease off"). The wheel: the nearest rider within STEP_WHEEL_M ahead, under STEP_LINE_M off your line. A side has room
+ * when no rider sits around STEP_M out on it (STEP_TAKEN_M) from a meter behind to STEP_AHEAD_M ahead, and the road goes
+ * on: roadPosition runs 88–92.3 m on roads ridden forward and 84–88.3 m in reverse, on all 14 roads measured
+ * (research/2026-11-01/road-width.mjs). Both free: away from the wheel, else toward the middle of the road.
+ */
+export const STEP_WHEEL_M = [0.5, 3.5];
+export const STEP_LINE_M = 0.6;
+export const STEP_M = 0.7;
+export const STEP_TAKEN_M = [0.25, 1.15];
+export const STEP_AHEAD_M = 4;
+export const ROAD_M = {forward: [88, 92.3], reverse: [84, 88.3]};
+
+export function stepSide(entries, me, lead = leads(entries)) {
+    if (!me || !me.state) return null;
+    const s = me.state, mine = lead.get(me);
+    if (mine == null) return null;
+    let wheel = null;
+    const taken = {left: false, right: false};
+    for (const o of entries || []) {
+        if (o === me || !o.state || o.state.roadId !== s.roadId || !!o.state.reverse !== !!s.reverse) continue;
+        const x = lead.get(o);
+        if (x == null) continue;
+        const along = x - mine;
+        const lat = ((o.state.roadPosition ?? 0) - (s.roadPosition ?? 0)) / UNIT_PER_M * (s.reverse ? -1 : 1);   // + = your right
+        if (along > STEP_WHEEL_M[0] && along <= STEP_WHEEL_M[1] && Math.abs(lat) < STEP_LINE_M && (!wheel || along < wheel.along)) wheel = {along, lat};
+        if (along >= -BESIDE_ALONG_M && along <= STEP_AHEAD_M && Math.abs(lat) >= STEP_TAKEN_M[0] && Math.abs(lat) <= STEP_TAKEN_M[1]) {
+            taken[lat > 0 ? 'right' : 'left'] = true;
+        }
+    }
+    if (!wheel) return null;
+    const [lo, hi] = s.reverse ? ROAD_M.reverse : ROAD_M.forward;
+    const pos = (s.roadPosition ?? NaN) / UNIT_PER_M;
+    const known = pos >= lo - 1 && pos <= hi + 1;   // outside that: not a road we measured, no edges
+    const sign = s.reverse ? -1 : 1;                // + roadPosition is your right on a forward road
+    const room = dir => !known || (pos + dir * sign * STEP_M >= lo && pos + dir * sign * STEP_M <= hi);
+    const left = !taken.left && room(-1), right = !taken.right && room(1);
+    if (!left && !right) return null;
+    if (left !== right) return left ? 'left' : 'right';
+    if (wheel.lat >= 0.1) return 'left';
+    if (wheel.lat <= -0.1) return 'right';
+    return known && (pos - (lo + hi) / 2) * sign > 0 ? 'left' : 'right';
+}
+
 /* One line for the cue. No watts in it: the meter's value is the measured loss (2026-10-12: notes quote only measured
  * numbers). */
 export function blockedNote(r) {
@@ -232,7 +282,7 @@ export function passSituation(entries, me, lead = leads(entries), {accelKmhS = 0
         const dtS = Number.isFinite(s.worldTime) && Number.isFinite(o.state.worldTime) ?
             Math.max(-2, Math.min(2, (s.worldTime - o.state.worldTime) / 1000)) : 0;
         const dv = (s.speed || 0) - ((o.state.speed || 0) + accelKmhS * dtS);   // km/h, + = you are faster
-        if (dv >= HELD_KMH[0] && dv < HELD_KMH[1] && (level || (along > 0 && along <= PASS_AHEAD_M))) {
+        if (dv >= HELD_KMH[0] && dv < HELD_KMH[1] && along > 0 && along <= PASS_AHEAD_M) {   // their wheel behind yours: you're through
             const atWheel = !level && along < AT_WHEEL_M && Math.abs(lat) < BESIDE_LAT_M[0];
             if (!out.attack || Math.abs(along) < Math.abs(out.attack.alongM)) out.attack = {where, closeKmh: dv, alongM: along, latM: lat, atWheel, rider: o};
         }

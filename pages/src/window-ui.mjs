@@ -47,12 +47,12 @@ export function windowFitter(content, {extras = () => []} = {}) {
         return {w: Math.ceil((r.width + padW) * zoom), h: Math.ceil((r.height + extra + padH) * zoom)};
     };
     return {
-        fit({growOnly = false} = {}) {
+        fit({growOnly = false, force = false} = {}) {
             const m = measure();
             if (!m.w || !m.h) return;
             if (growOnly && last && m.w <= last.w && m.h <= last.h) return;
             const size = growOnly && last ? {w: Math.max(m.w, last.w), h: Math.max(m.h, last.h)} : m;
-            if (last && Math.abs(size.w - last.w) < 2 && Math.abs(size.h - last.h) < 2) return;
+            if (!force && last && Math.abs(size.w - last.w) < 2 && Math.abs(size.h - last.h) < 2) return;
             last = size;
             Promise.resolve().then(() => Common.rpc.resizeOwnWindow(size.w, size.h, {constrainToDisplay: true}))
                 .catch(e => console.warn('window resize failed', e));

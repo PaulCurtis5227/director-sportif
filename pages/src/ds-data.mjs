@@ -69,7 +69,7 @@ export const VOCAB = {
         ...COMMON,
         hold: {word: 'hold', help: 'You spend what keeping your place needs.'},
         easy: {word: 'easy', help: 'You push more than keeping your place needs: ease off.'},
-        blocked: {word: 'ease off', help: 'The extra watts go into the wheel in front: ease off or steer to space.'},
+        blocked: {word: 'ease off', help: 'The extra watts go into the wheel in front: step out of its line, or ease off.'},
         'moving-up': {word: 'moving up', help: 'Moving up through the group: the extra watts are the price of the move.'},
         drifting: {word: 'drifting', help: 'You spend less than keeping your place needs: you drift back.'},
     },
@@ -86,8 +86,10 @@ export const VOCAB = {
     blocked: {
         ...COMMON,
         clear: {word: '', help: 'Not blocked.'},
-        blocked: {word: 'ease off', help: 'Pushing into the wheel: the watts vanish. It happens anywhere within 2 m of ' +
-                 'their wheel, overlapped or not, and nearly stops further back. Ease off to 2 m+ or steer to space.'},
+        blocked: {word: 'ease off', help: 'Pushing into the wheel: the watts vanish. It happens within 1.5 m of their wheel, ' +
+                 'in line, closing slowly, and nearly stops further back or half a meter to the side. No room to step out here: ease off.'},
+        'step-left': {word: 'step left', help: 'Held on the wheel in front: half a meter to the left, out of its line, gets the watts back.'},
+        'step-right': {word: 'step right', help: 'Held on the wheel in front: half a meter to the right, out of its line, gets the watts back.'},
         'blocked-left': {word: 'drop back', help: 'Stuck alongside a rider on your left: drop back, pass where there is room.'},
         'blocked-right': {word: 'drop back', help: 'Stuck alongside a rider on your right: drop back, pass where there is room.'},
     },
@@ -341,7 +343,8 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     const common = settling ? 'settling' : noMap ? 'no-map' : alone ? 'alone' : draftless ? 'draftless' : null;
     const pack = x => (draftless ? null : x);
 
-    const blockedState = common || (ds.blocked ? (ds.blockedSide ? `blocked-${ds.blockedSide}` : 'blocked') : 'clear');
+    const blockedState = common || (!ds.blocked ? 'clear' : ds.blockedSide ? `blocked-${ds.blockedSide}` :
+        ds.blockedStep ? `step-${ds.blockedStep}` : 'blocked');
     let passState = 'none';
     if (ds.passKind === 'attack') passState = ds.passAtWheel ? 'drop-back' : ds.passWide ? 'too-slow' : 'go-wide';
     else if (ds.passKind === 'defend') passState = DEFEND_STATE[ds.passWhere] || 'none';
@@ -368,7 +371,8 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
         self: !!(me && me.self),
         meters: {
             position: meter('position', pack(ds.positionW), common || ds.positionState || 'none'),
-            holding: meter('holding', pack(ds.holdingW), common || ds.holdingState || 'warming'),
+            holding: meter('holding', pack(ds.holdingW), common || ds.holdingState || 'warming',
+                           ds.holdingState === 'blocked' && ds.blockedStep ? {word: `step ${ds.blockedStep}`} : {}),   // the same words as Blocked
             pack: meter('pack', pack(ds.packW), draftless ? common : ds.packState || common || 'none'),
             blocked: meter('blocked', pack(ds.blockedW), blockedState),
             passing: meter('passing', pack(ds.passKmh) ?? (common ? null : 0), passState),

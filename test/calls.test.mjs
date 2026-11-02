@@ -38,6 +38,8 @@ test('calls are the meters\' own words (docs/DS-DATA.md): active, a word or two,
     assert.equal(dsCall(goWide), null, '"go wide" is shown, never called');
     assert.equal(dsCall(data({passing: {value: 2.5, state: 'drop-back'}})).word, 'drop back');
     assert.equal(dsCall(blocked).word, 'ease off');
+    const step = dsCall(data({blocked: {value: 40, state: 'step-right'}}));
+    assert.deepEqual([step.id, step.state, step.word], ['blocked', 'step-right', 'step right']);
     assert.equal(dsCall(alongside).word, 'drop back');
     assert.equal(dsCall(defend).word, 'block left');
     assert.equal(dsCall(data({passing: {value: 1.5, state: 'rider-behind'}})), null, 'no hold line (v0.51.0: nothing to do)');

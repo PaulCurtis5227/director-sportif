@@ -56,12 +56,13 @@ html.measuring #content.tiles {
     overflow: visible;
 }
 
-/* A tile reads top down, like the Data Tap: the meter's name, the reading under it, the note under that. */
+/* A tile reads top down, centered (the user, 2026-11-01): the meter's name, the reading under it, the note under that. */
 .tile {
     position: relative;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    text-align: center;
     padding: 0.15em 0.35em 0.2em;
     border-radius: 0.3em;
     background: #0003;
@@ -88,14 +89,14 @@ html[data-theme="transparent-dark"] .tile {
     white-space: nowrap;
 }
 
-/* the unit under the number, small and to the right, as on Sauce's own grid (the user, 2026-10-31) */
+/* the unit under the number, small, as on Sauce's own grid (the user, 2026-10-31) */
 .tile .reading {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
     line-height: 1;
-    /* room for "+123 W", so the fitted window holds as the numbers change */
-    min-width: 4.4em;
+    /* room for "+123 W" and the name "Est. wheel gap", so the fitted window holds as they change */
+    min-width: 5.2em;
 }
 
 .tile .value {
@@ -166,7 +167,8 @@ html[data-theme="transparent-dark"] .tile {
 .tile.small {
     flex-direction: row;
     align-items: baseline;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 0.5em;
 }
 
 .tile.small .label,

@@ -51,17 +51,19 @@ function wordFields() {
  * All words is advice only: the meter states that tell you to do something, in this order (legs and line first).
  * Descriptions stay out (Pack's "boxed" / "crowded", Gap's and L/R's "beside", surfaces, "stay", "hold", "drifting"):
  * replayed over the 2026-10-22 group ride they were most of the words and changed the text every ~4 s.
+ * "hold a wheel" went too (v0.54.0): in 49% of any 10 s in a group, so it buried the rest (research/2026-11-01/intent-gate.mjs).
  */
 export const ADVICE = {
-    blocked: ['blocked', 'blocked-left', 'blocked-right'],
+    blocked: ['blocked', 'blocked-left', 'blocked-right', 'step-left', 'step-right'],
     passing: ['too-slow', 'go-wide', 'drop-back', 'rider-left', 'rider-right'],
-    position: ['shatter', 'gapping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'unsteady', 'no-draft', 'sit-in'],
+    position: ['shatter', 'gapping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'no-draft', 'sit-in'],
     holding: ['easy', 'blocked'],
     tuck: ['soon', 'stop'],
     frc: ['low', 'empty'],
     burrito: ['cone'],
 };
 export const WORDS_HOLD_S = 3;   // a word stays up at least this long after its meter stops saying it
+const NO_HOLD = new Set(['passing']);   // PassWatch steadies these itself; held on, "go wide" outlived the pass
 
 /*
  * The advice showing now: the call (with its seconds, as the voice says it) and each meter's advice word, a word
@@ -81,7 +83,7 @@ export function allWords(data, hold = null) {
     }
     let shown = said;
     if (hold) {
-        for (const x of said) hold.set(x.src, {...x, until: now + WORDS_HOLD_S * 1000});
+        for (const x of said) hold.set(x.src, {...x, until: now + (NO_HOLD.has(x.src) ? 0 : WORDS_HOLD_S * 1000)});
         for (const [src, x] of hold) if (x.until < now) hold.delete(src);
         const order = ['call', ...Object.keys(ADVICE)];
         shown = order.filter(src => hold.has(src)).map(src => hold.get(src));

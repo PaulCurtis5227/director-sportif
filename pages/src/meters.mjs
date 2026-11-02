@@ -135,6 +135,11 @@
  * km/h; Blocked counts spikes only near a wheel at any speed (blocking.mjs).
  * v0.53.1: meters show a decimal only under 10 (1.5 but 20; meter-fields.mjs fmtShort): Wheel gap, L/R, Passing, Tuck.
  * v0.53.2: FRC, Speed and Grade keep their decimal (the user: the precision is useful there).
+ * v0.54.0 (EM v0.70.2; 2026-11-01): Blocked says the way out, "step left" / "step right" to the free side (blocking.mjs
+ * stepSide), "ease off" only with no room: right whether you meant the push or not. "hold a wheel" off All words (it was
+ * in 49% of any 10 s). A pass ends once their wheel is behind yours, and its words go with it.
+ * v0.54.1: the Grid keeps its size ride to ride (grid.mjs: fitted once per layout, tiles.mjs fitKey, setting fittedFor; the
+ * "waiting" line over the tiles, not above them); a tile's text is centered (meters.css).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -163,7 +168,7 @@ import {RaceIndex} from './race-index.mjs';
 import {ProgressLeft} from './progress-left.mjs';
 import {hrAckText} from './team-hr.mjs';
 
-export const DS_VERSION = '0.53.2';
+export const DS_VERSION = '0.54.1';
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
