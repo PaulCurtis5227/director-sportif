@@ -24,11 +24,17 @@ export const CALL_REPEAT_S = 30;     // one call type sounds (chime or voice) at
 
 /* The call types and their chimes: rising = your move, falling = you are stuck, one low tone = someone behind. */
 export const CALL_TYPES = [
-    {id: 'pass', label: 'Your pass', hint: 'you close on a rider too slowly to get by', tones: [880, 1320]},
+    {id: 'pass', label: 'Your pass', hint: 'you close on a rider too slowly to get by ("go harder"), or glued to their wheel ("drop back": not while you move up through the group)', tones: [880, 1320]},
     {id: 'passed', label: 'Being passed', hint: 'a rider creeps up on you', tones: [660]},
-    {id: 'gap', label: 'Gap opening', hint: 'a hole opening in front of your wheel or the next: close it or go round before you are gapped',
+    {id: 'gap', label: 'Gap opening', hint: 'a hole opening in front of your wheel or the next, or you losing the group (v0.58.0): close it or go round before you are gapped',
      tones: [740, 1100]},
-    {id: 'blocked', label: 'Blocked', hint: 'pushing into the wheel, or stuck alongside', tones: [1320, 880]},
+    {id: 'shatter', label: 'Group shattering', hint: 'the riders ahead splitting or leaving: hold the front part, or the group you can (v0.57.0: its own row, was part of Gap opening)',
+     tones: [740, 1100, 740]},
+    {id: 'blocked', label: 'Ease off (blocked)', hint: 'pushing into the wheel ahead: the watts vanish; the Wheel gap tile turns red too. Never while you move up through the group', tones: [1320, 880]},
+    {id: 'step', label: 'Step out', hint: 'held on the wheel ahead: half a meter left or right, out of its line (v0.57.0: its own row, was part of Blocked)',
+     tones: [1320, 1100]},
+    {id: 'alongside', label: 'Stuck alongside', hint: 'stuck beside a rider: drop back, pass where there is room. Never while you move up through the group (v0.57.0: its own row, was part of Blocked)',
+     tones: [1100, 880]},
     {id: 'tuck', label: 'Supertuck', hint: 'fast enough on a descent to tuck: stop pedaling', tones: [990, 990]},
     {id: 'moveUp', label: 'Move up', hint: 'before a climb: move up along the edge 60–45 s out, then hold the spot',
      tones: [660, 880, 1100]},
@@ -40,14 +46,16 @@ export const CALL_TYPES = [
      tones: [880, 1320, 1760]},
     {id: 'card', label: 'Race card', hint: 'the race card for this route: scored sprints and KOMs ahead and their line, ' +
      'arches that give a power-up, your notes', tones: [740, 990, 740]},
+    {id: 'pace', label: 'Segment pacing', hint: 'a segment card from caffecter.com: "go in 10", then the plan\'s own words at each effort ("go, 730", "empty it")',
+     tones: [880, 1100, 880]},
     {id: 'surface', label: 'Surfaces', hint: 'a rough surface ahead on this road (wood, dirt, cobbles…): when and how long',
      tones: [440, 440]},
     {id: 'bridge', label: 'Bridge', hint: 'after you press Bridge (the Bridge button setting, below): when to go for the riders up the road for the least FRC ("bridge now", "bridge on the climb in 40", "last chance to bridge", "too far to bridge"), then the watts to hold on the way, and "made it"',
      tones: [660, 990, 1320]},
     {id: 'pacing', label: 'Climb pacing', hint: 'a steep part ahead (when and how long), the top of the climb close',
      tones: [600, 800]},
-    {id: 'bend', label: 'Bends', hint: 'a bend ahead: "inside left / right" when the inside is open and moving over ' +
-     'gains ground (after the draft it costs), "stay close" when you are on the outside and will lose ground; ' +
+    {id: 'bend', label: 'Bends', hint: 'their own lane (v0.57.0): every bend, not held back by the other calls. A bend ahead: "move left / right" when the inside is open and moving over ' +
+     'gains ground (after the draft it costs); nothing when you are on the inside already or stuck outside; alone and in the finish too (v0.58.0); ' +
      '"cut the S" / "cut the bend" before a stretch that twists enough to steer a shorter line (dirt S curves most)',
      tones: [700, 940]},
     {id: 'teamHr', label: 'Teammate HR', hint: 'you or a teammate in your race (your team tag) with no heart rate for 20 s: ' +
@@ -70,8 +78,11 @@ export function deliveryKey(type, how) {
  * Spoken from the start on a fresh install (v0.43.0, the user: "make the installation experience as painless as
  * possible": a new rider heard nothing until they found the Calls tab). Not bends and habits (frequent, nice to have),
  * not being passed (a chime suits it), not the tuck and take-the-wheel (chime only: words come too late).
+ * v0.57.0 (the user, 2026-11-05: "stop telling me to do the wrong thing", 1 call a minute): a fresh install no longer
+ * hears "ease off", "drop back" (your pass, stuck alongside), being passed or group shattering: on screen only (the
+ * Wheel gap tile turns red when you push into the wheel). Step out is heard. Each one a checkbox away.
  */
-export const FRESH_VOICE = ['gap', 'pass', 'blocked', 'moveUp', 'bridge', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr'];
+export const FRESH_VOICE = ['gap', 'step', 'moveUp', 'bridge', 'pace', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr'];
 
 /*
  * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
@@ -97,7 +108,7 @@ export function deliveryDefaults(old = {}) {
             out[deliveryKey(t.id, 'voice')] = false;
             continue;
         }
-        if (t.id === 'bridge') {   // v0.53.0: only after you press Bridge, so spoken for everyone
+        if (t.id === 'bridge' || t.id === 'pace') {   // v0.53.0: only after you press Bridge; v0.55.3: only with a segment card: spoken for everyone
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = true;
             continue;
@@ -115,8 +126,19 @@ export function deliveryDefaults(old = {}) {
         out[deliveryKey(t.id, 'chime')] = t.id === 'passed' ? voice : chime;
         out[deliveryKey(t.id, 'voice')] = t.id === 'passed' ? false : voice;
     }
+    // v0.57.0's new rows take what you had for the row they came out of (step out and stuck alongside were Blocked,
+    // group shattering was Gap opening)
+    for (const [id, from] of Object.entries(SPLIT_FROM)) {
+        for (const how of DELIVERY) {
+            const was = old[deliveryKey(from, how)];
+            if (was !== undefined) out[deliveryKey(id, how)] = was;
+        }
+    }
     return out;
 }
+
+/* The rows v0.57.0 split out, and the row each came from. */
+export const SPLIT_FROM = {step: 'blocked', alongside: 'blocked', shatter: 'gap'};
 
 /*
  * The settings window's delivery grid: one row per call type, a checkbox per way, bound by name like any setting.
@@ -157,9 +179,21 @@ export function localizeUnits(text, imperial) {
 }
 
 /* Call priorities (docs/DS-DATA.md; the director's move-up 80 / sprint 55–93 sit around them). */
-export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge']);   // Announcer: no wait per type
+export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace']);   // Announcer: no wait per type
 
-export const CALL_PRIORITY = {gap: 75, pass: 70, blocked: 65, passed: 60, tuck: 40};
+export const CALL_PRIORITY = {gap: 75, shatter: 75, pass: 70, blocked: 65, step: 65, alongside: 65, passed: 60, tuck: 40};
+
+/*
+ * Moving up through the group (the user, 2026-11-05: "the most important thing is that the software stops telling me
+ * to do the wrong thing"): while you ride THROUGH_KMH+ faster than your group (meter-engine throughKmh, 3 s), the calls
+ * that hold you back or turn you round are wrong, and none of them is made: ease off, drop back (your pass, stuck
+ * alongside), give room, get in line, the habit "ease off", and being passed (a distraction mid-move). Step out, gap
+ * opening and the rest stay. research/2026-11-05/intent-calls.mjs: silences 68 of the 107 such calls made during moves
+ * on 9 rides, and 25 of the 322 made otherwise.
+ */
+export const THROUGH_KMH = 1;
+export const isHoldCall = c => !!c && (c.id === 'passed' || c.id === 'alongside' || (c.id === 'blocked' && c.state === 'wheel') ||
+    (c.id === 'pass' && c.state === 'drop-back') || (c.id === 'nudge' && ['wheel', 'line', 'crowd'].includes(c.state)));
 
 const call = (id, state, word, extra = {}) => ({id, state, word, in: null, for: null, priority: CALL_PRIORITY[id], ...extra});
 
@@ -171,11 +205,20 @@ const call = (id, state, word, extra = {}) => ({id, state, word, in: null, for: 
  */
 // In the finale only these speak (v0.45.0; 2026-10-25: from 1.3 km to the line the voice said "drop back", "ease off",
 // "wood in 45" and "gap opening" around the two finish calls it found room for)
-// (run-in); after your jump only the finish's own; past the line nothing ("group shattering" 84 m after it)
-export const FINALE_CALLS = {'run-in': new Set(['sprint', 'wheel', 'powerup', 'card', 'gap']),
-                             sprint: new Set(['sprint', 'wheel', 'powerup']), done: new Set()};
+// (run-in); after your jump only the finish's own; past the line nothing ("group shattering" 84 m after it). A bridge
+// you asked for speaks in both (v0.55.1): the bridge's attack can itself read as your jump
+// v0.58.0: bends too, in the run-in and the sprint (the user, 2026-11-06: two hairpins in the last 300 m, ~4 m lost on
+// the first; "steering could really make a difference there"); they have their own lane, so they don't push a finish
+// call out
+export const FINALE_CALLS = {'run-in': new Set(['sprint', 'wheel', 'powerup', 'card', 'gap', 'shatter', 'bridge', 'pace', 'bend']),
+                             sprint: new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace', 'bend']), done: new Set()};
 
-export function dsCall(data, extra = [], {finale = null} = {}) {
+/*
+ * Options: finale (FINALE_CALLS); through: you are moving up through the group (no hold calls, isHoldCall); lane:
+ * 'main' (every call but bends), 'bend' (bends only: their own lane, v0.57.0) or 'all'; audible(id): only calls you
+ * can hear compete (v0.57.0: a silent call no longer holds back a lower one you hear).
+ */
+export function dsCall(data, extra = [], {finale = null, through = false, lane = 'all', audible = null} = {}) {
     const only = finale ? FINALE_CALLS[finale] : null;
     const m = data && data.meters;
     if (!m) return null;
@@ -186,25 +229,44 @@ export function dsCall(data, extra = [], {finale = null} = {}) {
     if (['too-slow', 'drop-back'].includes(pass)) c.push(call('pass', pass, wordOf('passing', pass)));
     const blk = m.blocked && m.blocked.state;
     if (blk === 'blocked') c.push(call('blocked', 'wheel', wordOf('blocked', blk)));
-    if (blk === 'step-left' || blk === 'step-right') c.push(call('blocked', blk, wordOf('blocked', blk)));
-    if (blk === 'blocked-left' || blk === 'blocked-right') c.push(call('blocked', blk.slice(8), wordOf('blocked', blk)));
+    if (blk === 'step-left' || blk === 'step-right') c.push(call('step', blk, wordOf('blocked', blk)));
+    if (blk === 'blocked-left' || blk === 'blocked-right') c.push(call('alongside', blk.slice(8), wordOf('blocked', blk)));
     if (pass === 'rider-left' || pass === 'rider-right') {
         c.push(call('passed', pass.slice(6), wordOf('passing', pass)));
     }
     if (m.position && m.position.state === 'gapping') c.push(call('gap', 'opening', wordOf('position', 'gapping')));
-    if (m.position && m.position.state === 'shatter') c.push(call('gap', 'shatter', 'group shattering'));   // the user's words
+    if (m.position && m.position.state === 'dropping') c.push(call('gap', 'dropping', wordOf('position', 'dropping')));   // v0.58.0: the same call type
+    if (m.position && m.position.state === 'shatter') c.push(call('shatter', 'group', 'group shattering'));   // the user's words
     if (m.tuck && m.tuck.state === 'stop') c.push(call('tuck', 'stop', wordOf('tuck', 'stop')));
     for (const x of extra || []) if (x && x.word) c.push(x);
     let best = null;
     for (const x of c) {
         if (only && !only.has(x.id)) continue;
+        if (lane === 'main' && x.id === 'bend') continue;
+        if (lane === 'bend' && x.id !== 'bend') continue;
+        if (through && isHoldCall(x)) continue;
+        if (audible && !audible(x.id)) continue;
         if (!best || (x.priority ?? 0) > (best.priority ?? 0)) best = x;
     }
     return best;
 }
 
-/* The call from the engine's reading: the data object's pack calls and the director's. */
-export const engineCall = (data, ds) => dsCall(data, directorCalls(ds), {finale: (ds && ds.finale) || null});
+/* You are moving up through your group (ds.throughKmh: 3 s, you minus your group's median speed). */
+export const movingThrough = ds => !!ds && Number.isFinite(ds.throughKmh) && ds.throughKmh >= THROUGH_KMH;
+
+/* The call to show (and record): the data object's pack calls and the director's; a bend when nothing else. */
+export function engineCall(data, ds) {
+    const o = {finale: (ds && ds.finale) || null, through: movingThrough(ds)};
+    const extra = directorCalls(ds);
+    return dsCall(data, extra, {...o, lane: 'main'}) || dsCall(data, extra, {...o, lane: 'bend'});
+}
+
+/* The calls to sound, one per lane: {main, bend}, each among the calls you can hear (audible(id)). */
+export function engineCalls(data, ds, audible = null) {
+    const o = {finale: (ds && ds.finale) || null, through: movingThrough(ds), audible};
+    const extra = directorCalls(ds);
+    return {main: dsCall(data, extra, {...o, lane: 'main'}), bend: dsCall(data, extra, {...o, lane: 'bend'})};
+}
 
 /* What the voice says and the windows show: the word, then the time if something is ahead ("steep in 25"). */
 export function callWords(c) {
@@ -218,11 +280,18 @@ export function callWords(c) {
  * Decides what a call sounds like now: offer(call, delivery, nowMs) -> {tones (chime, or null), say (words for the
  * voice, or null)} or null. Only a new call (id|state changed) sounds, at least MIN_GAP_S after the last sound and
  * CALL_REPEAT_S after the last one of its type; a call held back sounds when the wait is over if it is still on.
+ * Lanes (v0.57.0): the bends have their own Announcer (BEND_LANE: its own timing, each bend by itself); guard = an
+ * object both lanes share ({lastAt}) so neither talks over the other (CROSS_GAP_S), while each keeps its own gaps.
  */
+export const CROSS_GAP_S = 2.5;   // a short call said: the other lane waits this long
+export const BEND_LANE = {minGapS: 3, repeatS: 10, perKey: true};
 export class Announcer {
-    constructor({minGapS = MIN_GAP_S, repeatS = CALL_REPEAT_S} = {}) {
+    constructor({minGapS = MIN_GAP_S, repeatS = CALL_REPEAT_S, perKey = false, guard = null, crossGapS = CROSS_GAP_S} = {}) {
         this.minGapMs = minGapS * 1000;
         this.repeatMs = repeatS * 1000;
+        this.perKey = perKey;
+        this.guard = guard;
+        this.crossGapMs = crossGapS * 1000;
         this.lastKey = null;
         this.lastAt = -Infinity;
         this.typeAt = new Map();
@@ -238,12 +307,14 @@ export class Announcer {
         if (key === this.lastKey) return null;
         // the finish's calls follow each other ("top ten", "jump in 20", "you can go", "dig in"): only the same one
         // waits repeatS (2026-10-25: "jump in" would have held "you can go" back 30 s); every other type waits as a type
-        const urgent = URGENT_TYPES.has(call.id);
-        const lastSame = urgent ? this.typeAt.get(key) : this.typeAt.get(call.id);
+        const byKey = this.perKey || URGENT_TYPES.has(call.id);
+        const lastSame = byKey ? this.typeAt.get(key) : this.typeAt.get(call.id);
         if (now - this.lastAt < this.minGapMs || now - (lastSame ?? -Infinity) < this.repeatMs) return null;
+        if (this.guard && now - (this.guard.lastAt ?? -Infinity) < this.crossGapMs) return null;
         this.lastKey = key;
         this.lastAt = now;
-        this.typeAt.set(urgent ? key : call.id, now);
+        if (this.guard) this.guard.lastAt = now;
+        this.typeAt.set(byKey ? key : call.id, now);
         const type = CALL_TYPES.find(t => t.id === call.id);
         return {tones: delivery.chime && type ? type.tones : null, say: delivery.voice ? speechText(callWords(call) || call.say || call.text) : null};
     }

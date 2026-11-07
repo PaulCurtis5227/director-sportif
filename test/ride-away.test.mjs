@@ -24,9 +24,12 @@ const run = (secs, aheadAt, w = new RideAwayWatch(), from = 0) => {
 
 test('ride away: a steady group says nothing; riders ahead drawing away is "away"', () => {
     assert.equal(run(15, () => [2, 4, 6, 8]), null);
-    const away = run(15, t => [2, 4, 6, 8].map(d => d + 0.5 * t));
+    // v0.57.2: 0.7 m/s (was 0.5): 0.5 m/s is a gap that mostly heals itself
+    assert.equal(run(15, t => [2, 4, 6, 8].map(d => d + 0.5 * t)), null, '0.5 m/s: no call now');
+    const away = run(15, t => [2, 4, 6, 8].map(d => d + 0.8 * t));
     assert.equal(away.state, 'away');
-    assert.ok(Math.abs(away.mps - 0.5) < 1e-9);
+    assert.ok(Math.abs(away.mps - 0.8) < 1e-9);
+    assert.equal(RIDE_AWAY.awayMps, 0.7);
     assert.equal(run(15, t => [2, 4].map(d => d + t)), null, `fewer than ${RIDE_AWAY.minRiders} riders: no reading`);
 });
 

@@ -58,7 +58,8 @@
  *   surfaceAhead  the next non-pavement stretch within 600 m (along your route past junctions): {surface, inS, forS}
  *                 or null; forS null when its end isn't known (off a route, it runs past this road's end)
  *   bend          a bend ahead (engine/bend-live.mjs bendCue, from the Data Tap; v0.40.0): {state: 'open' (the inside
- *                 is open: moving over gains ground) | 'outside' (you're on the outside: stay close), side ('left' |
+ *                 is open: moving over gains ground) | 'outside' (you're on the outside, no way in) | 'inside' (on the
+ *                 inside already; v0.58.0, from your place on the road, so alone too), side ('left' |
  *                 'right', the bend's way), inS, moveM, gainM, lossM} or null; the same state two ticks running
  *   sCurve        a stretch ahead that twists enough to steer a shorter line (route-ahead.mjs curvyStretch, your route's
  *                 geometry; v0.51.0): {inS, turnDeg (over 100 m), s (bends both ways), dirt} or null; replaces bend
@@ -100,7 +101,7 @@ import {tuckState, TuckDrag} from './engine/supertuck.mjs';
  */
 export const TUCK_SOON = {windowS: 3, minGainKmhS: 0.2, soonS: 15};
 import {BendMap, lateralSituation, bendCue} from './engine/bend-live.mjs';
-import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, KEEP_GOING_M, lateralDepth}
+import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, SETTLED, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
 import {predictedCap, crowdingCue} from './engine/draft-live.mjs';
 import {featherCue, FeatherPick} from './engine/powerup-cue.mjs';
@@ -109,16 +110,54 @@ import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
 import {RideAwayWatch} from './ride-away.mjs';
 import {BridgeWatch, BridgeCoach} from './bridge.mjs';
+import {DropWatch} from './drop-watch.mjs';
 import {planBridge} from './bridge-plan.mjs';
 import {BIKE_LENGTH_M} from './ds-data.mjs';
 import {BurritoWatch} from './burrito.mjs';
 import {TeamHrWatch, isTeammate, teamTag} from './team-hr.mjs';
+import {aroundYou} from './outcome.mjs';
+
+const STEP_KEEP_S = 10;   // the way out of a block stays the same side this long
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
-import {remainingOnSurface} from './engine/road-map.mjs';
+import {remainingOnSurface, profileAheadOnMap, RoadTraffic} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
 import {riderModel} from './rider-model.mjs';
 
 const FEATHER_ROAD_M = 15000;   // the feather looks up the whole climb (or to the next arch): Alpe du Zwift is 12 km
+
+/*
+ * World z (cm) -> altitude (m), learned from your own state: Sauce's altitude is (z − seaLevel) / 100 × the world's
+ * slope scale (Watopia 0.5, New York 0.75, London 1), so two of your ticks ALT_FIT_DZ apart in z give it exactly. For
+ * the road's profile from Zwift's map (road-map.mjs profileAheadOnMap) when Sauce has no route: 2026-11-04 the map
+ * matched the road ridden within 0.22 m of rise per km (research/2026-11-04/map-profile.mjs).
+ */
+export const ALT_FIT_DZ = 200;
+export class AltitudeScale {
+    constructor() {
+        this.ref = null;
+        this.fit = null;
+    }
+
+    update(s) {
+        if (!s || !Number.isFinite(s.z) || !Number.isFinite(s.altitude) || s.portal) return;
+        if (this.ref && this.ref.courseId !== s.courseId) this.ref = this.fit = null;
+        if (!this.ref) {
+            this.ref = {z: s.z, alt: s.altitude, courseId: s.courseId};
+            return;
+        }
+        const dz = s.z - this.ref.z;
+        if (Math.abs(dz) >= ALT_FIT_DZ) {
+            const k = (s.altitude - this.ref.alt) / dz;
+            this.fit = {k, a: s.altitude - k * s.z};
+        }
+    }
+
+    /* z -> altitude, or null until you've climbed or descended a little on this course. */
+    zToAlt() {
+        const f = this.fit;
+        return f ? z => f.a + f.k * z : null;
+    }
+}
 
 export const SETTLING_NOTE = 'teleported: settling';
 export const COASTING_NOTE = 'coasting: draft only adds speed';
@@ -143,6 +182,8 @@ export function holdingStateOf(w, bandW, blocked, rel) {
     if (w < -bandW) return 'drifting';
     return 'hold';
 }
+
+export const THROUGH_S = 3;   // moving up through your group: your speed over theirs, averaged this long (calls.mjs THROUGH_KMH)
 
 export class MeterEngine {
     /*
@@ -173,6 +214,8 @@ export class MeterEngine {
         this.tuckDrag = new TuckDrag();             // your tucks this session (a camera change doesn't matter: own ticks only)
         this.bendMap = new BendMap();               // the road, learned from where every rider rode: kept across camera changes
         this.roadGaps = new RoadGaps();             // roads Sauce has no map for (its gaps all 0): kept across camera changes
+        this.altScale = new AltitudeScale();        // your z -> altitude (the map's road profile off a route)
+        this.roadTraffic = new RoadTraffic();       // where the riders went (the map's way at a junction off a route)
         this.gapSource = 'sauce';
         this.startRider();
     }
@@ -203,11 +246,13 @@ export class MeterEngine {
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
         this.rideAway = new RideAwayWatch();   // the group ahead leaves or splits: no "ease off" / "back off" then
         this.bridge = new BridgeWatch();       // you're closing on riders up the road: no gap advice to the wheel you caught
+        this.dropWatch = new DropWatch();      // you're losing the group you rode with (drop-watch.mjs): "losing the group"
         this.bridgeCoach = new BridgeCoach();  // the bridge call, while bridgeArmed (the window's Bridge button)
         this.teamHrWatch = new TeamHrWatch();     // a teammate in your race with no heart rate (pen and race)
         this.burritoWatch = new BurritoWatch();   // burritos fired in your event: the cone ahead, how many are still to come
         this.accel = null;    // {wt, kmh, a}: your acceleration (km/h per s, ~2 s), to time-align the passing cue's speeds
         this.gapFor = null;               // whose (a camera change starts it fresh)
+        this.throughPts = [];             // [{wt, d}]: you minus your group's speed (through())
         this.demand = new DemandMeter();  // the pack's demand: the ideal spot's power to hold your group, 30 s
         this.holding = new HoldingMeter();
         this.motion = new GroupMotion();
@@ -226,6 +271,25 @@ export class MeterEngine {
     }
 
     /* One tick: the meter rider's entry and their meters, or null with nobody to read. */
+    /* The side to step to: once called it stays through the block while it is free (STEP_KEEP_S after the last time asked). */
+    stepFor(entries, me) {
+        const wt = me.state.worldTime, was = this.stepWas;
+        const side = stepSide(entries, me, undefined, {keep: was && wt - was.wt <= STEP_KEEP_S * 1000 ? was.side : null});
+        this.stepWas = side ? {side, wt} : was;
+        return side;
+    }
+
+    /* Your speed over your group's, km/h, averaged over THROUGH_S (null when there's nothing to compare: it starts over). */
+    through(wt, d) {
+        if (!Number.isFinite(d) || !Number.isFinite(wt)) {
+            this.throughPts = [];
+            return null;
+        }
+        this.throughPts.push({wt, d});
+        while (this.throughPts.length && this.throughPts[0].wt < wt - THROUGH_S * 1000) this.throughPts.shift();
+        return this.throughPts.reduce((a, x) => a + x.d, 0) / this.throughPts.length;
+    }
+
     update(all) {
         if (!Array.isArray(all)) return null;
         const me = meterRider(all);
@@ -244,6 +308,7 @@ export class MeterEngine {
             this.gapWatch.reset();
             this.rideAway.reset();
             this.bridge.reset();
+            this.dropWatch.reset();
             this.position.reset();
             this.posQuietWt = null;
             this.posGapOn = false;
@@ -261,6 +326,9 @@ export class MeterEngine {
         // shown 3.1 m because a rider half a lane over was 0.4 m ahead; 110 of 350 "back off" ticks were on another rider)
         const L = inline ? {...layoutL, gapAhead: inline.gap} : layoutL;
         const settling = this.teleport.settling(me.athleteId, {wt: s.worldTime, x: s.x, y: s.y, v});
+        // moving up through your group (calls.mjs THROUGH_KMH, v0.57.0): you minus your group's median speed, km/h, over
+        // THROUGH_S; none alone, in a pair or while settling
+        const throughKmh = this.through(s.worldTime, !settling && L.size >= 3 && Number.isFinite(L.vGroup) ? (v - L.vGroup) * 3.6 : null);
         this.bendMap.ingest(all);
 
         const noDraft = noDraftSpot(this.draftClass, {ahead, L, layout, entries, me, maxGapM: GAP_MAX_M});
@@ -296,8 +364,11 @@ export class MeterEngine {
         if (settling) this.bridge.reset();
         const upRoad = settling ? null : this.bridge.update(entries, me, s.worldTime);
         const bridging = upRoad && upRoad.closing ? upRoad : null;
+        // losing the group you rode with (v0.58.0): watched on after you're out of it, unlike GapWatch and ride-away
+        if (settling) this.dropWatch.reset();
+        const drop = settling ? null : this.dropWatch.update(entries, me, s.worldTime);
         const pos = this.readPosition(s, spot, L, settling, power, noDraft.spot, away && away.state === 'shatter' ? {which: 'shatter'} :
-            gapping || (away && {which: 'group', mps: away.mps}) || (bridging && {which: 'bridge', ...bridging}));
+            gapping || (away && {which: 'group', mps: away.mps}) || (drop && {which: 'drop', ...drop}) || (bridging && {which: 'bridge', ...bridging}));
         if (settling) this.block.reset();
         const blkRead = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
                                        massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
@@ -305,9 +376,9 @@ export class MeterEngine {
                                        behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
                                        powerUp: s.activePowerUp, coffee: s.coffeeStop});
         // the measured loss stays (blockedW); only the cue goes while they ride away
-        const blk = (away || bridging) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
+        const blk = (away || drop || bridging) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
         const holdRead = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
-        const hold = (away || bridging) && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
+        const hold = (away || drop || bridging) && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
         const ac = this.accel, dtAc = ac && Number.isFinite(s.worldTime) ? (s.worldTime - ac.wt) / 1000 : null;
         const accelKmhS = dtAc > 0 && dtAc < 5 ? ac.a + (1 - Math.exp(-dtAc / 2)) * (((s.speed || 0) - ac.kmh) / dtAc - ac.a) : ac ? ac.a : 0;
         if (!ac || dtAc !== 0) this.accel = {wt: s.worldTime, kmh: s.speed || 0, a: dtAc > 0 && dtAc < 5 ? accelKmhS : 0};
@@ -346,21 +417,39 @@ export class MeterEngine {
             power: !ok ? (pc ? pc.power : power) : pc.power + (1 - Math.exp(-dtA / 60)) * (power - pc.power),
         };
         const vA = this.pace.vFlat ?? v;
-        let roadAhead = null, aheadFrom = null;
+        // the road ahead: your route (Sauce's), else Zwift's map along this road (or the route's sections), else the road
+        // learned from the riders ahead. aheadOpen: the road past its end is unknown (the riders' road stops where they
+        // are; the map's at a junction off a route), so its end is no climb's top (powerup-cue.mjs topUnseen)
+        let roadAhead = null, aheadFrom = null, aheadOpen = false;
+        const speedsOf = pts => withSpeeds(pts, {vFlat: vA, power: this.pace.power, massKg: model.massKg, cda: model.cda,
+                                                 crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
+        const sections = this.routeAhead ? this.routeAhead.sections(s) : null;
+        const zToAlt = me.self ? (this.altScale.update(s), this.altScale.zToAlt()) : null;
+        // off a route, at a junction the way most riders ahead went (your subgroup in an event)
+        if (me.self) this.roadTraffic.update(entries, me);
+        const traffic = this.roadTraffic.on(s.courseId);
+        const onMap = maxM => (this.roadMap && zToAlt ? profileAheadOnMap(this.roadMap, s, maxM, zToAlt, {route: sections, traffic}) : null);
         if (me.self) {
             const route = this.routeAhead ? this.routeAhead.ahead(s, 3000) : null;
+            const map = route && route.length >= 4 ? null : onMap(3000);
             if (route && route.length >= 4) {
-                roadAhead = withSpeeds(route, {vFlat: vA, power: this.pace.power, massKg: model.massKg, cda: model.cda,
-                                           crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
+                roadAhead = speedsOf(route);
                 aheadFrom = 'route';
+            } else if (map && map.pts.length >= 4) {
+                roadAhead = speedsOf(map.pts);
+                aheadFrom = 'map';
+                aheadOpen = map.open;
             } else {
-                const road = this.bendMap.roadAhead(s, 800, this.routeAhead ? this.routeAhead.sections(s) : null);
+                const road = this.bendMap.roadAhead(s, 800, sections);
                 if (road && road.pts && road.pts.length) {
                     roadAhead = road.pts;
                     aheadFrom = 'riders';
+                    aheadOpen = true;
                 }
             }
         }
+        // the route's and the map's speeds are already yours (withSpeeds); the riders' are rescaled by the coaches
+        const exactAhead = aheadFrom === 'route' || aheadFrom === 'map';
         // your FRC balance (the sprint coach plans the finish on it)
         let frc = null;
         const fit = me.self ? this.fitnessFor(me) || {} : {};
@@ -400,7 +489,7 @@ export class MeterEngine {
             v, power, held, bike: base.bike, toLineS,
             group: {size: L.size, ahead: L.ahead, vGroup: L.vGroup}, wheels: sprintWheels(entries, me),
             canSteer: !!s.canSteer, q: draftQ, closer: fastCloser(entries, me), frc, ftpW: fit.ftpW, model: easeModel,
-            settled: me.remaining < KEEP_GOING_M * 2 && sprintSettled(entries, me, me.remaining),
+            settled: me.remaining < SETTLED.fromM && this.gapSource !== 'none' && sprintSettled(entries, me, me.remaining),
             settledFtp: settledFtp(me.remaining, me.remainingMetric === 'distance' && me.remaining < KEEP_GOING_M * 2)});
         // an intermediate sprint on the race card: the same ease calls (the finish's own calls win)
         const line = settling || !me.self || !this.raceCards ? null : this.raceCards.sprintLine(s);
@@ -412,8 +501,8 @@ export class MeterEngine {
             // the coach rescales the speeds ahead by v / (speed at the first point): right for the riders' speeds, but
             // the route's are already yours, so v = that first speed (scale 1). With your flat speed instead, a ramp
             // right ahead doubled the scale and halved the seconds (Urumaze 2026-10-06: 149 -> 72 s in 2 s).
-            this.moveUpCoach.update({profile: roadAhead, v: aheadFrom === 'route' && roadAhead[0] ? roadAhead[0].v : vA,
-                                     grade: s.grade || 0, group: L, exactFoot: aheadFrom === 'route'});
+            this.moveUpCoach.update({profile: roadAhead, v: exactAhead && roadAhead[0] ? roadAhead[0].v : vA,
+                                     grade: s.grade || 0, group: L, exactFoot: exactAhead});
         // no draft at all on a wheel: a TT bike, whatever the settings say, and a TT frame can't supertuck (2026-10-30:
         // "pedal on" on the Hanzo, the bike setting not TT)
         const tuckIn = {kmh: s.speed, grade: s.grade, power, draft: s.draft || 0, bike: draftless ? 'tt' : base.bike,
@@ -438,7 +527,7 @@ export class MeterEngine {
             quiet: !!(climb && climb.state) || finale || !!s.activePowerUp});
         // the race card for this route (yours only, in an event)
         const cardCall = settling || !me.self || !this.raceCards ? null :
-            this.raceCards.call(s, {held, v, tt});
+            this.raceCards.call(s, {held, v, tt, riders: entries});
         // ride warnings (yours only): the surface here and ahead, the climb's pacing, your reserve
         const vAhead = this.pace.vFlat ?? v;
         const crrOf = id => {
@@ -460,7 +549,7 @@ export class MeterEngine {
         let pacing = null;
         const climbedS = me.self ? this.climbClock.update(s.worldTime, s.grade || 0) : 0;
         if (me.self && !settling && roadAhead) {
-            const pv = aheadFrom === 'route' && roadAhead[0] ? roadAhead[0].v : vAhead;   // no rescale on the route's speeds
+            const pv = exactAhead && roadAhead[0] ? roadAhead[0].v : vAhead;   // no rescale on the route's / map's speeds
             const pc = pacingCue({profile: roadAhead, v: pv, grade: s.grade || 0, climbedS});
             if (pc.state === 'ready') {
                 const st = (climbAhead(roadAhead, {vNow: pv, grade: s.grade || 0}) || {}).steep;
@@ -471,7 +560,7 @@ export class MeterEngine {
                 pacing = {state: 'top', inS: secsAlong(roadAhead, pc.crestM, vAhead)};
             }
         }
-        // a bend ahead (yours only): take the inside when it pays, stay close on the outside (bend-live.mjs bendCue)
+        // a bend ahead (yours only): take the inside when it pays (bend-live.mjs bendCue)
         let bend = null;
         const self3 = this.bendMap.self;
         if (me.self && !settling && v > 5 && self3.length >= 3) {
@@ -482,7 +571,7 @@ export class MeterEngine {
                 let turn = Math.atan2(p2.y - p1.y, p2.x - p1.x) - Math.atan2(p1.y - p0.y, p1.x - p0.x);
                 turn = Math.atan2(Math.sin(turn), Math.cos(turn));
                 const b = this.bendMap.nextBend(s, 200, undefined, this.routeAhead ? this.routeAhead.sections(s) : null);
-                const lat = b ? lateralSituation(entries, me, dir, Math.sign(b.angleDeg), turn / ((L0 + L1) / 200)) : null;
+                const lat = b ? lateralSituation(entries, me, dir, Math.sign(b.angleDeg), turn / ((L0 + L1) / 200), {right: b.right}) : null;
                 const cue = bendCue(b, lat, {v, q: draftQ ?? 0, cap: cap ?? 0.14, cda: model.cda,
                                              fRollN: model.crr * model.massKg * 9.80665});
                 const key = cue.state ? `${cue.state}-${b.right ? 'right' : 'left'}` : null;
@@ -509,16 +598,20 @@ export class MeterEngine {
         }
         // the feather you hold: at the steepest 30 s ahead
         // up the whole climb (to the next arch at most): the route's profile further than the 3 km above (Alpe du Zwift 12 km)
-        let featherRoad = roadAhead;
+        // the map's off a route (2026-11-04: no route for the event; the riders' road ended 650 m up a 6.8 km climb)
+        let featherRoad = roadAhead, featherOpen = aheadOpen;
         if (me.self && !settling && held === 'LIGHTNESS' && aheadFrom === 'route') {
             const far = this.routeAhead.ahead(s, FEATHER_ROAD_M);
-            if (far && far.length >= 4) {
-                featherRoad = withSpeeds(far, {vFlat: vA, power: this.pace.power, massKg: model.massKg, cda: model.cda,
-                                               crr: model.crr, bodyKg: me.athlete?.weight, vNow: v});
+            if (far && far.length >= 4) featherRoad = speedsOf(far);
+        } else if (me.self && !settling && held === 'LIGHTNESS' && aheadFrom === 'map') {
+            const far = onMap(FEATHER_ROAD_M);
+            if (far && far.pts.length >= 4) {
+                featherRoad = speedsOf(far.pts);
+                featherOpen = far.open;
             }
         }
         const fc0 = me.self && !settling && featherRoad && held === 'LIGHTNESS' ?
-            featherCue({held, profile: featherRoad, v, grade: s.grade || 0,
+            featherCue({held, profile: featherRoad, v, grade: s.grade || 0, open: featherOpen,
                         archM: this.raceCards ? this.raceCards.nextArch(s, {tt}) : null}) : null;
         const fc = this.featherPick.update(fc0, {odoM: s.distance, v});
         // 'wait' too (no call): a steeper part is still ahead, so the finish's "FEATHER at jump" stays quiet (ds-data)
@@ -532,6 +625,12 @@ export class MeterEngine {
             gapM: inline ? inline.gap : null,
             gapApprox: !!(inline && (inline.gapSource === 'distance' || this.gapSource === 'road')),
             gapSource: this.gapSource,
+            around: me.self ? aroundYou(entries, me) : [],   // outcome.mjs: did the call work?
+            passRiderId: pass.defend?.rider?.athleteId ?? null,
+            powerW: power,
+            steering: !!s.activeSteer,
+            canSteer: s.canSteer !== false,
+            lane: (s.roadPosition ?? 0) / UNIT_PER_M * (s.reverse ? -1 : 1),   // m toward your right along the road's width
             noDraftWheel,
             sideM,
             beside: !!(wheel && !inline),
@@ -552,7 +651,7 @@ export class MeterEngine {
             passAtWheel: !!pass.attack?.atWheel,
             passWide: !!pass.attack && Math.abs(pass.attack.latM ?? 0) >= WIDE_M,
             blockedSide: !settling && L.size >= 2 && blk.blocked && blk.beside ? blk.beside.side : null,
-            blockedStep: !settling && L.size >= 2 && blk.blocked && !blk.beside ? stepSide(entries, me) : null,
+            blockedStep: !settling && L.size >= 2 && blk.blocked && !blk.beside ? this.stepFor(entries, me) : null,
             surface,
             tuck: tuck && {...tuck, race: this.raceFor(me) ?? null, drag: this.tuckDrag.result()},
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
@@ -563,8 +662,10 @@ export class MeterEngine {
             teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
             card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
-                              power: cardCall.power || null, held: cardCall.held || null, note: cardCall.note || null,
-                              inS: Number.isFinite(cardCall.toM) && cardCall.toM > 0 ? secsAlong(roadAhead, cardCall.toM, this.pace.vFlat ?? v) : null,
+                              power: cardCall.power || null, held: cardCall.held || null, note: cardCall.note || null, say: cardCall.say || null,
+                              // a call that knows its own seconds (a standing start: you're stopped, so meters can't say)
+                              inS: Number.isFinite(cardCall.inS) ? cardCall.inS :
+                                  Number.isFinite(cardCall.toM) && cardCall.toM > 0 ? secsAlong(roadAhead, cardCall.toM, this.pace.vFlat ?? v) : null,
                               endS: Number.isFinite(cardCall.toEndM) && cardCall.toEndM > 0 ? secsAlong(roadAhead, cardCall.toEndM, this.pace.vFlat ?? v) : null,
                               priority: cardCall.priority, state: cardCall.state} : null,
             sprint: !(finish && finish.state) && inter && inter.state ? {state: inter.state, priority: inter.priority, held: null,
@@ -587,6 +688,7 @@ export class MeterEngine {
             // state codes for the data object (ds-data.mjs buildData; docs/DS-DATA.md)
             positionState: pos.state,
             demandW,
+            throughKmh,
             demandFtpW: (me.self ? (this.fitnessFor(me) || {}).ftpW : null) || (me.athlete && me.athlete.ftp) || null,
             packState: settling ? 'settling' : packCostState(sit, L),
             holdingState: hold.state,
@@ -608,6 +710,10 @@ export class MeterEngine {
             if (gapping.which === 'bridge') {
                 return {w: L.size < 2 ? null : w, state: 'bridging',
                         note: `bridging: ${gapping.riders} rider${gapping.riders === 1 ? '' : 's'} ${Math.round(gapping.aheadM)} m up the road, closing ${gapping.closeMps.toFixed(1)} m/s`};
+            }
+            if (gapping.which === 'drop') {
+                return {w: L.size < 2 ? null : w, state: 'dropping',
+                        note: `losing the group: ${Math.round(gapping.gapM)} m behind ${gapping.riders === 1 ? 'your wheel' : 'them'} and growing: close it now`};
             }
             if (gapping.which === 'shatter') {
                 return {w: L.size < 2 ? null : w, state: 'shatter', note: 'group shattering: the riders ahead are splitting up. Do what you can: hold the front part, or the group you can'};

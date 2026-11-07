@@ -321,11 +321,20 @@ export function fastCloser(entries, me) {
  * pedaling (you slow by SETTLED.coastMs2) and they find SETTLED.kickKmh more than now, and you can't reach the rider
  * ahead with SETTLED.kickKmh more yourself. 2026-10-18 group ride: clear at 159 m, a rider 11 m back at −9 km/h and
  * "keep going" from 97 m to the line; settled from 144 m.
+ * fromM: the finish's settled check runs from this far out (KEEP_GOING_M × 2, as before v0.56.1). Not further: only
+ * riders on your road are checked, and on unmapped roads only within 300 m (road-gaps.mjs), so far out a group behind
+ * can be out of sight (2026-11-05 replay: a false all-clear at 731 m).
+ * rangeM: no longer a cut (v0.56.1: riders beyond 80 m were left out, which would call a 400 m run-in safe with a
+ * group 100 m back, 2026-11-05); every rider on your road is checked, and the physics leaves out the far ones. Kept
+ * for research/2026-10-18/sprint-settled.mjs.
  */
-export const SETTLED = {kickKmh: 5, coastMs2: 0.35, minGapM: 3, rangeM: 80};
+export const SETTLED = {kickKmh: 5, coastMs2: 0.35, minGapM: 3, rangeM: 80, fromM: 400};
+
+/* Metres you lose to your own speed over T s, slowing at a m/s² from v m/s: ½aT², or all of it once you'd stop. */
+const lostM = (v, a, T) => (a > 0 && T > v / a ? v * T - v * v / (2 * a) : 0.5 * a * T * T);
 
 /*
- * true when no place within SETTLED.rangeM can change before the line, toLineM away. Options (the ease-to-FTP tier):
+ * true when no place can change before the line, toLineM away. Options (the ease-to-FTP tier):
  * decelMs2 = how fast you slow (default: coasting, SETTLED.coastMs2), kickKmh = what a rider behind finds, a number or
  * a function of the seconds to the line (default SETTLED.kickKmh). Your own reach to a rider ahead keeps kickKmh 5.
  */
@@ -335,14 +344,15 @@ export function sprintSettled(entries, me, toLineM, {decelMs2 = SETTLED.coastMs2
     const T = toLineM / Math.max((s.speed || 0) / 3.6, 4);
     const kick = (typeof kickKmh === 'function' ? kickKmh(T) : kickKmh) / 3.6;
     const myKick = SETTLED.kickKmh / 3.6;
+    const lost = lostM((s.speed || 0) / 3.6, decelMs2, T);
     for (const o of entries || []) {
         const t = o.state;
         if (o === me || !t || t.roadId !== s.roadId || !!t.reverse !== !!s.reverse) continue;
         const g = gapBetween(me, o).gap;   // + = ahead of you
-        if (!Number.isFinite(g) || Math.abs(g) > SETTLED.rangeM) continue;
+        if (!Number.isFinite(g)) continue;   // too far to tell (road-gaps.mjs past 300 m); "not known yet" is the caller's
         const close = ((t.speed || 0) - (s.speed || 0)) / 3.6;   // m/s, + = they are faster
         if (g <= 0) {
-            const reach = (close + kick) * T + 0.5 * decelMs2 * T * T;
+            const reach = (close + kick) * T + lost;
             if (-g < Math.max(SETTLED.minGapM, reach)) return false;
         } else if ((myKick - close) * T >= g) {
             return false;
@@ -543,8 +553,22 @@ export function shakeSide(w, q = null) {
  */
 export const EASE_FTP_OVER = 1.15;
 export const EASE_MIN_S = 3;
-export function easeCall({jumped, power = 0, ftpW, peak = 0, settled, settledFtp, secsToLine = Infinity, where = 'Your place'}) {
-    if (!jumped || !(secsToLine >= EASE_MIN_S)) return null;
+/*
+ * The all-clear without a jump (the user, 2026-11-05, finishing alone: "the call that tells me that the finish order is
+ * fixed and I can coast to the finish" never came: easeCall needed a jump). noJump (the finish only): settled even if
+ * you coast, while you still pedal (CLEAR_FTP × FTP, or CLEAR_W without one) -> 'clear', "you can coast".
+ */
+export const CLEAR_FTP = 0.5;
+export const CLEAR_W = 100;
+export function easeCall({jumped, power = 0, ftpW, peak = 0, settled, settledFtp, secsToLine = Infinity, where = 'Your place',
+                          noJump = false}) {
+    if (!(secsToLine >= EASE_MIN_S)) return null;
+    if (!jumped) {
+        if (noJump && settled && power > (ftpW > 0 ? CLEAR_FTP * ftpW : CLEAR_W)) {
+            return {id: 'sprint', state: 'clear', priority: SPRINT_PRIORITY.ease, text: `${where} is safe: you can coast to the line`};
+        }
+        return null;
+    }
     if (settled && power > (ftpW > 0 ? 0.9 * ftpW : KEEP_GOING_RATIO * peak)) {
         return {id: 'sprint', state: 'ease', priority: SPRINT_PRIORITY.ease, text: `${where} is safe: ease off`};
     }
@@ -613,15 +637,16 @@ export class SprintCoach {
         this.peak = 0;
     }
 
-    /* x: {wt, remaining, remainingMetric, remainingType, v, power, held, bike, toLineS (seconds along the road ahead),
+    /* x: {wt, remaining, remainingMetric, remainingType, v, power, held, toLineS (seconds along the road ahead),
      *     group: {size, ahead, vGroup}, wheels (sprintWheels), canSteer, q,
      *     closer (fastCloser), frc ({leftJ}, your FRC balance) + ftpW (for sprintBudget), model ({cda, crr, massKg}: wheelJump), settled (sprintSettled: no place can change, so no "dig in" / "keep going")}
      * Events only: Sauce's remaining is also the end of your route in a free ride ('route'), and after a group ride on
-     * the same course the finish calls came round again (2026-10-23). On a TT bike no power-up calls: TT bikes lose the
-     * power-up at the next arch while Sauce still shows the one picked up ("use AERO", with no AERO, the same ride). */
+     * the same course the finish calls came round again (2026-10-23). Power-up calls on any bike (the user, 2026-10-26: "if
+     * we have a power up yes the call should come": AERO on a TT bike cut the drag 0.25 -> 0.17). A TT bike loses it at
+     * the next arch and Sauce may go on showing it (seen once, 2026-10-23, not recorded): at worst a call for nothing. */
     update(x) {
         const {wt, remaining, v, power = 0} = x;
-        const held = x.bike === 'tt' ? null : x.held;
+        const held = x.held;
         const dt = this.lastWt != null && wt > this.lastWt ? Math.min(3, (wt - this.lastWt) / 1000) : 0;
         if (wt != null) this.lastWt = wt;
         if (this.avgP == null) this.avgP = power;
@@ -697,9 +722,9 @@ export class SprintCoach {
             return {id: 'sprint', state: 'closer', priority: SPRINT_PRIORITY.closer,
                     text: `Rider coming fast behind (+${x.closer.closeKmh.toFixed(0)} km/h): dig in`};
         }
-        // after your jump, no place can change any more: ease off / ease to FTP (easeCall)
+        // no place can change any more: after your jump ease off / ease to FTP; without one, the all-clear (easeCall noJump)
         const ease = easeCall({jumped: this.jumped, power, ftpW: x.ftpW, peak: this.peak, settled: x.settled, settledFtp: x.settledFtp,
-                               secsToLine: remaining / Math.max(v || 0, 4)});
+                               secsToLine: remaining / Math.max(v || 0, 4), noJump: true});
         if (ease) return ease;
         // easing off before the line after your jump: a reminder (you may be giving it away on purpose)
         if (this.jumped && !x.settled && remaining <= KEEP_GOING_M && this.peak > 0 && power < KEEP_GOING_RATIO * this.peak &&

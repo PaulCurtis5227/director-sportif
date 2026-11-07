@@ -155,8 +155,13 @@ export function positionAdvice(w, best, L, boxed, fmt = (x, d) => x.toFixed(d), 
  * Requiring your wheel at your speed too (±5 km/h, or not 5+ faster) dropped ~20 real gaps of 64: a wheel pulling
  * away from you is mostly you being gapped (a surge), so it stays in. Returns
  * {holeM, rateMs, which: 'wheel' | 'next', beyond (riders ahead of the hole)} or null.
+ * v0.70.11 / DS v0.57.1 (the user, 2026-11-05: "tune the gap opening calls", after "stop telling me to do the wrong
+ * thing"; research/2026-11-05/gap-opening.mjs, 9 rides, the outcome 15 s on): the hole 8 m (was 6), and no gap opening
+ * while you already close on the rider beyond it (closeKmh+ faster) or move up through the group (throughKmh+ faster
+ * than the median of the riders within nearM): those calls tell you what you're doing. 0.21 -> 0.16 calls a minute,
+ * right 59% -> 68% (right = the rider beyond the hole, still seen 15 s on, is 8+ m further away, or you put power in and closed it).
  */
-export const GAP_OPENING = {wheelM: 4, holeM: 6, rateMs: 1.0, lookS: 4, chainM: 25, holdS: 6, minKmh: 5};
+export const GAP_OPENING = {wheelM: 4, holeM: 8, rateMs: 1.0, lookS: 4, chainM: 25, holdS: 6, minKmh: 5, closeKmh: 1, throughKmh: 1, nearM: 40};
 
 export class GapWatch {
     constructor() {
@@ -173,14 +178,17 @@ export class GapWatch {
     update(entries, me, now) {
         const s = me && me.state;
         if (!s) return null;
-        const ahead = [];
+        const ahead = [], near = [];
         for (const o of entries || []) {
             const t = o.state;
             if (o === me || !t || t.roadId !== s.roadId || !!t.reverse !== !!s.reverse) continue;
             if (s.eventSubgroupId && t.eventSubgroupId !== s.eventSubgroupId) continue;
             const g = gapBetween(me, o).gap;
-            if (Number.isFinite(g) && g > 0.3 && g < 150) ahead.push({id: o.athleteId, g});
+            if (Number.isFinite(g) && g > 0.3 && g < 150) ahead.push({id: o.athleteId, g, v: t.speed || 0});
+            if (Number.isFinite(g) && Math.abs(g) <= GAP_OPENING.nearM) near.push(t.speed || 0);
         }
+        near.sort((a, b) => a - b);
+        const through = near.length >= 2 && (s.speed || 0) - near[near.length >> 1] >= GAP_OPENING.throughKmh;
         ahead.sort((a, b) => a.g - b.g);
         this.hist.push({t: now, gaps: new Map(ahead.map(a => [a.id, a.g]))});
         while (this.hist.length && this.hist[0].t < now - (GAP_OPENING.lookS + 2) * 1000) this.hist.shift();
@@ -194,11 +202,12 @@ export class GapWatch {
         }
         let found = null;
         const old = this.hist.find(h => h.t >= now - GAP_OPENING.lookS * 1000);
-        if ((s.speed || 0) >= GAP_OPENING.minKmh && chain.length >= 2 && chain[0].g <= GAP_OPENING.wheelM && old && now - old.t >= 2000) {
+        if (!through && (s.speed || 0) >= GAP_OPENING.minKmh && chain.length >= 2 && chain[0].g <= GAP_OPENING.wheelM && old && now - old.t >= 2000) {
             for (let i = 0; i < Math.min(chain.length - 1, 2) && !found; i++) {
                 const hole = chain[i + 1].g - chain[i].g;
                 const a = old.gaps.get(chain[i].id), b = old.gaps.get(chain[i + 1].id);
                 if (hole < GAP_OPENING.holeM || a == null || b == null) continue;
+                if ((s.speed || 0) - chain[i + 1].v >= GAP_OPENING.closeKmh) continue;   // you're closing it already
                 const rate = (hole - (b - a)) / ((now - old.t) / 1000);
                 if (rate >= GAP_OPENING.rateMs) {
                     found = {holeM: hole, rateMs: rate, which: i === 0 ? 'wheel' : 'next', beyond: chain.length - i - 1};

@@ -25,7 +25,18 @@
  * against the latlng track: 579/579 turns on the Innsbruck race, 1803/1803 on a Watopia group ride). All
  * geometry here is in x/y; only the words
  * shown to the rider are flipped.
+ *
+ * v0.71.0 (EM; DS v0.58.0, the user, 2026-11-06: "Why does it have a rider limit? In a TT I might be alone", and the
+ * finish's two hairpins, a left then a right: ~1.2 m off the line the riders' innermost took through the left one, ~4 m
+ * lost; through the right one, in the sprint, on that line already):
+ * the inside is read from the ROAD (roadPosition against its edges, blocking.mjs ROAD_M), not only from the bunch, so a
+ * bend has an inside with nobody around, and the riders around you from the road too (aligned gaps + roadPosition, not
+ * x/y: what a capture keeps, so bends replay); the room to move in = up to the road's inside edge (ROAD_ROOM_MAX_M at most),
+ * less any rider beside you. Already within ALREADY_INSIDE_M of the inside edge: state 'inside' (nothing to steer).
  */
+import {ROAD_M} from './blocking.mjs';
+import {UNIT_PER_M} from './pack-cost.mjs';
+import {leads} from './wheels.mjs';
 
 export const BEND_BIN = 2500;          // roadCompletion units per spot (as surface-live.mjs)
 export const BEND_BINS = 1_000_000 / BEND_BIN;
@@ -33,7 +44,9 @@ export const BEND_LOOK_M = [15, 120];  // cue while the bend starts this far ahe
 export const BEND_MIN_DEG = 30;        // smaller bends aren't worth steering for
 export const BEND_MIN_GAIN_M = 1.0;    // …nor is less than this much road
 export const BEND_START_DEG = 5;       // the road has turned this much -> the bend has started
-export const INSIDE_MAX_M = 1.5;       // never suggest moving further than this
+export const INSIDE_MAX_M = 1.5;       // never suggest moving further than this (in a bunch, the road's edge not known)
+export const ROAD_ROOM_MAX_M = 3;      // with the road's edge known: up to it, at most this
+export const ALREADY_INSIDE_M = 0.5;   // this close to the inside edge: you're there
 export const BIKE_WIDTH_M = 0.6;       // lateral room you need beside a rider
 export const CORRIDOR_ALONG_M = [-2, 1];   // riders beside you (along-track m) block moving in
 export const OUTSIDE_M = 0.3;          // this far outside the local bunch centre counts as "on the outside"
@@ -339,52 +352,73 @@ export class BendMap {
  * snapshot; me: your entry; dir: your x/y direction (unit); kRadPerM: current road curvature (x/y sense)
  * for the sagitta correction. Returns {inside (m, + = inside of the bunch centre), room (m you can move
  * in without hitting a rider beside you), insideWheels [m inside of you, riders 1–6 m ahead],
- * wheelInside (m your own wheel sits inside of you, or null), riders}.
+ * wheelInside (m your own wheel sits inside of you, or null), riders, toEdge (m to the road's inside edge, or null)}.
+ * right (the bend's way as you ride, bend.right): with it, your place on the road counts too, so alone works (v0.71.0).
  */
-export function lateralSituation(entries, me, dir, sign, kRadPerM = 0) {
+export function lateralSituation(entries, me, dir, sign, kRadPerM = 0, {right = null} = {}) {
     const s = me.state;
-    const nrm = [-dir[1], dir[0]];
+    // the road: roadPosition + = your right on a road ridden forward, your left in reverse (CLAUDE.md)
+    const roadMode = right != null && Number.isFinite(s.roadPosition);
+    let toEdge = null, roadInside = null;
+    if (roadMode) {
+        const [lo, hi] = s.reverse ? ROAD_M.reverse : ROAD_M.forward;
+        const pos = s.roadPosition / UNIT_PER_M;
+        if (pos >= lo - 1 && pos <= hi + 1) {   // outside that: not a road we measured, no edges
+            const toRight = s.reverse ? pos - lo : hi - pos, toLeft = s.reverse ? hi - pos : pos - lo;
+            toEdge = Math.max(0, right ? toRight : toLeft);
+            roadInside = (hi - lo) / 2 - toEdge;   // + = inside of the road's middle
+        }
+    }
+    // the riders around you: {along (m, + = ahead), li (m, + = on the bend's inside of you)}. With the bend's way known
+    // (v0.71.0): from the road, along = aligned leads (wheels.mjs), across = roadPosition, the same frame as the step side
+    // (blocking.mjs) and what a capture keeps; else from x/y (your direction, sagitta-corrected).
     const rel = [];
+    const lead = roadMode ? leads(entries) : null, mine = lead ? lead.get(me) : null;
+    const flip = s.reverse ? -1 : 1, inward = right ? 1 : -1;
+    const nrm = [-dir[1], dir[0]];
     for (const o of entries) {
         const t = o && o.state;
-        if (!t || o === me || t.roadId !== s.roadId || !!t.reverse !== !!s.reverse || !Number.isFinite(t.x)) {
-            continue;
+        if (!t || o === me || t.roadId !== s.roadId || !!t.reverse !== !!s.reverse) continue;
+        let along, li;
+        if (roadMode) {
+            const x = lead.get(o);
+            if (x == null || mine == null || !Number.isFinite(t.roadPosition)) continue;
+            along = x - mine;
+            li = (t.roadPosition - s.roadPosition) / UNIT_PER_M * flip * inward;
+        } else {
+            if (!Number.isFinite(t.x)) continue;
+            const dx = (t.x - s.x) / 100;
+            const dy = (t.y - s.y) / 100;
+            along = dx * dir[0] + dy * dir[1];
+            li = (dx * nrm[0] + dy * nrm[1] - kRadPerM * along * along / 2) * sign;
         }
-        const dx = (t.x - s.x) / 100;
-        const dy = (t.y - s.y) / 100;
-        const along = dx * dir[0] + dy * dir[1];
-        if (Math.abs(along) > NEIGHBOUR_ALONG_M) {
-            continue;
-        }
-        const lat = dx * nrm[0] + dy * nrm[1] - kRadPerM * along * along / 2;
-        if (Math.abs(lat) < 8) {
-            rel.push({along, lat});
-        }
+        if (Math.abs(along) <= NEIGHBOUR_ALONG_M && Math.abs(li) < 8) rel.push({along, li});
     }
-    if (rel.length < 2) {
+    if (rel.length < 2 && toEdge == null) {
         return null;
     }
-    const myLat = -rel.reduce((a, z) => a + z.lat, 0) / rel.length;   // + = CCW side of the bunch centre
-    let room = INSIDE_MAX_M;
+    // your place: against the bunch's centre with 2+ riders around, else on the road
+    const myInside = rel.length >= 2 ? -rel.reduce((a, z) => a + z.li, 0) / rel.length : null;
+    let room = toEdge != null ? Math.min(toEdge, ROAD_ROOM_MAX_M) : INSIDE_MAX_M;
+    const wheelMax = (toEdge != null ? ROAD_ROOM_MAX_M : INSIDE_MAX_M) + 0.3;
     const wheels = [];
     let wheel = null;
     for (const z of rel) {
-        const li = z.lat * sign;
-        if (li > 0.05 && z.along > CORRIDOR_ALONG_M[0] && z.along < CORRIDOR_ALONG_M[1]) {
-            room = Math.min(room, li - BIKE_WIDTH_M);   // beside you: you'd bump into them
+        if (z.li > 0.05 && z.along > CORRIDOR_ALONG_M[0] && z.along < CORRIDOR_ALONG_M[1]) {
+            room = Math.min(room, z.li - BIKE_WIDTH_M);   // beside you: you'd bump into them
         }
         if (z.along >= CORRIDOR_ALONG_M[1] && z.along <= WHEEL_AHEAD_M) {
-            if (li > 0.3 && li <= INSIDE_MAX_M + 0.3) {
-                wheels.push(li);
+            if (z.li > 0.3 && z.li <= wheelMax) {
+                wheels.push(z.li);
             }
-            if (Math.abs(z.lat) <= 1.2 && (!wheel || Math.abs(z.lat) < Math.abs(wheel.lat))) {
-                wheel = {lat: z.lat, li};   // your wheel = the rider most directly in front
+            if (Math.abs(z.li) <= 1.2 && (!wheel || Math.abs(z.li) < Math.abs(wheel.li))) {
+                wheel = {li: z.li};   // your wheel = the rider most directly in front
             }
         }
     }
     room = Math.max(0, room);
-    return {inside: myLat * sign, room, insideWheels: wheels.filter(x => x <= room + 0.3).sort((a, b) => a - b),
-            wheelInside: wheel ? wheel.li : null, riders: rel.length};
+    return {inside: myInside != null ? myInside : roadInside, room, insideWheels: wheels.filter(x => x <= room + 0.3).sort((a, b) => a - b),
+            wheelInside: wheel ? wheel.li : null, riders: rel.length, toEdge};
 }
 
 /* Draft kept when you sit this far INSIDE the wheel in front in a bend (2026-09-27 + 09-29 bunch data;
@@ -406,7 +440,8 @@ export function insideDraftFactor(x) {
 }
 
 /*
- * The cue for one tick: {state: 'open'|'outside'|null, text, bend, gainM, lossM, moveM}.
+ * The cue for one tick: {state: 'open'|'outside'|'inside'|null, text, bend, gainM, lossM, moveM}. 'inside' (v0.71.0):
+ * you're already within ALREADY_INSIDE_M of the road's inside edge: nothing to steer.
  * `open` only when the ground gained beats the draft given up: gain = move × angle; the draft lost over
  * the bend is converted into metres at what a metre costs to win back at your current draft. Both scale
  * with speed², so the answer barely depends on speed — it depends on the bend's radius and on whether
@@ -424,12 +459,15 @@ export function bendCue(bend, lat, ctx = {}) {
     const rad = Math.abs(bend.angleDeg) * Math.PI / 180;
     const side = bend.right ? 'right' : 'left';
     const head = `${side === 'right' ? 'Right' : 'Left'} bend in ${Math.round(bend.startM)} m (${Math.round(Math.abs(bend.angleDeg))}°)`;
+    if (lat.toEdge != null && lat.toEdge <= ALREADY_INSIDE_M) {
+        return {state: 'inside', bend, gainM: 0, lossM: 0, moveM: 0, text: `${head}: you're on the inside already`};
+    }
     const pv2 = 0.5 * rho * v * v;
     const arcM = Math.max(10, bend.endM - bend.startM) + 10;
     const perMetreJ = 3 * Math.max(0.05, cda - q * cap) * pv2 + fRollN;
     let best = null;
     const moves = [...lat.insideWheels.map(x => ({x, onWheel: true})),
-                   ...[0.5, 1.0, lat.room].filter(x => x >= 0.3 && x <= lat.room).map(x => ({x, onWheel: false}))];
+                   ...[0.5, 1.0, 2.0, lat.room].filter(x => x >= 0.3 && x <= lat.room).map(x => ({x, onWheel: false}))];
     for (const m of moves) {
         const qNew = m.onWheel ? q : q * insideDraftFactor(m.x);
         const lostJ = Math.max(0, q - qNew) * cap * pv2 * arcM;

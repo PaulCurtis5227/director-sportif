@@ -16,7 +16,7 @@
  *   .refresh() -> look again (after an import)
  */
 
-import {loadIndex, loadCard, cardForRoute, cardCall, sprintLineAhead, nextArchM, itemKey, validateCard} from './engine/race-card.mjs';
+import {loadIndex, loadCard, readyCard, cardForRoute, cardCall, sprintLineAhead, nextArchM, itemKey, usableItem, hasNewerExtras, validateCard} from './engine/race-card.mjs';
 
 /* The cards to pick from: the shipped index's entries and the imported cards (entries carrying the card itself). */
 export function cardEntries(shipped = [], imported = []) {
@@ -27,16 +27,13 @@ export function cardEntries(shipped = [], imported = []) {
 /* An entry's card: an imported one is checked like a shipped one (race-card.mjs loadCard). */
 export async function loadEntry(fetchJSON, entry) {
     if (!entry.card) return loadCard(fetchJSON, entry);
-    const card = structuredClone(entry.card);
-    const errors = validateCard(card);
-    if (errors.length) throw new Error(`race card ${entry.id}: ${errors.join(', ')}`);
-    card.items.sort((a, b) => (a.km ?? Infinity) - (b.km ?? Infinity));
-    return card;
+    return readyCard(structuredClone(entry.card), entry.id);
 }
 
 /*
  * A card file's text, imported: [the new list, message]. The card must pass the mod's own check and name its route
  * (cards only speak on their route); one with the same id replaces the old one (a card re-made for the same race).
+ * The whole card is kept, items this version can't call too: updating the mod brings them back (race-card.mjs).
  */
 export function importCard(text, list = []) {
     let card;
@@ -49,15 +46,21 @@ export function importCard(text, list = []) {
     if (!card || !card.route) errors.push('no route');
     if (errors.length) throw new Error(`not a usable race card: ${errors.join(', ')}`);
     const kept = (list || []).filter(c => c.id !== card.id);
-    return [[...kept, card], `${kept.length < (list || []).length ? 'replaced' : 'imported'} ${card.name || card.id} (${card.route})`];
+    const skipped = card.items.filter(it => !usableItem(it)).length;
+    return [[...kept, card], `${kept.length < (list || []).length ? 'replaced' : 'imported'} ${card.name || card.id} (${card.route})` +
+                             (skipped ? `, ${skipped} item${skipped > 1 ? 's' : ''} skipped: needs a newer Director Sportif` :
+                              hasNewerExtras(card) ? ', some extras may go unused: a newer Director Sportif uses them' : '')];
 }
 
 export class RaceCards {
-    constructor({fetchJSON, routeName, planFor = () => ({}), imported = () => []}) {
+    /* segments: segment-live.mjs SegmentCards, for a free ride; leads() -> {leadS, turnLeadS}, how early to say a call. */
+    constructor({fetchJSON, routeName, planFor = () => ({}), imported = () => [], segments = null, leads = () => ({})}) {
         this.fetchJSON = fetchJSON;
         this.routeName = routeName;
         this.planFor = planFor;
         this.imported = imported;
+        this.segments = segments;
+        this.leads = leads;
         this.index = null;         // the shipped cards' index (loaded once)
         this.routeId = null;       // the route the card below is for
         this.card = null;          // the card for it, or null
@@ -66,6 +69,7 @@ export class RaceCards {
     /* Look for the card again on the next tick (an import or a removal). */
     refresh() {
         this.routeId = null;
+        if (this.segments) this.segments.refresh();
     }
 
     /* Load the index once and the card for this route (once per route). */
@@ -85,12 +89,13 @@ export class RaceCards {
             .catch(e => console.warn('race card', e));
     }
 
-    /* The card's call now (in an event only: its km are race distances), or null. */
-    call(s, {held = null, v = 0, tt = false} = {}) {
+    /* The card's call now, or null: by race distance in an event, by where the segment is on the road in a free ride. */
+    call(s, {held = null, v = 0, tt = false, riders = []} = {}) {
+        if (s && !s.eventSubgroupId && this.segments) return this.segments.call(s, {held, v, tt, riders, ...this.leads()});
         if (!s || !s.eventSubgroupId || s.routeId == null) return null;
         this.ensure(s.routeId);
         if (!this.card) return null;
-        const c = cardCall({card: this.card, plan: this.planFor(this.card.id) || {}, edM: s.eventDistance, v, held, tt});
+        const c = cardCall({card: this.card, plan: this.planFor(this.card.id) || {}, edM: s.eventDistance, v, held, tt, leadS: this.leads().leadS});
         return c && c.state ? c : null;
     }
 

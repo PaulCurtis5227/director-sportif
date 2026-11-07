@@ -12,13 +12,19 @@
  * a big bunch isn't yours). Bridging: you've closed on them by BRIDGE.closeMps+ over BRIDGE.windowS (their rearmost
  * rider, followed by id; aligned leads, wheels.mjs).
  *   new BridgeWatch().update(entries, me, wt) -> {holeM, aheadM (to their rearmost), closeMps (+ = closing; null until
- *   known), vGroup (their median speed, m/s), riders, closing (closeMps >= BRIDGE.closeMps)} or null with nobody up the road
+ *   known), vGroup (their median speed, m/s), riders, closing (closeMps >= BRIDGE.closeMps and you reach them within
+ *   BRIDGE.catchS)} or null with nobody up the road
+ * v0.58.0 (2026-11-06 Tour of Watopia stage 5: bridging + the 10 s after it muted the calls 45% of the race): a closing
+ * you won't finish within BRIDGE.catchS isn't a bridge (a small group drifting up on another, or gaps on a road Sauce has
+ * no map for). research/2026-11-06/bridge-quiet.mjs, 11 rides, 377 min: bridging 23% -> 11% of riding, the share that
+ * reached them (within 8 m in 30 s) 37% -> 64%; hard bridges (1.5+ m/s, made) 957 of 963 ticks kept. Closing speed alone
+ * (1.0 m/s: 12%, 42% made) does less.
  */
 import {leads} from './engine/wheels.mjs';
 import {BRIDGE_PLAN} from './bridge-plan.mjs';
 
 export const BRIDGE = {maxAheadM: 150, holeM: 8, holeFromM: 12, closeMps: 0.3, windowS: 10,
-                       groupM: 30};   // their group: riders up to 30 m beyond their rearmost
+                       groupM: 30, catchS: 30};   // their group: riders up to 30 m beyond their rearmost
 
 export class BridgeWatch {
     constructor() {
@@ -63,7 +69,7 @@ export class BridgeWatch {
             const closeMps = then != null ? (then - front.d) / dt : null;
             const group = ahead.filter(a => a.d >= front.d && a.d <= front.d + BRIDGE.groupM).map(a => a.v).sort((a, b) => a - b);
             out = {holeM: front.holeM, aheadM: front.d, closeMps, vGroup: group[group.length >> 1], riders: group.length,
-                   closing: closeMps != null && closeMps >= BRIDGE.closeMps};
+                   closing: closeMps != null && closeMps >= BRIDGE.closeMps && (BRIDGE.catchS == null || front.d / closeMps <= BRIDGE.catchS)};
         }
         this.last = out;
         return out;

@@ -25,7 +25,7 @@ Each shows a number, and a word under it when there's something to do ("back off
 - **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "step left", "step right" or "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
-- **Blocked**: watts lost pushing into the wheel ahead. On fast descents sitting close costs the most of all: ease off to 5 m or more.
+- **Blocked**: watts lost pushing into the wheel ahead, over the last 10 s; its word stops once you have eased or left the wheel. On fast descents sitting close costs the most of all: ease off to 4 m or more between wheels.
 - **Passing**: the closing speed when you creep up on a rider at the speed that gets you held, or one creeps up on you.
 - **Wheel gap**, **L/R**: to the wheel in front. Wheel gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
 - **Tuck**: the speed still needed for a supertuck; **Tuck drag**: your drag in the tuck against coasting.
@@ -41,17 +41,25 @@ Watt meters read 0 with nothing to read (alone); distance meters go blank.
 Each kind reaches you the way you pick in the settings: a chime (its own sound), your computer's voice, or both; the
 windows always show it. Times are in seconds, never meters.
 
-- **The pack**: "go harder", "go wide", "drop back" (your pass), "block left" / "block right" (in a race, a rider creeping up beside you),
+- **The pack**: "go harder", "drop back" (your pass), "block left" / "block right" (in a race, a rider creeping up beside you),
   "step left" / "step right" (blocked on the wheel: half a meter that way gets your watts back), "ease off" (blocked, no room).
 - **Climbs**: "climb in 90", "move up" 60–45 s before it, "hold spot" or "stay in line"; "steep in 20 for 30",
   "over top in 15". From your route: it works alone, from the start.
-- **The finish**: "top ten in 120", "get a wheel", "go first", "go wide", "dig in" (a rider closing fast), "keep
-  going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
+- **The finish**: "top ten in 120", "get a wheel", "last wheel, be ready", "jump in 20", "you can go", "dig in" (a rider
+  closing fast), "keep going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
   hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
-- **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "inside left in 6" when the
-  inside is open and moving over gains ground, "stay close" when you're on the outside of the bunch; "cut the S in 5" before
+- **Segment cards**: from a card with a plan (caffecter.com), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
+- **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "move left in 6" when the
+  inside is open and moving over gains ground (alone too, and in the finish), nothing when you're on the inside already; "cut the S in 5" before
   a stretch that twists enough for a steered line to pay (on your route: dirt S curves most, where the best line gains 4–6 m).
+- **Which calls you hear** is yours, call by call, on the Calls tab (a chime, the voice, both or neither). A fresh install
+  doesn't speak "ease off", "drop back", being passed or "group shattering": they stay on screen, and the Wheel gap tile
+  turns red when you push into the wheel ahead (green in the good seat, 2–3.5 m; yellow too close or drifting off).
+  While you move up through the group (1 km/h or more faster than it), the director never says "ease off" or "drop back".
+  Bends have their own timing: turn them on and you hear every one.
+- **Did it work?** After "step left / right", "block left / right" and "ease off" the word turns green with a high chime when it worked, magenta with a low chime when it did not. "Worked" means clear of the wheel (step, ease off), or the rider now in line behind you (block). You only get an answer if you tried: steered the way it said, or for ease off lowered your power. Turn the chime off in the Calls tab.
+- **One way at a time:** the line never sends you forward and back at once. The call goes first, then the meters in order, and a word pulling the other way stays off the line.
 - **Habits**, now and then: "use edge", "sit in", "get in line", "ease off", "give room" (under a meter off the wheel).
 
 On a bike that gets no draft (a TT bike in a group ride, or any bike in a time trial) the pack calls go quiet by
@@ -97,8 +105,8 @@ that window is closed.
 ## Recording
 
 Record (or record every event, or all the time) saves your ride to your Downloads folder as
-`ds-capture-<date>.ndjson.gz`: you in full, other riders only as positions and draft under random ids, never their
-names, power or heart rate. What's in it and the format: [`docs/RECORDING.md`](docs/RECORDING.md). The file stays on your
+`ds-capture-<date>.ndjson.gz`: you in full, other riders as positions, draft, power, weight and height under random
+ids, never their names, Zwift ids, heart rate or FTP. What's in it and the format: [`docs/RECORDING.md`](docs/RECORDING.md). The file stays on your
 computer unless you take it somewhere, for example to [caffecter.com](https://caffecter.com/report.html) for a ride report.
 
 With **Record every event** on, each event gets its own file, even when you pressed Record in the warm-up: that file

@@ -52,6 +52,7 @@ export const BLOCK_WINDOW_S = 10;   // what the lost watts are averaged over
 export const FAST_DESCENT_CLOSE_M = 5.5;  // spikes count only this close to the wheel in line (further back: the draft swinging; any speed since v0.70.1)
 export const BLOCK_CUE_W = 10;      // the cue: this many watts lost over the window...
 export const BLOCK_CUE_N = 2;       // ...in at least this many spike ticks
+const BLOCK_FRESH_S = 4;   // the cue ends this long after the last spike (spikes are 25-33% of ticks while held)
 export const BESIDE_ALONG_M = 1;    // a rider overlapping you along the road (wheels level within a meter)...
 export const BESIDE_LAT_M = [0.4, 1.5];   // ...and this far to the side: beside you, not in your line...
 export const PASS_KMH = 0.5;        // ...while you are this much faster than them...
@@ -104,6 +105,7 @@ export class BlockWatch {
         this.spikes = [];   // {wt, lostJ}
         this.lastWt = null;
         this.beside = null;
+        this.close = false;
     }
 
     /*
@@ -124,6 +126,9 @@ export class BlockWatch {
         const a = this.last;
         if (a && !(tick.wt > a.wt)) return this.read(tick.wt, null);
         this.beside = tick.beside || null;
+        // anywhere (v0.70.1): only close to the wheel, a rider just ahead, or alongside is a spike the cost of where you are
+        const close = !!tick.beside || tick.ahead3 > 0 || (Number.isFinite(tick.wheelGapM) && tick.wheelGapM < FAST_DESCENT_CLOSE_M);
+        this.close = close;
         this.last = {wt: tick.wt, v: tick.v, alt: tick.alt, p: Math.max(0, tick.power || 0), d: tick.draft || 0, tick};
         if (this.lastWt == null) this.lastWt = tick.wt;
         const dt = a ? (tick.wt - a.wt) / 1000 : null;
@@ -137,8 +142,6 @@ export class BlockWatch {
         const res = (a.p + this.last.p) / 2 + (a.d + this.last.d) / 2 -
             0.5 * RHO * (e0.cda * a.v ** 3 + e1.cda * tick.v ** 3) / 2 - G * (e0.crr * e0.m * a.v + e1.crr * e1.m * tick.v) / 2 -
             (0.5 * m * (tick.v ** 2 - a.v ** 2) + m * G * (tick.alt - a.alt)) / dt;
-        // anywhere (v0.70.1): only close to the wheel, a rider just ahead, or alongside is a spike the cost of where you are
-        const close = !!tick.beside || tick.ahead3 > 0 || (Number.isFinite(tick.wheelGapM) && tick.wheelGapM < FAST_DESCENT_CLOSE_M);
         if ((tick.behind || tick.beside) && close && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
         return this.read(tick.wt, res);
     }
@@ -147,8 +150,11 @@ export class BlockWatch {
         while (this.spikes.length && wt - this.spikes[0].wt > BLOCK_WINDOW_S * 1000) this.spikes.shift();
         const warm = this.lastWt != null && wt - this.lastWt >= BLOCK_WINDOW_S * 1000;
         const lostW = warm ? this.spikes.reduce((s, x) => s + x.lostJ, 0) / BLOCK_WINDOW_S : null;
+        // the watts stay on the meter for the whole window; the cue is about now: a wheel near and a spike just now (v0.70.3;
+        // 2026-11-02: "drop back" 10 s after the last spike at 57 W, with the wheel 25 m up the road, under "close up")
+        const fresh = this.spikes.length > 0 && wt - this.spikes[this.spikes.length - 1].wt <= BLOCK_FRESH_S * 1000;
         return {lostW, spikes: this.spikes.length, tickW, beside: this.beside,
-                blocked: lostW != null && lostW >= BLOCK_CUE_W && this.spikes.length >= BLOCK_CUE_N};
+                blocked: this.close && fresh && lostW != null && lostW >= BLOCK_CUE_W && this.spikes.length >= BLOCK_CUE_N};
     }
 }
 
@@ -182,7 +188,8 @@ export function besideRider(entries, me, lead = leads(entries)) {
  * "ease off"). The wheel: the nearest rider within STEP_WHEEL_M ahead, under STEP_LINE_M off your line. A side has room
  * when no rider sits around STEP_M out on it (STEP_TAKEN_M) from a meter behind to STEP_AHEAD_M ahead, and the road goes
  * on: roadPosition runs 88–92.3 m on roads ridden forward and 84–88.3 m in reverse, on all 14 roads measured
- * (research/2026-11-01/road-width.mjs). Both free: away from the wheel, else toward the middle of the road.
+ * (research/2026-11-01/road-width.mjs). Both free: keep (the side already called), else away from the wheel, else toward the
+ * middle of the road.
  */
 export const STEP_WHEEL_M = [0.5, 3.5];
 export const STEP_LINE_M = 0.6;
@@ -191,7 +198,7 @@ export const STEP_TAKEN_M = [0.25, 1.15];
 export const STEP_AHEAD_M = 4;
 export const ROAD_M = {forward: [88, 92.3], reverse: [84, 88.3]};
 
-export function stepSide(entries, me, lead = leads(entries)) {
+export function stepSide(entries, me, lead = leads(entries), {keep = null} = {}) {
     if (!me || !me.state) return null;
     const s = me.state, mine = lead.get(me);
     if (mine == null) return null;
@@ -217,6 +224,7 @@ export function stepSide(entries, me, lead = leads(entries)) {
     const left = !taken.left && room(-1), right = !taken.right && room(1);
     if (!left && !right) return null;
     if (left !== right) return left ? 'left' : 'right';
+    if (keep) return keep;   // both free: the side already called (2026-11-02: a wheel dead ahead flipped it left, right, left in 3 s)
     if (wheel.lat >= 0.1) return 'left';
     if (wheel.lat <= -0.1) return 'right';
     return known && (pos - (lo + hi) / 2) * sign > 0 ? 'left' : 'right';
@@ -247,7 +255,15 @@ export function blockedNote(r) {
 export const HELD_KMH = [1, 5];     // closing this much faster gets you held
 export const GO_KMH = 5;            // ...this much faster goes through
 export const PASS_AHEAD_M = 4;      // a rider up to this far ahead (centre to centre)...
-export const PASS_BEHIND_M = 4;     // ...or behind, for the defence
+// The defence ends this far behind you (v0.70.3): a block is a wheel to push into, 1.5–3 m center to center and in line, so a
+// rider beside you has nothing left to be held by (2026-11-02 + 11-01: called level, 19 of 28 were already ahead, all 2 s on)
+export const DEFEND_UNTIL_M = 1.5;
+// ...and it starts by the seconds they need to get there, so you have time to act: a rider's reaction to a call is ~5 s to move
+// 0.5 m (the user: "my reaction time"; research/2026-11-02/react.mjs). From DEFEND_LOOK_S out, up to DEFEND_BEHIND_M back, not
+// under DEFEND_MIN_S: 78% get 5+ s of warning (fixed 4 m: 16%), 88% of the riders called arrive, 90% on that side (block-lead.mjs)
+export const DEFEND_BEHIND_M = 10;
+export const DEFEND_LOOK_S = 9;
+export const DEFEND_MIN_S = 3;
 export const PASS_LAT_M = 1.5;      // ...and no more than this to the side
 export const WIDE_M = 1.5;          // a pass this far out gets through more often at low closing speed
 export const AT_WHEEL_M = 1.5;      // closer than this behind, in line: pulling out here is the worst pass
@@ -260,7 +276,7 @@ export const WITH_M = 10;
 export const WITH_KMH = 1;
 
 /* {attack, defend}: the nearest rider you close on, and the nearest closing on you, in the held band; each null or
- * {where: 'ahead'|'behind'|'on your left'|'on your right', closeKmh, alongM, latM, atWheel (attack: glued to their
+ * {where: 'ahead'|'behind'|'on your left'|'on your right' (defend: the side they come up on, still behind you), closeKmh, alongM, latM, atWheel (attack: glued to their
  * wheel, in line)}. accelKmhS = your acceleration (km/h per s): each rider's speed is from their own state time, so
  * while a bunch speeds up together a state 1 s older read 1–2 km/h slower (the 2026-10-25 start, 12 -> 41 km/h in
  * 30 s: "drop back" over and over); their speed is moved to your state time at your acceleration. An attack your group
@@ -286,8 +302,11 @@ export function passSituation(entries, me, lead = leads(entries), {accelKmhS = 0
             const atWheel = !level && along < AT_WHEEL_M && Math.abs(lat) < BESIDE_LAT_M[0];
             if (!out.attack || Math.abs(along) < Math.abs(out.attack.alongM)) out.attack = {where, closeKmh: dv, alongM: along, latM: lat, atWheel, rider: o};
         }
-        if (-dv >= HELD_KMH[0] && -dv < HELD_KMH[1] && (level || (along < 0 && along >= -PASS_BEHIND_M))) {
-            if (!out.defend || Math.abs(along) < Math.abs(out.defend.alongM)) out.defend = {where, closeKmh: -dv, alongM: along, latM: lat, rider: o};
+        const reachS = (-along - DEFEND_UNTIL_M) / (-dv / 3.6);   // their seconds to DEFEND_UNTIL_M behind you
+        if (-dv >= HELD_KMH[0] && -dv < HELD_KMH[1] && along >= -DEFEND_BEHIND_M && reachS >= DEFEND_MIN_S && reachS <= DEFEND_LOOK_S) {
+            // the side they are coming up on; less than this aside they are straight behind
+            const side = Math.abs(lat) >= BESIDE_LAT_M[0] ? `on your ${lat > 0 ? 'right' : 'left'}` : 'behind';
+            if (!out.defend || Math.abs(along) < Math.abs(out.defend.alongM)) out.defend = {where: side, closeKmh: -dv, alongM: along, latM: lat, rider: o};
         }
     }
     if (out.attack) {

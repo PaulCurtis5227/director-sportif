@@ -90,6 +90,18 @@
                     <key>Bridge button:</key>
                     <input type="checkbox" name="bridgeButton"/>
                 </label>
+                <label title="After step left / right, block left / right and ease off, if you tried (steered the way it said, or lowered your power for ease off): a high chime when it worked, a low chime when it did not. The word turns green or magenta either way.">
+                    <key>Done / failed chime:</key>
+                    <input type="checkbox" name="outcomeChime"/>
+                </label>
+                <label title="A segment card says go this long before the spot, so you're on the pedals there and not a reaction later. About 1.5 s for most riders.">
+                    <key>Jump lead:</key>
+                    <input type="number" name="callLeadS" min="0" max="5" step="0.1" style="--size: 4"/> s
+                </label>
+                <label title="A U-turn takes this much longer on top of the jump lead: how long your button takes. Keyboard Down arrow or a Stream Deck key sending it: 0. Companion, Zwift Play, Zwift Ride, which you hold: about 2.5 (riders report 2 to 3).">
+                    <key>U-turn button:</key>
+                    <input type="number" name="uturnHoldS" min="0" max="8" step="0.1" style="--size: 4"/> s
+                </label>
             </form>
 
             <div id="race-card" class="section tab" data-id="race-card">
@@ -107,10 +119,14 @@
             </div>
 
             <form id="record" class="section tab" data-id="record">
-                <div class="hint">Recordings go to Downloads as ds-capture-….ndjson.gz. For other riders only where they
-                    were and the draft they got, under a random id that's new for every recording (no names, power,
-                    heart rate or body data); for you, everything. They're stored every 30 s while recording, so a crash
+                <div class="hint">Recordings go to Downloads as ds-capture-….ndjson.gz. For other riders where they were,
+                    the draft they got, their power, weight and height, under a random id that's new for every recording
+                    (no names, Zwift ids, cadence, heart rate or FTP); for you, everything. They're stored every 30 s while recording, so a crash
                     or a closed window loses at most 30 s: the next time this window opens, it saves them.</div>
+                <label title="With a segment card, in a free ride: if nothing is recording, record each pass as a short file of its own, from 600 m before the banner to just past the line. Compare the files to see which way won.">
+                    <key>Record segment passes:</key>
+                    <input type="checkbox" name="recordSegments"/>
+                </label>
                 <label title="Start recording when you join an event, stop 2 minutes after the finish (or when Zwift is gone). Record / Stop still work any time.">
                     <key>Record every event:</key>
                     <input type="checkbox" name="autoRecordEvents"/>

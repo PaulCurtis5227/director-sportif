@@ -137,10 +137,24 @@ export function climbTopM(pts) {
 }
 
 /*
- * held: availablePowerUp; profile: the road ahead [{d, alt, v}] (as far as it goes: the whole climb, ideally); v: m/s;
- * grade: your current grade (fraction); archM: meters to the next arch that gives a power-up (null: not known).
+ * Can't see the top: the road ahead is known only to its last point (open: the road learned from the riders ahead
+ * ends where they are; the map's road ends at a junction off a route), it is still climbing there, and no top comes
+ * before it. Then the steepest part may be past the end (2026-11-04, Tour of Watopia stage 5: the riders' road ended
+ * ~650 m up a 6.8 km climb; "fire" came three times on 4% under the 9.9% near the top). Not "the end is gentler, so
+ * nothing steeper comes": that climb's map road meets a junction at 3.5% with the 9.9% ramp just past it.
  */
-export function featherCue({held, profile, v, grade = 0, archM = null}) {
+export function topUnseen(pts, open) {
+    const p = (pts || []).filter(x => Number.isFinite(x.alt) && Number.isFinite(x.d));
+    if (!open || p.length < 2) return false;
+    return climbTopM(p) >= p.at(-1).d - 1;   // no top inside what we know
+}
+
+/*
+ * held: availablePowerUp; profile: the road ahead [{d, alt, v}] (as far as it goes: the whole climb, ideally); v: m/s;
+ * grade: your current grade (fraction); archM: meters to the next arch that gives a power-up (null: not known);
+ * open: the road past the profile's end is unknown (topUnseen: no call while the climb runs on past it).
+ */
+export function featherCue({held, profile, v, grade = 0, archM = null, open = false}) {
     if (held !== 'LIGHTNESS') {
         return none;
     }
@@ -150,6 +164,10 @@ export function featherCue({held, profile, v, grade = 0, archM = null}) {
     const s = steepestAhead(profile, {vNow: v, lookM: Math.min(FEATHER_LOOK_M, arch)});
     const limitM = Math.min(climbTopM(profile), arch);
     const far = steepestAhead(profile, {vNow: v, lookM: limitM});
+    const known = (profile || []).at(-1)?.d ?? 0;
+    if (topUnseen(profile, open) && !(arch <= known)) {
+        return {state: 'wait', startM: null, grade: null, text: "Feather: keep it, the top isn't in sight yet"};
+    }
     // a part FEATHER_BETTER steeper up the climb, or the best part in sight running into it (cut at the look's edge)
     if (far && far.startM > FEATHER_LOOK_M && far.grade >= FEATHER_MIN_GRADE &&
         (!s || far.grade >= s.grade + FEATHER_BETTER || s.endM >= far.startM)) {

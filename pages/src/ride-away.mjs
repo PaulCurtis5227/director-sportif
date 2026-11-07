@@ -37,11 +37,17 @@
  * you were told to give room to, not the group leaving. Of 96 'away' episodes on 10-27 / 10-29 / 10-31, 75 had those
  * riders < 5 m further up 15 s on. Now RIDE_AWAY.awayMps 0.5 (was 0.3), seen RIDE_AWAY.awaySeen times within
  * RIDE_AWAY.awayWithinS: 16 false left, 15 of 21 real kept (10-31: 3 of the 4 marks gone; the 4th was real, +12 m in 15 s).
+ * v0.57.2 (the user, 2026-11-05: the gap-opening call is "to warn me that I am about to get dropped, or be on the wrong
+ * side of a split. We want to limit the calls of gaps that heal themselves"; they remembered it "quite a bit as we
+ * slowly gained on a small group"): RIDE_AWAY.awayMps 0.7 (was 0.5). research/2026-11-05/ride-away-tune.mjs, 9 rides,
+ * the riders ahead 60 s on: split (15+ m further) / you chased and saved it / healed by itself: 0.5 m/s 72 / 27 / 46
+ * (0.36 a minute), 0.7 m/s 47 / 15 / 20 (0.21 a minute): the gaps that heal themselves cut by more than half, two thirds
+ * of the splits still called. 1.0 m/s: 28 / 4 / 9, too many splits missed.
  *   new RideAwayWatch().update(entries, me, wt) -> {state: 'away' | 'shatter', mps (median), front, riders} or null
  */
 import {leads} from './engine/wheels.mjs';
 
-export const RIDE_AWAY = {windowS: 10, maxAheadM: 40, awayMps: 0.5, minRiders: 3,
+export const RIDE_AWAY = {windowS: 10, maxAheadM: 40, awayMps: 0.7, minRiders: 3,
                           frontMps: 0.8, spreadMps: 1.0, shatterRiders: 5, holdS: 20,
                           leaveRiders: 2, leaveShare: 0.25, splitNearM: 15, splitSeen: 2, splitWithinS: 10, jumpMps: 2,
                           awaySeen: 2, awayWithinS: 10};

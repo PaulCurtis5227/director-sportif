@@ -138,6 +138,41 @@
  * v0.54.0 (EM v0.70.2; 2026-11-01): Blocked says the way out, "step left" / "step right" to the free side (blocking.mjs
  * stepSide), "ease off" only with no room: right whether you meant the push or not. "hold a wheel" off All words (it was
  * in 49% of any 10 s). A pass ends once their wheel is behind yours, and its words go with it.
+ * v0.55.0 (EM v0.70.3): All words goes one way at a time (grid-fields.mjs wayOf): the call, then the meters in order, set it and
+ * words the other way stay off the line; the Blocked cue is about now (a wheel near, a spike in the last 4 s; blocking.mjs);
+ * a note with one button when Sauce has no gaps here (gap-note.mjs); "block left / right" while the rider is still 3–9 s from 1.5 m behind you
+ * (up to 10 m back), on the side they come up on, so there is time to act (blocking.mjs DEFEND_*); the step side stays through a
+ * block; step, block and ease off answer: a done / failed chime and the word green / magenta (outcome.mjs, setting outcomeChime).
+ * v0.59.0 (EM v0.72.0): on roads Sauce has no map for, gaps from the riders' x/y (road-gaps.mjs; typical error 0.3 m at
+ * 15–50 m, was 1.3; never missing); the recording keeps others' x/y (capture-1.2, ~a third more bytes).
+ * v0.58.0: "losing group" (drop-watch.mjs, the gap call, state 'dropping'): the group you rode with followed after you lose it,
+ * called once per drift when the gap to its back is 10+ m and grew 6+ m in 30 s, held 2 s (2026-11-06: a drift at 0.5 m/s
+ * was never called; 11 rides: 59 calls, 37 dropped, 1 healed). Bridging only when you reach them within 30 s (bridge.mjs
+ * catchS): it muted the calls 23% -> 11% of riding. Bends (EM v0.71.0, bend-live.mjs): the inside read from your place on
+ * the road, so alone and in a TT too; nothing when you're on the inside already (0.5 m of the edge); "move left / right"
+ * (was "inside left / right"); "stay close" dropped (a hold-the-wheel call, the user); bends speak in the finish too.
+ * v0.57.2: gap opening from the riders ahead riding away needs 0.7 m/s (ride-away.mjs, was 0.5): the call warns of a split
+ * or being dropped, not of a gap that heals itself (heals 46 -> 20, splits called 72 -> 47 on 9 rides).
+ * v0.57.1 (EM v0.70.11): gap opening tuned (position.mjs GapWatch): an 8 m hole (was 6), none while you already close on
+ * the rider beyond it or move up through the group: 0.21 -> 0.16 calls a minute, right 59% -> 68% (research/2026-11-05/gap-opening.mjs).
+ * v0.57.0: calls that fit what you are doing (the user, 2026-11-05: "stop telling me to do the wrong thing", 1 call a minute):
+ * no hold calls (ease off, drop back, give room, being passed) while you ride 1+ km/h faster than your group (calls.mjs
+ * THROUGH_KMH, meter-engine throughKmh); bends their own lane (BEND_LANE); only calls you can hear compete; Blocked split
+ * into ease off / step out / stuck alongside, group shattering its own row (your choices carry over); a fresh install
+ * hears none of ease off, drop back, being passed, shattering; the Wheel gap tile red / green / yellow (ds-data gapLevel).
+ * v0.56.2 (EM v0.70.10): off a route the road ahead comes from Zwift's map (road-map.mjs profileAheadOnMap, heights from
+ * the road's curve, z -> altitude learned from your ticks: AltitudeScale; the way at a junction from where the riders
+ * went: RoadTraffic); the feather keeps quiet where nobody ahead has been through (2026-11-04 ToW stage 5 Epic KOM).
+ * v0.56.1 (EM v0.70.9): the finish's all-clear without a jump: "safe, coast" once no place can change even if you coast,
+ * while you still pedal (director.mjs easeCall noJump, state 'clear'); the settled check sees riders at any distance
+ * (was: within 80 m), and not while gaps on an unmapped road aren't known yet (meter-engine gapSource 'none').
+ * v0.56.0: the recording keeps other riders' power, and their weight and height once (capture.mjs; no names, ids, cadence, heart rate or FTP).
+ * v0.55.6 (EM v0.70.8): a standing start from a segment card (card 1.2 pacing.start): "stop" on the spot, then "go" timed by the riders coming up behind.
+ * v0.55.5 (EM v0.70.7): segment cards in a free ride (segment-live.mjs): calls from where the segment is on the road, the U-turn call, your lead times, a recording per pass; road-map.mjs metersAt follows Zwift's real curve.
+ * v0.55.4 (EM v0.70.6): the race card format's contract (race-card.mjs): unknown fields ignored, unknown items skipped, a newer cardVersion refused by name.
+ * v0.55.3 (EM v0.70.5): a segment card's pacing is called (race-card.mjs paceCall, its own call type 'pace').
+ * v0.55.2 (EM v0.70.4): finish power-up calls on a TT bike too (SprintCoach kept dropping them after v0.46.1 opened the rest).
+ * v0.55.1: bridge calls speak in the finish (calls.mjs FINALE_CALLS; ds-data.mjs BRIDGE_FINISH_PRIORITY: going or about to, over the finish advice).
  * v0.54.1: the Grid keeps its size ride to ride (grid.mjs: fitted once per layout, tiles.mjs fitKey, setting fittedFor; the
  * "waiting" line over the tiles, not above them); a tile's text is centered (meters.css).
  */
@@ -149,12 +184,13 @@ import {riderModel, BIKES, DEFAULT_BIKE, WHEELS, DEFAULT_WHEELS} from './rider-m
 import {setStyles, windowFitter, options} from './window-ui.mjs';
 import {Speaker} from './engine/speech.mjs';
 import {bikeCheckText} from './engine/bike-check.mjs';
-import {engineCall, Announcer, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor}
+import {engineCall, engineCalls, Announcer, BEND_LANE, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor}
     from './calls.mjs';
 import {buildData, CHANNEL} from './ds-data.mjs';
 import {allWords} from './grid-fields.mjs';
 import {RouteAhead} from './route-ahead.mjs';
 import {RaceCards, cardEntries, loadEntry, importCard} from './race-cards-live.mjs';
+import {SegmentCards} from './segment-live.mjs';
 import {CaptureRecorder} from './capture.mjs';
 import {Checkpoint, idbStore, leftovers, recoveredBlob, CHECKPOINT_S} from './engine/checkpoint.mjs';
 import {SaveQueue, holdSaves} from './save-queue.mjs';
@@ -167,8 +203,11 @@ import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 import {ProgressLeft} from './progress-left.mjs';
 import {hrAckText} from './team-hr.mjs';
+import {GapNote} from './gap-note.mjs';
+import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 
-export const DS_VERSION = '0.54.1';
+export const DS_VERSION = '0.59.0';
+const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
 const RACE_EVENT_TYPES = new Set(['RACE', 'TIME_TRIAL', 'TEAM_TIME_TRIAL']);
@@ -221,6 +260,7 @@ const doc = document.documentElement;
 // The event the bike was last checked for (plain localStorage: picking a bike reloads the window)
 const BIKE_CHECKED_KEY = 'director-sportif-bike-checked';
 const HR_ACKED_KEY = 'director-sportif-hr-acked';   // {sg, acks: {athleteId: times}}: "I know" this event (team-hr.mjs)
+const GAP_ACKED_KEY = 'director-sportif-gap-acked';   // the event or day "I know" was pressed for (gap-note.mjs)
 const STALE_MS = 5000;   // no data for this long: waiting for Zwift
 
 export const SETTING_DEFAULTS = {
@@ -239,7 +279,11 @@ export const SETTING_DEFAULTS = {
     myPmaxW: null,       // empty: 4.5 × FTP (the bridge plan's ceiling as FRC goes)
     autoRecordEvents: false,   // record every event you join (capture format); you turn it on
     recordAlways: false,       // and record all the time outside events (a file per free ride; you turn it on)
+    recordSegments: true,      // a segment card in a free ride records each pass, a short file of its own, if nothing's recording
+    callLeadS: 1.5,            // say a jump this long before the spot: your reaction
+    uturnHoldS: 2.5,           // and a U-turn this much earlier still: how long your button takes (keyboard or Stream Deck 0, Companion, Play, Ride about 2.5)
     practiceRace: false,       // every ride counts as a race: the race-only calls on, the not-a-race ones off
+    outcomeChime: true,        // a chime when step, block and ease off worked or failed (outcome.mjs; the word is colored either way)
     bridgeButton: false,       // a Bridge button in the window (you say you want to bridge; bridge.mjs)
     obsEnabled: false,         // connect to OBS (its WebSocket server) for the video clocks
     obsUrl: 'ws://127.0.0.1:4455',
@@ -412,6 +456,35 @@ function hrChecker({watch, refit}) {
     };
 }
 
+/*
+ * The note that Sauce has no gaps here (gap-note.mjs): stays until "I know", then quiet for this event (outside an
+ * event: for the day). What was pressed is kept, so a reopened window doesn't ask again.
+ */
+function gapNoter({refit}) {
+    const box = document.querySelector('#gap-note');
+    const stored = () => {
+        try { return localStorage.getItem(GAP_ACKED_KEY); } catch (e) { return null; }
+    };
+    const note = new GapNote({acked: stored()});
+    const show = on => {
+        if (box.hidden !== on) return;
+        box.hidden = !on;
+        refit();
+    };
+    box.querySelector('button').addEventListener('click', () => {
+        note.ack();
+        try { localStorage.setItem(GAP_ACKED_KEY, note.key); } catch (e) { /* asks again after a reopen */ }
+        show(false);
+    });
+    return {
+        update(me, source) {
+            const s = me && me.self && me.state;
+            if (!s || !source) return;
+            show(note.update(source, s.eventSubgroupId ? `sg ${s.eventSubgroupId}` : `day ${new Date().toDateString()}`, s.worldTime));
+        },
+    };
+}
+
 export async function main() {
     Common.initInteractionListeners();
     applyDefaults();
@@ -421,7 +494,7 @@ export async function main() {
     const el = {
         word: content.querySelector('.call-word'),
     };
-    const fitter = windowFitter(content, {extras: () => [document.querySelector('#bike-check'), document.querySelector('#hr-check')]});
+    const fitter = windowFitter(content, {extras: () => ['#bike-check', '#hr-check', '#gap-note'].map(x => document.querySelector(x))});
     let fitCheckAt = 0;
     const fitWindow = () => {
         if (Common.settingsStore.get('fitWindow') !== false) fitter.fit();
@@ -429,10 +502,26 @@ export async function main() {
     let anyVoice = false;
     requestAnimationFrame(fitWindow);
 
+    const roadMap = new RoadMap(courseId => Common.rpc.getCourseRoads(courseId));
+    const cardPlan = id => Common.settingsStore.get(cardPlanKey(id)) || {};
+    // A segment card in a free ride (segment-live.mjs): a pass records itself and is marked in the recording
+    let segRec = false, segStopAt = null;
+    const onPass = ({kind, card, item, uturn}) => {
+        if (kind === 'arm' && !rec && Common.settingsStore.get('recordSegments')) {
+            segRec = true;
+            segStopAt = null;
+            startRec({meta: {segment: item.name, cardId: card.id, uturn}}).catch(e => console.error('segment record', e));
+        }
+        if (rec) rec.event(Date.now(), {pass: kind, segment: item.segmentId, name: item.name, card: card.id, uturn: !!uturn});
+        if (segRec && (kind === 'line' || kind === 'abort')) segStopAt = Date.now() + SEGMENT_TAIL_S * 1000;
+    };
+    const segmentCards = new SegmentCards({cards: importedCards, segment: id => Common.rpc.getSegment(id), roadMap, planFor: cardPlan, onPass});
     const raceCards = new RaceCards({fetchJSON,
                                      routeName: routeId => Common.getRoute(routeId, {prelude: 'leadin'}).then(r => r && r.name),
-                                     planFor: id => Common.settingsStore.get(cardPlanKey(id)) || {},
-                                     imported: importedCards});
+                                     planFor: cardPlan,
+                                     imported: importedCards,
+                                     segments: segmentCards,
+                                     leads: () => ({leadS: Number(settings.callLeadS) || 0, turnLeadS: Number(settings.uturnHoldS) || 0})});
     window.addEventListener('storage', ev => {
         if (ev.key === IMPORTED_CARDS_KEY) raceCards.refresh();
     });
@@ -461,7 +550,7 @@ export async function main() {
         modelFor: me => riderModel({athlete: me.athlete, bike: settings.bike, wheels: settings.wheels,
                                     socks: settings.aeroSocks, myCda: settings.myCda}),
         // Road surfaces from Zwift's map (dirt, wood, brick… roll slower than pavement)
-        roadMap: new RoadMap(courseId => Common.rpc.getCourseRoads(courseId)),
+        roadMap,
         // Your route ahead, from Sauce's route data (as its elevation window builds it): climbs seen alone, from the start
         routeAhead: new RouteAhead(routeId => Common.getRoute(routeId, {prelude: 'leadin'})),
         // The race card for your event's route, with your plan from the settings window
@@ -472,6 +561,7 @@ export async function main() {
                             pMaxW: Number(settings.myPmaxW) > 0 ? Number(settings.myPmaxW) : null}),
     });
     const hrCheck = hrChecker({watch: engine.teamHrWatch, refit: () => requestAnimationFrame(fitWindow)});
+    const gapNote = gapNoter({refit: () => requestAnimationFrame(fitWindow)});
     // Calls (calls.mjs): each type delivered as its settings say (text / chime / voice).
     const delivery = {};
     const readDelivery = () => {
@@ -500,7 +590,9 @@ export async function main() {
         }
     });
     const speaker = new Speaker();
-    const announcer = new Announcer();
+    const speechGuard = {lastAt: -Infinity};   // the two lanes never talk over each other (calls.mjs CROSS_GAP_S)
+    const announcer = new Announcer({guard: speechGuard});
+    const bendAnnouncer = new Announcer({...BEND_LANE, guard: speechGuard});
     const bikeCheck = bikeChecker({speak: text => { if (anyVoice) speaker.utter(text); }, onBike: id => { settings.bike = id; },
                                    refit: () => requestAnimationFrame(fitWindow)});
     // The data object goes out to the Grid and any other window of ours: docs/DS-DATA.md "Transport"
@@ -521,6 +613,8 @@ export async function main() {
             try { localStorage.setItem(GRID_SEEN_KEY, '1'); } catch (e) { /* this session only */ }
         });
     }
+    const outcomes = new OutcomeWatch();   // did the call work? (outcome.mjs)
+    let outcome = null;                    // {result, word, until}: colored on the line
     const wordsHold = new Map();   // All words: a word stays WORDS_HOLD_S after it goes (grid-fields.mjs allWords)
     // The status panel: what the engine is doing, the route and card, the call now (the meters are on the Grid)
     let lastTick = 0, routeId = null, routeName = null;
@@ -834,9 +928,9 @@ export async function main() {
         const title = `${rec ? 'Recording: press to stop and save it' : "Record this ride (capture format: others' positions and draft, everything about you)"} · ${how}${held}`;
         if (recBtn.title !== title) recBtn.title = title;
     };
-    const startRec = async ({rehearsing = false} = {}) => {
+    const startRec = async ({rehearsing = false, meta = {}} = {}) => {
         if (rec) return;
-        rec = new CaptureRecorder({meta: {app: 'director-sportif', version: DS_VERSION, routeId, routeName, rehearsal: rehearsing || undefined}});
+        rec = new CaptureRecorder({meta: {app: 'director-sportif', version: DS_VERSION, routeId, routeName, rehearsal: rehearsing || undefined, ...meta}});
         recSg = null;
         recRaced = false;
         cp = new Checkpoint(store, {name: `ds-${rehearsing ? 'rehearsal' : 'capture'}-${stamp(rec.startedAt)}`, rec, release: true});
@@ -983,6 +1077,7 @@ export async function main() {
         if (bridgeBtn.classList.contains('on') !== !!engine.bridgeArmed) showBridge();   // made it: the engine turned it off
         bikeCheck.update(r.me);
         hrCheck.update(r.me, r.ds && r.ds.teamHr);
+        gapNote.update(r.me, r.ds && r.ds.gapSource);
         const data = buildData(r);
         data.call = engineCall(data, r.ds);
         // the recording: the list as Sauce gave it (capture.mjs keeps only what docs/CAPTURE.md says) + the call
@@ -1003,6 +1098,12 @@ export async function main() {
                 });
             }
             if (mySg && rehearsal) endRehearsal('rehearsal ended: you joined an event').catch(e => console.error('rehearsal', e));
+            // a pass's own recording: stopped a little after the line, or if you joined an event
+            if (segRec && (mySg || (segStopAt != null && Date.now() >= segStopAt))) {
+                segRec = false;
+                segStopAt = null;
+                if (!mySg) stopRec().catch(e => console.error('segment record', e));
+            }
             auto.tick(lastTick, {sg: r.me.state.eventSubgroupId,
                                  finished: r.me.remainingType === 'event' && Number.isFinite(r.me.remaining) && r.me.remaining <= 0,
                                  left: r.me.remainingType === 'event' ? r.me.remaining : null,
@@ -1045,22 +1146,45 @@ export async function main() {
                      WHEELS.find(w => w.id === (Common.settingsStore.get('wheels') || DEFAULT_WHEELS))),
             hint.hidden ? null : hint.textContent, practice]) : null;
         const idle = !penText && !said.text ? (!data.self ? 'watching another rider: no calls' : practice || (hint.hidden ? '—' : hint.textContent)) : null;
-        setText(el.word, penText || said.text || idle);
-        el.word.classList.toggle('quiet', !!(penText || idle));
+        const answer = data.self ? outcomes.update(data.call, r.ds, s.worldTime) : null;
+        if (answer) {
+            outcome = {...answer, until: Date.now() + OUTCOME.showS * 1000};
+            if (Common.settingsStore.get('outcomeChime') !== false) speaker.ding(OUTCOME_TONES[answer.result]);
+        }
+        if (outcome && Date.now() >= outcome.until) outcome = null;
+        const showOutcome = outcome && !penText;
+        if (showOutcome) {
+            const rest = (said.text || '').split(' · ').filter(w => w && w !== outcome.word);
+            const key = `${outcome.result}|${outcome.word}|${rest.join(' · ')}`;
+            if (el.word.dataset.outcome !== key) {
+                const mark = document.createElement('span');
+                mark.className = `outcome ${outcome.result}`;
+                mark.textContent = outcome.word;
+                el.word.replaceChildren(mark, rest.length ? ` · ${rest.join(' · ')}` : '');
+                el.word.dataset.outcome = key;
+            }
+        } else {
+            delete el.word.dataset.outcome;
+            setText(el.word, penText || said.text || idle);
+        }
+        el.word.classList.toggle('quiet', !!(penText || idle) && !showOutcome);
         el.word.classList.toggle('warn', !penText && said.level === 'warn');
         el.word.classList.toggle('alarm', !penText && said.level === 'alarm');
         if (Date.now() - fitCheckAt > 1000 && Common.settingsStore.get('fitWindow') !== false) {
             fitCheckAt = Date.now();
             fitter.fit({growOnly: true});
         }
-        // calls sound for you only, not for a rider you are watching (docs/DS-DATA.md)
-        const call = data.self ? data.call : null;
-        const how = call ? delivery[call.id] : null;
-        const sound = announcer.offer(call, how);
-        if (sound && sound.say) {
-            speaker.utter(sound.say, {chime: !!sound.tones, tones: sound.tones || undefined});
-        } else if (sound && sound.tones) {
-            speaker.ding(sound.tones);
+        // calls sound for you only, not for a rider you are watching (docs/DS-DATA.md). v0.57.0: two lanes, the bends
+        // their own; each picks among the calls you can hear (a silent one no longer holds back one you hear)
+        const heard = id => !!(delivery[id] && (delivery[id].chime || delivery[id].voice));
+        const lanes = data.self ? engineCalls(data, r.ds, heard) : {main: null, bend: null};
+        for (const [lane, c] of [[announcer, lanes.main], [bendAnnouncer, lanes.bend]]) {
+            const sound = lane.offer(c, c ? delivery[c.id] : null);
+            if (sound && sound.say) {
+                speaker.utter(sound.say, {chime: !!sound.tones, tones: sound.tones || undefined});
+            } else if (sound && sound.tones) {
+                speaker.ding(sound.tones);
+            }
         }
     }, {persistent: true});   // Sauce pauses a hidden window's subscriptions: with auto-hide, the pen (standing still) hid
     // the window and nothing ran, no auto-record, no OBS, until it showed again (the user, 2026-10-19; Data Tap v0.53.2)

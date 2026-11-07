@@ -91,6 +91,7 @@ export async function main() {
                 s.last.level = v.level;
                 s.el.classList.toggle('warn', v.level === 'warn');
                 s.el.classList.toggle('alarm', v.level === 'alarm');
+                s.el.classList.toggle('good', v.level === 'good');   // v0.57.0: the Wheel gap's good seat
             }
         }
     };

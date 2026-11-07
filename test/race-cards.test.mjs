@@ -73,7 +73,23 @@ test('importing a card: checked like a shipped one, needs its route; the same id
     assert.match(msg2, /replaced/);
     assert.throws(() => importCard('{not json', []), /not JSON/);
     assert.throws(() => importCard(JSON.stringify(ownCard({route: undefined})), []), /no route/);
-    assert.throws(() => importCard(JSON.stringify(ownCard({items: [{km: 1, kind: 'wall', name: 'x'}]})), []), /bad kind/);
+    assert.throws(() => importCard(JSON.stringify(ownCard({cardVersion: '99.0'})), []), /card version 99\.0 needs a newer Director Sportif/);
+    assert.match(importCard(JSON.stringify(ownCard({cardVersion: '1.9'})), [])[1], /imported My race .*some extras may go unused/);
+    assert.doesNotMatch(importCard(JSON.stringify(ownCard({cardVersion: '1.0'})), [])[1], /extras/);
+});
+
+test('a card with something this version doesn\'t know: the rest is used, the import says so, the card keeps it', async () => {
+    const {importCard, loadEntry} = await import('../pages/src/race-cards-live.mjs');
+    const items = [{km: 3.5, kind: 'sprint', name: 'Fuego Flats', scored: true, somethingNew: {a: 1}},
+                   {km: 5, kind: 'wall', name: 'A new kind'},
+                   {km: 7, kind: 'kom', name: 'Needs a feature', needs: ['futureThing']}];
+    const [list, msg] = importCard(JSON.stringify(ownCard({items})), []);
+    assert.match(msg, /imported My race \(Watopia Flat Route\), 2 items skipped: needs a newer Director Sportif/);
+    assert.equal(list[0].items.length, 3, 'all kept, for the mod that can call them');
+    const card = await loadEntry(fetchJSON, {id: 'x', card: list[0]});
+    assert.deepEqual(card.items.map(i => i.name), ['Fuego Flats'], 'an unknown field is ignored: the sprint stays');
+    assert.equal(card.skipped, 2);
+    assert.doesNotMatch(importCard(JSON.stringify(ownCard()), [])[1], /skipped/);
 });
 
 test('an imported card is used on its route like a shipped one, after a refresh', async () => {

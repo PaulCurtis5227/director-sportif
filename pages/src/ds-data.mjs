@@ -33,7 +33,31 @@ export const BRIDGE_WORDS = {
     hold: b => (b.powerW ? `hold ${b.powerW}` : null),
     made: () => 'made it',
 };
+/*
+ * In the finish a bridge you're making outranks the finish's advice ("top ten", "get a wheel", "jump in N": 85–90, which
+ * would bury "hold 350"), but not "dig in", "keep going", "ease off" or firing a power-up (91+). Only go / going
+ * states: "too far" and "bridge in N" stay low, or they would hold the finish calls back while nothing is happening.
+ */
+export const BRIDGE_FINISH_PRIORITY = 90.5;
+const BRIDGE_GOING = new Set(['now', 'last', 'attack', 'hold', 'made']);
 export const wheelGap = centerM => (Number.isFinite(centerM) ? centerM - BIKE_LENGTH_M : null);
+
+/*
+ * The Wheel gap tile's color (v0.57.0, the user: "move the ease off into the wheel gap meter with color coding"):
+ * 'alarm' while you push into the wheel (the Blocked meter's blocked / step states: watts vanishing into it), 'good'
+ * in the good seat (GAP_GOOD_M, wheel to wheel: one-gap-wheel-gap), 'warn' too close (under GAP_CLOSE_M) or drifting
+ * off it (over GAP_FAR_M, the draft fading), else none. No wheel: none.
+ */
+export const GAP_GOOD_M = [2, 3.5];
+export const GAP_CLOSE_M = 1;
+export const GAP_FAR_M = 5;
+export function gapLevel(wheelM, blockedState) {
+    if (!Number.isFinite(wheelM)) return null;
+    if (blockedState === 'blocked' || blockedState === 'step-left' || blockedState === 'step-right') return 'alarm';
+    if (wheelM >= GAP_GOOD_M[0] && wheelM <= GAP_GOOD_M[1]) return 'good';
+    if (wheelM < GAP_CLOSE_M || wheelM > GAP_FAR_M) return 'warn';
+    return null;
+}
 
 /*
  * Every meter's states: the word a display shows (active words for advice; '' = nothing to show) and a one-line
@@ -57,6 +81,7 @@ export const VOCAB = {
         'sit-in': {word: 'sit in', help: 'You are on the front: sitting in behind a wheel saves this much.'},
         shatter: {word: 'shattering', help: 'The group is breaking up ahead of you: do what you can (hold the front part, or the group you can). No advice about your gap meanwhile.'},
         bridging: {word: '', help: 'Bridging to the riders up the road: no advice about your gap to the wheel you caught meanwhile.'},
+        dropping: {word: 'losing group', help: 'You are falling off the back of the group you rode with: the gap to them keeps growing. Close it now, while it is small, or you are dropped.'},
         gapping: {word: 'gap opening', help: 'A hole is opening in front of your wheel (or the next one): close it or go round, or you are gapped.'},
         'too-close': {word: 'back off', help: 'Too close to the wheel: ease back to the best gap (or drift to the back of the bunch).'},
         boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
@@ -98,8 +123,8 @@ export const VOCAB = {
         'too-slow': {word: 'go harder', help: 'Closing on a rider too slowly gets you held: go with 5+ km/h more, or wait.'},
         'go-wide': {word: 'go wide', help: 'In line with the rider you are closing on: go wide (1.5 m+) or with 5+ km/h more.'},
         'drop-back': {word: 'drop back', help: 'Glued to their wheel: pulling out here gets you held. Drop back to 1.5–3.5 m between wheels, pull out to the edge, come by fast.'},
-        'rider-left': {word: 'block left', help: 'In a race, a rider creeping up on your left: ease over into their way. Being held costs them far more than you.'},
-        'rider-right': {word: 'block right', help: 'In a race, a rider creeping up on your right: ease over into their way. Being held costs them far more than you.'},
+        'rider-left': {word: 'block left', help: 'In a race, a rider creeping up behind you on your left: ease over into their way while they are still behind. Being held costs them far more than you.'},
+        'rider-right': {word: 'block right', help: 'In a race, a rider creeping up behind you on your right: ease over into their way while they are still behind. Being held costs them far more than you.'},
     },
     gap: {
         ...COMMON,
@@ -172,7 +197,7 @@ export const VOCAB = {
 export const CALL_WORDS = {
     moveUp: {prep: 'climb', move: 'move up', hold: 'hold spot', late: 'stay in line'},
     sprint: {position: 'top ten', good: 'good spot', 'window-prep': 'jump', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
-             'keep-going': 'keep going', ease: 'ease off', 'ease-ftp': 'ease to FTP', window: 'you can go', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
+             'keep-going': 'keep going', ease: 'ease off', clear: 'safe, coast', 'ease-ftp': 'ease to FTP', window: 'you can go', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
     nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line', crowd: 'give room'},
 };
 
@@ -212,7 +237,12 @@ export function directorCalls(ds) {
                   in: m.state === 'prep' ? roundIn(m.secs) : null, for: null, priority: m.priority});
     }
     const c = ds && ds.card;
-    if (c && c.about) {
+    // a segment card's pacing: its own type, so a jump isn't held back behind the card's other calls. The rider's own plan,
+    // so in a finish it outranks the finish's advice, as a bridge does
+    if (c && c.about === 'pace' && c.say) {
+        out.push({id: 'pace', state: c.state, word: c.say, in: roundIn(c.inS), for: null,
+                  priority: ds.finale || ds.sprint ? BRIDGE_FINISH_PRIORITY : c.priority});
+    } else if (c && c.about) {
         let word = null, inS = c.inS;
         if (c.about === 'segment') {
             word = c.plan === 'skip' ? 'skip it' : c.plan === 'position' ? 'position' : c.kind === 'kom' ? 'KOM' : 'sprint';
@@ -249,23 +279,26 @@ export function directorCalls(ds) {
     const br = ds && ds.bridge;
     const brWord = br && BRIDGE_WORDS[br.state] ? BRIDGE_WORDS[br.state](br) : null;
     if (brWord) {
+        const inFinish = !!(ds.finale || ds.sprint) && BRIDGE_GOING.has(br.state);
         out.push({id: 'bridge', state: br.state === 'hold' ? `hold-${br.powerW}` : br.state, word: brWord,
-                  in: br.state === 'later' ? roundIn(br.inS) : null, for: null, priority: br.state === 'later' ? 50 : 68});
+                  in: br.state === 'later' ? roundIn(br.inS) : null, for: null,
+                  priority: inFinish ? BRIDGE_FINISH_PRIORITY : br.state === 'later' ? 50 : 68});
     }
     const pc = ds && ds.pacing;
     if (pc && (pc.state === 'steep' || pc.state === 'top')) {
         out.push({id: 'pacing', state: pc.state, word: pc.state === 'steep' ? 'steep' : 'over top', in: roundIn(pc.inS),
                   for: pc.state === 'steep' ? roundIn(pc.forS) : null, priority: 35});
     }
-    // a bend: the inside open (move over: it gains ground) or you're on the outside (stay close: you'll lose ground)
+    // a bend: the inside open (move over: it gains ground): "move left / right" (v0.58.0, was "inside left / right"; the user,
+    // 2026-11-06: say what to do). On the outside with no way in ('outside', was "stay close": a hold-the-wheel call, not a
+    // steering one, the user) or already on the inside ('inside'): nothing to steer, no call (ds.bend keeps the state)
     // a stretch that twists enough to steer a shorter line (engine sCurve): "cut the S in 5" (a hairpin: "cut the bend")
     const sc = ds && ds.sCurve;
     if (sc) out.push({id: 'bend', state: sc.s ? 'cut-s' : 'cut-bend', word: sc.s ? 'cut the S' : 'cut the bend',
                       in: roundIn(sc.inS), for: null, priority: 46});
     const b = ds && ds.bend;
-    if (b && (b.state === 'open' || b.state === 'outside')) {
-        out.push({id: 'bend', state: `${b.state}-${b.side}`, word: b.state === 'open' ? `inside ${b.side}` : 'stay close',
-                  in: b.state === 'open' ? roundIn(b.inS) : null, for: null, priority: 45});   // stay close: now
+    if (b && b.state === 'open') {
+        out.push({id: 'bend', state: `open-${b.side}`, word: `move ${b.side}`, in: roundIn(b.inS), for: null, priority: 45});
     }
     // the feather you hold, for the steepest 30 s ahead. The name and the seconds, no "hold" (v0.46.1; the user,
     // 2026-10-26: "hold feather in 25 is hard to parse. Maybe just feather in 25"). "FEATHER now" outranks "jump in N"
@@ -370,14 +403,16 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
         ts: now,
         self: !!(me && me.self),
         meters: {
-            position: meter('position', pack(ds.positionW), common || ds.positionState || 'none'),
+            // losing the group (v0.58.0) is said once you're out of it too: alone is exactly where it happens
+            position: meter('position', pack(ds.positionW), (common === 'alone' && ds.positionState === 'dropping' ? null : common) || ds.positionState || 'none'),
             holding: meter('holding', pack(ds.holdingW), common || ds.holdingState || 'warming',
                            ds.holdingState === 'blocked' && ds.blockedStep ? {word: `step ${ds.blockedStep}`} : {}),   // the same words as Blocked
             pack: meter('pack', pack(ds.packW), draftless ? common : ds.packState || common || 'none'),
             blocked: meter('blocked', pack(ds.blockedW), blockedState),
             passing: meter('passing', pack(ds.passKmh) ?? (common ? null : 0), passState),
             // below 0 = overlapping wheels: no word of its own (Blocked says "ease off" when it costs; the user, 2026-10-30)
-            gap: meter('gap', wheelGap(ds.gapM), gapState, {centerM: fin(ds.gapM), ...(ds.gapApprox ? {approx: true} : {})}),
+            gap: meter('gap', wheelGap(ds.gapM), gapState, {centerM: fin(ds.gapM), ...(ds.gapApprox ? {approx: true} : {}),
+                                                             level: gapLevel(wheelGap(ds.gapM), blockedState)}),
             side: meter('side', ds.sideM, sideState),
             // "supertuck in 6": the word carries the seconds (a display word, no chime: the "coast" chime stays the call)
             tuck: meter('tuck', tuckValue, tuckState, {...(drag ? {drag} : {}),

@@ -18,8 +18,16 @@
  * Off a broken road, riders ON a broken road lose their gap too (the part through their road is 0).
  * Time gaps (`gap`) go with the distance: they come from the same road histories.
  *
+ * EM v0.72.0 / DS v0.59.0 (the user, 2026-11-06: "I don't understand how we can know the x,y of everyone, and their speed
+ * but not be able to get the gaps right"): riders on your road from their x/y, which Sauce sends for everyone: their
+ * offset projected on your direction of travel (your own last ROAD_GAPS.dirM) within ROAD_GAPS.nearM, the straight line
+ * beyond (signed by that projection). research/2026-11-06/xy-gaps.mjs, 3 rides where Sauce has the map (its gaps = the
+ * truth, time-aligned), |error| P50 / P90: 0–15 m 0.07 / 0.45 (road completion: 0.2 / 1.0–1.5), 15–50 m 0.3 / 1.3–2.1
+ * (1.3 / 7–9), 50–150 m 0.7–2.5 / ~20 (~10 / 43–52; the straight line cuts bends), and never missing (road completion: ~10%
+ * before its scale). Road completion stays the fallback: a rider without x/y, or you not yet moved ROAD_GAPS.minDirM.
+ *
  *   new RoadGaps().update(all, me) -> {entries, source: 'sauce' | 'road' | 'none'}
- *     source 'road' = repaired from road completion, 'none' = your road is broken and the scale isn't known yet
+ *     source 'road' = repaired (x/y, or road completion), 'none' = your road is broken and neither is known yet
  */
 
 export const ROAD_GAPS = {
@@ -31,6 +39,9 @@ export const ROAD_GAPS = {
     jumpM: 100,         // more than this between two of your ticks (or a jump in completion): a teleport, start over
     jumpRc: 50000,      // road completion units in one tick that can't be riding (a wrap or a teleport)
     maxLeadM: 300,      // further than this along: no gap (a loop road's wrap, or simply too far to matter)
+    dirM: 10,           // your direction of travel: over your last 10 m of x/y
+    minDirM: 3,         // less than this moved: no direction yet
+    nearM: 15,          // within this: the offset projected on your direction; beyond: the straight line
 };
 
 export const roadKey = s => `${s.courseId ?? '?'}/${s.roadId}`;
@@ -66,10 +77,12 @@ export class RoadGaps {
     restart() {
         this.track = [];
         this.trackOn = null;
+        this.xy = [];
     }
 
     /* Your own state: the odometer against the road completion, on this road only. */
     learn(s) {
+        this.learnXy(s);
         if (!Number.isFinite(s.worldTime) || !Number.isFinite(s.roadCompletion) || !Number.isFinite(s.distance)) return;
         const on = `${roadKey(s)}${s.reverse ? 'r' : ''}`;
         const last = this.track.at(-1);
@@ -81,6 +94,25 @@ export class RoadGaps {
         if (last && this.track.length && s.worldTime <= last.wt) return;
         this.track.push({wt: s.worldTime, rc: s.roadCompletion, dist: s.distance});
         while (this.track.length > 2 && this.track[1].wt <= s.worldTime - ROAD_GAPS.keepS * 1000) this.track.shift();
+    }
+
+    /* Your x/y (cm) over the last ROAD_GAPS.dirM: your direction of travel. A teleport (ROAD_GAPS.jumpM) starts over. */
+    learnXy(s) {
+        if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) return;
+        this.xy = this.xy || [];
+        const last = this.xy.at(-1);
+        if (last && Math.hypot(s.x - last.x, s.y - last.y) / 100 > ROAD_GAPS.jumpM) this.xy = [];
+        if (last && this.xy.length && s.x === last.x && s.y === last.y) return;
+        this.xy.push({x: s.x, y: s.y});
+        while (this.xy.length > 2 && Math.hypot(s.x - this.xy[1].x, s.y - this.xy[1].y) / 100 >= ROAD_GAPS.dirM) this.xy.shift();
+    }
+
+    /* Your direction of travel in x/y (a unit vector), or null: not moved ROAD_GAPS.minDirM yet. */
+    direction() {
+        const p = this.xy || [];
+        if (p.length < 2) return null;
+        const a = p[0], b = p.at(-1), L = Math.hypot(b.x - a.x, b.y - a.y);
+        return L / 100 >= ROAD_GAPS.minDirM ? [(b.x - a.x) / L, (b.y - a.y) / L] : null;
     }
 
     /* Meters per road-completion unit along your direction of travel here (signed), or null not known yet. */
@@ -105,11 +137,19 @@ export class RoadGaps {
         const others = !mine && this.broken.size > 0 && all.some(o => o && o !== me && o.state && this.broken.has(roadKey({...o.state, courseId: o.state.courseId ?? s.courseId})));
         if (!mine && !others) return {entries: all, source: 'sauce'};
         const k = mine ? this.scale() : null;
+        const dir = mine && Number.isFinite(s.x) && Number.isFinite(s.y) ? this.direction() : null;
         const base = Number.isFinite(me.gapDistance) ? me.gapDistance : 0;
         const entries = all.map(o => {
             const t = o && o.state;
             if (!t || o === me) return o;
             if (mine) {
+                if (dir && sameWay(t, s) && Number.isFinite(t.x) && Number.isFinite(t.y)) {
+                    const dx = (t.x - s.x) / 100, dy = (t.y - s.y) / 100;
+                    const p = dx * dir[0] + dy * dir[1];
+                    const lead = Math.abs(p) < ROAD_GAPS.nearM ? p : Math.sign(p) * Math.hypot(dx, dy);
+                    if (Math.abs(lead) <= ROAD_GAPS.maxLeadM) return {...o, gap: undefined, isGapEst: true, gapDistance: base - lead};
+                    return {...o, gap: undefined, isGapEst: true, gapDistance: undefined};
+                }
                 if (k != null && sameWay(t, s) && Number.isFinite(t.roadCompletion)) {
                     const lead = (t.roadCompletion - s.roadCompletion) * k;
                     if (Math.abs(lead) <= ROAD_GAPS.maxLeadM) return {...o, gap: undefined, isGapEst: true, gapDistance: base - lead};
@@ -119,6 +159,6 @@ export class RoadGaps {
             return this.broken.has(roadKey({...t, courseId: t.courseId ?? s.courseId})) ?
                 {...o, gap: undefined, isGapEst: true, gapDistance: undefined} : o;
         });
-        return {entries, source: mine ? (k != null ? 'road' : 'none') : 'sauce'};
+        return {entries, source: mine ? (k != null || dir ? 'road' : 'none') : 'sauce'};
     }
 }

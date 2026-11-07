@@ -288,6 +288,11 @@ html[data-theme="transparent-dark"] .tile {
     box-shadow: inset 0 0 0 2px #f9414488;
 }
 
+/* v0.57.0: a level that says you're right (the Wheel gap tile in the good seat) */
+.tile.good .value {
+    color: #90be6d;
+}
+
 .settings-page .tile-row {
     flex-wrap: wrap;
 }
@@ -385,20 +390,29 @@ html[data-theme="transparent-dark"] .tile {
 }
 
 /* a rider with no heart rate (meters.mjs hrChecker): red until acknowledged */
-#hr-check {
+#hr-check, #gap-note {
     margin: 0.3em 0.4em 0;
     padding: 0.3em 0.5em;
     border-radius: 0.3em;
-    background: #f94144;
-    color: #fff;
     font-size: calc(0.8rem * var(--text-scale, 1));
 }
 
-#hr-check[hidden] {
+#hr-check {
+    background: #f94144;
+    color: #fff;
+}
+
+/* Sauce has no gaps here (meters.mjs gapNoter): yellow, a fact about the ride, not a problem */
+#gap-note {
+    background: #f9c74f;
+    color: #222;
+}
+
+#hr-check[hidden], #gap-note[hidden] {
     display: none;
 }
 
-#hr-check .row {
+#hr-check .row, #gap-note .row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -409,12 +423,12 @@ html[data-theme="transparent-dark"] .tile {
     margin-top: 0.3em;
 }
 
-#hr-check .text {
+#hr-check .text, #gap-note .text {
     flex: 1 1 14em;
     font-weight: 600;
 }
 
-#hr-check button {
+#hr-check button, #gap-note button {
     flex: 0 0 auto;
     font-weight: 600;
 }
@@ -498,6 +512,15 @@ html.measuring #content.control {
 
 #content.control .call-word.alarm {
     color: #f94144;
+}
+
+/* did the call work? (outcome.mjs): the word, for a few seconds */
+#content.control .call-word .outcome.done {
+    color: #3ddc84;
+}
+
+#content.control .call-word .outcome.failed {
+    color: #ff4fd8;
 }
 
 #content.control .status-line {

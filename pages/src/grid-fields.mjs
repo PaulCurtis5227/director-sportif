@@ -56,7 +56,7 @@ function wordFields() {
 export const ADVICE = {
     blocked: ['blocked', 'blocked-left', 'blocked-right', 'step-left', 'step-right'],
     passing: ['too-slow', 'go-wide', 'drop-back', 'rider-left', 'rider-right'],
-    position: ['shatter', 'gapping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'no-draft', 'sit-in'],
+    position: ['shatter', 'gapping', 'dropping', 'too-close', 'boxed', 'close-up', 'find-wheel', 'no-draft', 'sit-in'],
     holding: ['easy', 'blocked'],
     tuck: ['soon', 'stop'],
     frc: ['low', 'empty'],
@@ -66,23 +66,36 @@ export const WORDS_HOLD_S = 3;   // a word stays up at least this long after its
 const NO_HOLD = new Set(['passing']);   // PassWatch steadies these itself; held on, "go wide" outlived the pass
 
 /*
+ * Which way a word sends you (1 forward, -1 back, 0 neither): the meters and coaches each read their own part of the
+ * race, so without this the line said "close up · ease off" (the user, 2026-11-02: "Code that told me to ease off didn't
+ * know about code that told me to move up"). Sideways words ("step left", "use edge") go with either.
+ */
+const FORWARD = /^(close up|gap opening|group shattering|shattering|find a wheel|go wide|go harder|move up|get a wheel|bridge.*|last chance to bridge|attack|jump( now)?|wheel, jump.*|you can go|keep going|dig in)$/;
+const BACK = /^(ease off|ease to FTP|easy|back off|drift back|drop back|sit in|give room)$/;
+export const wayOf = word => (FORWARD.test(word) ? 1 : BACK.test(word) ? -1 : 0);
+
+/*
  * The advice showing now: the call (with its seconds, as the voice says it) and each meter's advice word, a word
  * said twice only once ("ease off" from Blocked and Holding). {text, level}: level = the worst of the meters speaking.
- * hold (optional Map, kept between ticks): a word stays WORDS_HOLD_S after it goes, so the tile doesn't flicker; a new
- * word from the same meter replaces it at once.
+ * One way at a time: the first word that sends you somewhere (the call, then ADVICE's order) sets it, and what pulls
+ * the other way is left out. hold (optional Map, kept between ticks): a word stays WORDS_HOLD_S after it goes, so the
+ * tile doesn't flicker; a new word from the same meter replaces it at once, a word the other way ends it.
  */
 export function allWords(data, hold = null) {
     if (!data) return {text: null, level: ''};
     const now = Number.isFinite(data.ts) ? data.ts : 0;
-    const said = [];
-    if (data.call) said.push({src: 'call', word: callWords(data.call), level: ''});
+    const all = [];
+    if (data.call) all.push({src: 'call', word: callWords(data.call), way: wayOf(data.call.word), level: ''});
     for (const [k, states] of Object.entries(ADVICE)) {
         const e = data.meters?.[k];
         const w = e && states.includes(e.state) ? e.word || wordOf(k, e.state) : '';   // e.word: a word with a number
-        if (w) said.push({src: k, word: w, level: e.level || ''});
+        if (w) all.push({src: k, word: w, way: wayOf(w), level: e.level || ''});
     }
+    const way = all.find(x => x.way)?.way || 0;
+    const said = all.filter(x => x.way !== -way || !way);
     let shown = said;
     if (hold) {
+        if (way) for (const [src, x] of hold) if (x.way === -way) hold.delete(src);
         for (const x of said) hold.set(x.src, {...x, until: now + (NO_HOLD.has(x.src) ? 0 : WORDS_HOLD_S * 1000)});
         for (const [src, x] of hold) if (x.until < now) hold.delete(src);
         const order = ['call', ...Object.keys(ADVICE)];

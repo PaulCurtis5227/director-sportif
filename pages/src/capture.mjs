@@ -3,14 +3,18 @@
  * Copyright (C) 2026 Paul Curtis
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * The Director Sportif's recording, in the capture format (docs/RECORDING.md): for other riders only where they were
- * and the draft they got, under a random id that is new for every recording; for you, everything (your own data).
- * Measured: ~3.5–6 MB an hour gzipped.
+ * The Director Sportif's recording, in the capture format (docs/RECORDING.md): for other riders where they were, the
+ * draft they got, their power, and their weight and height once, under a random id that is new for every recording
+ * (no names, Zwift ids, cadence, heart rate or FTP); for you, everything (your own data).
+ * Measured: ~3.5–6 MB an hour gzipped before power (v0.56.0).
  *
  * File: NDJSON, gzipped. Line 1: {__capture: 1, format, createdAt, fields, meta}. Then one line per tick:
- *   {t (ms), me: your full nearby entry (or null while you watch someone else), r: [[id, ...values], ...], c?: call}
- *   values in the order of RIDER_FIELDS; a value that didn't change since that rider's last row is null, and trailing
- *   unchanged values are left off (readCapture puts them back).
+ *   {t (ms), me: your full nearby entry (or null while you watch someone else), r: [[id, ...values], ...], c?: call,
+ *    b?: [[id, weightKg, heightCm], ...]}
+ *   values in the order of the header's fields; a value that didn't change since that rider's last row is null, and
+ *   trailing unchanged values are left off (readCapture puts them back). b: a rider's weight and height (null when
+ *   Sauce has none, as for minors), on the tick they are first seen and again only if they change.
+ *   'power' joined the fields in v0.56.0, 'x' and 'y' in v0.59.0: older files lack them, and their header's fields say so.
  * Marks (the Mark button): {t, mark: kind}.
  * Video (OBS, video-clock.mjs): {t, video: {kind: 'record' | 'stream', event: 'start' | 'stop', startMs}}: when your
  * recording or stream started, so a moment becomes a link into the video (docs/RECORDING.md).
@@ -18,16 +22,25 @@
  * crash-safe.
  */
 
-export const CAPTURE_FORMAT = 'capture-1';
+// 'capture-1.1' (v0.56.0): others' power and body added. 'capture-1.2' (v0.59.0): others' x / y (cm, Zwift's world
+// position: the same place the road fields give, in map terms; gaps on roads Sauce has no map for come from it,
+// road-gaps.mjs, and a replay needs it). x.y like the race cards: y = fields added (older readers still read it),
+// x = an incompatible change (aim: never). Readers go by the header's fields, not this name.
+export const CAPTURE_FORMAT = 'capture-1.2';
 export const RIDER_FIELDS = ['worldTime', 'roadId', 'reverse', 'roadCompletion', 'gapCm', 'roadPosition', 'speed100',
-                             'draft', 'powerUp'];
+                             'draft', 'powerUp', 'power', 'x', 'y'];
 
-/* One rider's values (docs/RECORDING.md): nothing about power, cadence, heart rate, body. */
+/* One rider's values (docs/RECORDING.md): no cadence, heart rate, names or ids. */
 export function riderValues(o) {
     const s = o.state;
     return [s.worldTime, s.roadId, s.reverse ? 1 : 0, s.roadCompletion, Math.round((o.gapDistance || 0) * 100),
-            s.roadPosition, Math.round((s.speed || 0) * 100), Math.round(s.draft || 0), s.activePowerUp || 0];
+            s.roadPosition, Math.round((s.speed || 0) * 100), Math.round(s.draft || 0), s.activePowerUp || 0,
+            Math.round(s.power || 0), Number.isFinite(s.x) ? Math.round(s.x) : null, Number.isFinite(s.y) ? Math.round(s.y) : null];
 }
+
+/* A rider's body as Sauce gives it: [weightKg, heightCm], each null when hidden (minors have none). */
+const num = x => (Number.isFinite(x) && x > 0 ? Math.round(x * 10) / 10 : null);
+export const bodyOf = o => [num(o.athlete?.weight), num(o.athlete?.height)];
 
 const randomId = () => {
     const b = new Uint8Array(4);
@@ -45,6 +58,7 @@ export class CaptureRecorder {
         this._released = 0;
         this.ids = new Map();    // athleteId -> random id (this recording only)
         this.prev = new Map();   // random id -> its last values
+        this.bodies = new Map(); // random id -> its last [weightKg, heightCm] written
         this.ticks = 0;
     }
 
@@ -61,7 +75,7 @@ export class CaptureRecorder {
     /* One nearby tick: entries = Sauce's list; call = the Director Sportif's call now (data object), if any. */
     tick(t, entries, call = null) {
         let me = null;
-        const rows = [];
+        const rows = [], bodies = [];
         for (const o of entries || []) {
             if (!o || !o.state) continue;
             if (o.self) {
@@ -75,9 +89,15 @@ export class CaptureRecorder {
             while (out.length && out.at(-1) === null) out.pop();
             this.prev.set(id, v);
             rows.push([id, ...out]);
+            const b = bodyOf(o), pb = this.bodies.get(id);
+            if (!pb || pb[0] !== b[0] || pb[1] !== b[1]) {
+                this.bodies.set(id, b);
+                bodies.push([id, ...b]);
+            }
         }
         const line = {t, me, r: rows};
         if (call) line.c = [call.id, call.state, call.in ?? null];
+        if (bodies.length) line.b = bodies;
         this._lines.push(JSON.stringify(line));
         this.ticks++;
     }
@@ -103,8 +123,9 @@ export class CaptureRecorder {
 }
 
 /*
- * A capture file's text back into ticks: {meta, ticks: [{t, me, riders: [{id, worldTime, roadId, …}], call}],
- * marks: [{t, mark}], videos: [{t, video}], events: [{t, event}]}. For the analysis and the tests.
+ * A capture file's text back into ticks: {meta, ticks: [{t, me, riders: [{id, worldTime, roadId, …, weight, height}],
+ * call}], marks: [{t, mark}], videos: [{t, video}], events: [{t, event}]}. For the analysis and the tests. A rider's
+ * weight and height are null until known (and always in files before v0.56.0).
  */
 export function readCapture(text) {
     const lines = String(text).split('\n').filter(Boolean);
@@ -112,6 +133,7 @@ export function readCapture(text) {
     if (!head.__capture) throw new Error('not a capture file');
     const fields = head.fields || RIDER_FIELDS;
     const last = new Map();
+    const body = new Map();   // id -> [weightKg, heightCm]
     const ticks = [], marks = [], videos = [], events = [];
     for (const l of lines.slice(1)) {
         const x = JSON.parse(l);
@@ -127,11 +149,13 @@ export function readCapture(text) {
             events.push(x);
             continue;
         }
+        for (const [id, kg, cm] of x.b || []) body.set(id, [kg ?? null, cm ?? null]);
         const riders = (x.r || []).map(([id, ...vals]) => {
             const p = last.get(id) || [];
             const full = fields.map((_, i) => (vals[i] === undefined || vals[i] === null ? p[i] : vals[i]));
             last.set(id, full);
-            return {id, ...Object.fromEntries(fields.map((f, i) => [f, full[i]]))};
+            const [weight, height] = body.get(id) || [null, null];
+            return {id, ...Object.fromEntries(fields.map((f, i) => [f, full[i]])), weight, height};
         });
         ticks.push({t: x.t, me: x.me, riders, call: x.c || null});
     }

@@ -23,10 +23,14 @@ const run = (secs, at) => {
 test('bridge: on a wheel you caught, closing on riders 30 m up the road', () => {
     // 2026-10-31: one rider caught (2 m), three more up the road coming back at 0.8 m/s
     const r = run(12, t => [[2, 'w'], [40 - 0.8 * t, 'a'], [42 - 0.8 * t, 'b'], [44 - 0.8 * t, 'c']]);
-    assert.ok(r && r.closing, 'bridging');
     assert.equal(r.riders, 3);
     assert.ok(Math.abs(r.closeMps - 0.8) < 1e-9);
     assert.ok(Math.abs(r.aheadM - 30.4) < 1e-9);
+    // v0.58.0: 30.4 m at 0.8 m/s is 38 s away: not a bridge yet (BRIDGE.catchS 30); from 24 m on it is
+    assert.equal(r.closing, false, '38 s to catch them');
+    const near = run(12, t => [[2, 'w'], [32 - 0.8 * t, 'a'], [34 - 0.8 * t, 'b'], [36 - 0.8 * t, 'c']]);
+    assert.ok(near && near.closing, 'bridging: 22.4 m at 0.8 m/s = 28 s');
+    assert.equal(BRIDGE.catchS, 30);
 });
 
 test('bridge: not when they hold their gap, nor when the hole is far up a bunch', () => {

@@ -388,8 +388,8 @@ test('supertuck in N: seconds to tuck speed while you gain it, nothing when you 
 });
 
 test('block left / right: in a race only, never a teammate, never straight behind (2026-10-30)', () => {
-    // a rider level with you on your right, 3 km/h faster (the held band), and a wheel ahead so you're in a group
-    const tick = (e, k, {lat = 0.8, ahead = -0.5, team = null} = {}) => {
+    // a rider coming up behind you on your right, 3 km/h faster (the held band), and a wheel ahead so you're in a group
+    const tick = (e, k, {lat = 0.8, ahead = -6, team = null} = {}) => {
         const me = rider(1, 0, 0, {self: true, wt: 10000 + k * 1000});
         me.athlete = {team: 'Dinos'};
         const o = rider(2, ahead, lat, {wt: 10000 + k * 1000});
@@ -408,6 +408,8 @@ test('block left / right: in a race only, never a teammate, never straight behin
     assert.equal(state(null), 'none', 'not known to be a race: nothing');
     assert.equal(state(true, {team: 'dinos'}), 'none', 'a teammate: never');
     assert.equal(state(true, {lat: 0, ahead: -3}), 'none', 'straight behind: nothing to do');
+    assert.equal(state(true, {ahead: -0.5}), 'none', 'level with you: too late, nothing to be held by');
+    assert.equal(state(true, {ahead: 0.5}), 'none', 'overlapped, a little ahead: too late (2026-11-02)');
 });
 
 test('practice race on a free ride: the route end is the finish line', () => {
@@ -530,4 +532,14 @@ test('cut the S from the route ahead: called ~10 s out, quiet once you are in it
     assert.equal(first[1].s, true);
     assert.ok(first[1].inS <= 10.5, `within 10 s (${first[1].inS})`);
     assert.equal(seen.find(([d]) => d === 320)[1], null, 'in the S: no call');
+});
+
+test('a segment card\'s pacing reaches the call: the plan\'s words, through the engine', () => {
+    const say = {id: 'card', state: 'pace-x-0', priority: 79, about: 'pace', say: 'go, 730', item: {kind: 'sprint'}};
+    const e = new MeterEngine();
+    e.raceCards = {call: () => say, sprintLine: () => null, nextArch: () => null};
+    const {ds} = groupRide(e, {seconds: 3});
+    assert.equal(ds.card.say, 'go, 730');
+    const c = engineCall({meters: {}}, ds);
+    assert.deepEqual([c.id, c.word, c.in], ['pace', 'go, 730', null]);
 });
