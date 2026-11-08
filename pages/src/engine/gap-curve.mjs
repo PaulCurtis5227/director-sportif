@@ -31,6 +31,9 @@ export const BEST_MAX_GAP = 12;      // advice never sends you further back than
 export const BEST_TOLERANCE_W = 1.5; // bins within this many watts of the best count as the best range
 export const BOXED_M = 1;            // a rider this close behind you boxes you in
 export const GROUP_SPLIT_S = 1.0;
+// DS v0.60.1: and never under this many m (center to center): at 16 km/h 1 s is 4.4 m, so a wheel 4.7 m ahead on a climb
+// made you "alone" every few seconds (2026-11-07 43:07); the draft still counts at 8 m. From ~29 km/h up 1 s is longer.
+export const GROUP_SPLIT_MIN_M = 8;
 export const SHARE_TAU_S = 10;       // smoothing of each rider's real saving share (Position's 10 s)
 export const SHARE_PCT = 1;          // Position's zero: the best-placed rider in your group
 const CAP_SAMPLES_MIN = 60;
@@ -70,7 +73,7 @@ export function groupLayout(entries) {
         for (let i = 1; i <= list.length; i++) {
             if (i < list.length) {
                 const v = Math.max((list[i].state.speed || 0) / 3.6, 3);
-                if ((x(list[i - 1]) - x(list[i])) / v <= GROUP_SPLIT_S) continue;
+                if (x(list[i - 1]) - x(list[i]) <= Math.max(GROUP_SPLIT_S * v, GROUP_SPLIT_MIN_M)) continue;
             }
             const grp = list.slice(start, i);
             const vGroup = median(grp.map(o => (o.state.speed || 0) / 3.6));

@@ -62,7 +62,47 @@ test('announcer (2026-10-25): finish calls follow each other; the same one still
     assert.equal(a.offer(c('window', 'you can go'), d, 20_000), null, 'the same call again within the repeat time');
     const p = st => ({id: 'pass', state: st, word: 'drop back'});
     assert.ok(a.offer(p('drop-back'), d, 30_000));
-    assert.equal(a.offer(p('too-slow'), d, 40_000), null, 'other types still wait as a type');
+    // v0.60.0: another message of the same type waits TYPE_NEW_S (10 s), the same words CALL_REPEAT_S (30 s)
+    assert.equal(a.offer(p('too-slow'), d, 37_000), null, 'another message of the type within 10 s waits');
+    assert.ok(a.offer(p('too-slow'), d, 41_000), 'another message of the type after 10 s is said');
+    assert.equal(a.offer(p('drop-back'), d, 55_000), null, 'the same words again within 30 s wait');
+    assert.ok(a.offer(p('drop-back'), d, 62_000), 'the same words after 30 s');
+});
+
+test('v0.60.0 (2026-11-07): "losing group" right after "gap opening", "block right" after "block left"', () => {
+    const a = new Announcer();
+    const d = {voice: true};
+    assert.ok(a.offer({id: 'gap', state: 'opening', word: 'gap opening'}, d, 0));
+    assert.ok(a.offer({id: 'gap', state: 'dropping', word: 'losing group'}, d, 14_000), 'was held to 30 s');
+    assert.ok(a.offer({id: 'passed', state: 'left', word: 'block left'}, d, 30_000));
+    assert.equal(a.offer({id: 'passed', state: 'right', word: 'block right'}, d, 34_000), null, 'the 6 s between calls still holds');
+    assert.ok(a.offer({id: 'passed', state: 'right', word: 'block right'}, d, 41_000));
+});
+
+test('v0.60.0: off the back (10 m+ behind the wheel, held) is a spoken gap call; close up nearer is not a call', () => {
+    const off = dsCall({meters: {position: {state: 'off-back'}}});
+    assert.equal(off.id, 'gap');
+    assert.equal(off.state, 'close-up');
+    assert.equal(off.word, 'close up');
+    assert.equal(dsCall({meters: {position: {state: 'close-up'}}}), null);
+});
+
+test('v0.60.0: "FEATHER in 10" outranks every finish call, briefly; the countdown before it does not', () => {
+    const at = inS => directorCalls({feather: {state: 'ready', inS}}).find(c => c.id === 'powerup');
+    assert.equal(at(60).state, 'feather-ready');
+    assert.ok(at(60).priority < 86, 'under "jump in N"');
+    const soon = at(11);
+    assert.equal(soon.state, 'feather-soon');
+    assert.equal(soon.in, 10);
+    assert.ok(soon.priority > 87, 'over "you can go"');
+    assert.equal(at(6).state, 'feather-ready', 'gone after 4 s, the line goes back to the finish');
+});
+
+test('v0.60.0: the call shown is one you can hear', () => {
+    const data = {meters: {position: {state: 'off-back'}, passing: {state: 'rider-left'}}};
+    assert.equal(engineCall(data, {}).id, 'gap');
+    assert.equal(engineCall(data, {}, id => id !== 'gap').id, 'passed', 'gap muted: the next one you hear');
+    assert.equal(engineCall(data, {}, () => false), null);
 });
 
 test('"jump in 20": the countdown to the sprint window, with its seconds', () => {

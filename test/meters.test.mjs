@@ -89,7 +89,7 @@ test('a wheel more than 25 m up the road is no wheel: gap and side blank', () =>
     assert.equal(far.beside, false);
     const edge = new MeterEngine().update([rider(1, 0, 0, {self: true}), rider(2, 25, 0)]).ds;
     assert.ok(Math.abs(edge.gapM - 25) < 1e-9, 'exactly 25 m still counts');
-    const besideNear = new MeterEngine().update([rider(1, 0, 0, {self: true}), rider(2, 40, 0), rider(3, 2, 1.5)]).ds;
+    const besideNear = new MeterEngine().update([rider(1, 0, 0, {self: true}), rider(2, 40, 0), rider(3, 1, 1.5)]).ds;   // wheels overlapping (2 m ahead 1.5 m over is a wheel since v0.60.1)
     assert.equal(besideNear.gapM, null, 'the wheel in line is too far');
     assert.equal(besideNear.beside, true);
     assert.ok(Math.abs(besideNear.sideM + 1.5) < 1e-9, 'side to the rider beside you instead');

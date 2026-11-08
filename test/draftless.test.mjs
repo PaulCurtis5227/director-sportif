@@ -15,11 +15,18 @@ const feed = (w, secs, tick, t0 = 0) => {
     return r;
 };
 
-test('no draft on a wheel for 20 s: you get none; any draft brings the pack back at once', () => {
+test('no draft on a wheel for 10 s: you get none; any draft brings the pack back at once', () => {
     const w = new DraftlessWatch();
     assert.equal(feed(w, DRAFTLESS_S - 2, {draft: 0, gapM: 2}), false, 'not yet');
     assert.equal(feed(w, 4, {draft: 0, gapM: 2}, 100), true, 'a TT bike on a wheel');
     assert.equal(w.update({wt: 200000, draft: 40, gapM: 2}), false, 'draft again');
+});
+
+test('v0.60.1: slow ticks (a road bike\'s draft can be ~1 W) and estimated gaps (half) count less', () => {
+    const w = new DraftlessWatch();
+    assert.equal(feed(w, 60, {draft: 0, gapM: 2, kmh: 15}), false, 'a slow climb proves nothing');
+    assert.equal(feed(w, DRAFTLESS_S * 2 - 4, {draft: 0, gapM: 2, kmh: 35, sure: false}, 100), false, 'an estimated wheel: not yet');
+    assert.equal(feed(w, 4, {draft: 0, gapM: 2, kmh: 35, sure: false}, 200), true, 'twice as long');
 });
 
 test('only on a wheel close ahead that gives draft: alone, far back or behind a burrito proves nothing', () => {

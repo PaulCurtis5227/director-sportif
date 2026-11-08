@@ -20,7 +20,10 @@
 import {speechText, MIN_GAP_S} from './engine/speech.mjs';
 import {wordOf, directorCalls} from './ds-data.mjs';
 
-export const CALL_REPEAT_S = 30;     // one call type sounds (chime or voice) at most this often
+export const CALL_REPEAT_S = 30;     // the same call (type and words) sounds (chime or voice) at most this often
+// v0.60.0: another message of the same type waits only this long (the user, 2026-11-07: "block right" 5 s after "block
+// left" and "losing group" 14 s after "gap opening" stayed on screen, unspoken, under the old once-per-type 30 s)
+export const TYPE_NEW_S = 10;
 
 /* The call types and their chimes: rising = your move, falling = you are stuck, one low tone = someone behind. */
 export const CALL_TYPES = [
@@ -236,6 +239,8 @@ export function dsCall(data, extra = [], {finale = null, through = false, lane =
     }
     if (m.position && m.position.state === 'gapping') c.push(call('gap', 'opening', wordOf('position', 'gapping')));
     if (m.position && m.position.state === 'dropping') c.push(call('gap', 'dropping', wordOf('position', 'dropping')));   // v0.58.0: the same call type
+    // v0.60.0: off the back (10 m+ behind the wheel ahead, held 3 s): a don't-get-dropped call, so it is spoken
+    if (m.position && m.position.state === 'off-back') c.push(call('gap', 'close-up', wordOf('position', 'off-back')));
     if (m.position && m.position.state === 'shatter') c.push(call('shatter', 'group', 'group shattering'));   // the user's words
     if (m.tuck && m.tuck.state === 'stop') c.push(call('tuck', 'stop', wordOf('tuck', 'stop')));
     for (const x of extra || []) if (x && x.word) c.push(x);
@@ -254,9 +259,13 @@ export function dsCall(data, extra = [], {finale = null, through = false, lane =
 /* You are moving up through your group (ds.throughKmh: 3 s, you minus your group's median speed). */
 export const movingThrough = ds => !!ds && Number.isFinite(ds.throughKmh) && ds.throughKmh >= THROUGH_KMH;
 
-/* The call to show (and record): the data object's pack calls and the director's; a bend when nothing else. */
-export function engineCall(data, ds) {
-    const o = {finale: (ds && ds.finale) || null, through: movingThrough(ds)};
+/*
+ * The call to show (and record): the data object's pack calls and the director's; a bend when nothing else.
+ * audible(id): only calls you can hear (v0.60.0; the user, 2026-11-07: calls on the line you never hear look like the
+ * voice failing): the line shows what the voice picks from.
+ */
+export function engineCall(data, ds, audible = null) {
+    const o = {finale: (ds && ds.finale) || null, through: movingThrough(ds), audible};
     const extra = directorCalls(ds);
     return dsCall(data, extra, {...o, lane: 'main'}) || dsCall(data, extra, {...o, lane: 'bend'});
 }
@@ -278,16 +287,17 @@ export function callWords(c) {
 
 /*
  * Decides what a call sounds like now: offer(call, delivery, nowMs) -> {tones (chime, or null), say (words for the
- * voice, or null)} or null. Only a new call (id|state changed) sounds, at least MIN_GAP_S after the last sound and
- * CALL_REPEAT_S after the last one of its type; a call held back sounds when the wait is over if it is still on.
+ * voice, or null)} or null. Only a new call (id|state changed) sounds, at least MIN_GAP_S after the last sound,
+ * CALL_REPEAT_S after the same call and TYPE_NEW_S after another of its type (v0.60.0); a call held back sounds when the wait is over if it is still on.
  * Lanes (v0.57.0): the bends have their own Announcer (BEND_LANE: its own timing, each bend by itself); guard = an
  * object both lanes share ({lastAt}) so neither talks over the other (CROSS_GAP_S), while each keeps its own gaps.
  */
 export const CROSS_GAP_S = 2.5;   // a short call said: the other lane waits this long
 export const BEND_LANE = {minGapS: 3, repeatS: 10, perKey: true};
 export class Announcer {
-    constructor({minGapS = MIN_GAP_S, repeatS = CALL_REPEAT_S, perKey = false, guard = null, crossGapS = CROSS_GAP_S} = {}) {
+    constructor({minGapS = MIN_GAP_S, repeatS = CALL_REPEAT_S, typeNewS = TYPE_NEW_S, perKey = false, guard = null, crossGapS = CROSS_GAP_S} = {}) {
         this.minGapMs = minGapS * 1000;
+        this.typeNewMs = typeNewS * 1000;
         this.repeatMs = repeatS * 1000;
         this.perKey = perKey;
         this.guard = guard;
@@ -307,14 +317,16 @@ export class Announcer {
         if (key === this.lastKey) return null;
         // the finish's calls follow each other ("top ten", "jump in 20", "you can go", "dig in"): only the same one
         // waits repeatS (2026-10-25: "jump in" would have held "you can go" back 30 s); every other type waits as a type
+        // v0.60.0: the same words wait repeatS; another message of the type TYPE_NEW_S (the urgent and per-key lanes: only the same)
         const byKey = this.perKey || URGENT_TYPES.has(call.id);
-        const lastSame = byKey ? this.typeAt.get(key) : this.typeAt.get(call.id);
-        if (now - this.lastAt < this.minGapMs || now - (lastSame ?? -Infinity) < this.repeatMs) return null;
+        const sameWords = this.typeAt.get(key) ?? -Infinity, sameType = byKey ? -Infinity : this.typeAt.get(call.id) ?? -Infinity;
+        if (now - this.lastAt < this.minGapMs || now - sameWords < this.repeatMs || now - sameType < this.typeNewMs) return null;
         if (this.guard && now - (this.guard.lastAt ?? -Infinity) < this.crossGapMs) return null;
         this.lastKey = key;
         this.lastAt = now;
         if (this.guard) this.guard.lastAt = now;
-        this.typeAt.set(byKey ? key : call.id, now);
+        this.typeAt.set(key, now);
+        if (!byKey) this.typeAt.set(call.id, now);
         const type = CALL_TYPES.find(t => t.id === call.id);
         return {tones: delivery.chime && type ? type.tones : null, say: delivery.voice ? speechText(callWords(call) || call.say || call.text) : null};
     }

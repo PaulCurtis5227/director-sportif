@@ -143,6 +143,16 @@
  * a note with one button when Sauce has no gaps here (gap-note.mjs); "block left / right" while the rider is still 3–9 s from 1.5 m behind you
  * (up to 10 m back), on the side they come up on, so there is time to act (blocking.mjs DEFEND_*); the step side stays through a
  * block; step, block and ease off answer: a done / failed chime and the word green / magenta (outcome.mjs, setting outcomeChime).
+ * v0.60.1 (2026-11-07, the user's marks): the Wheel gap is the rider giving you the most draft, up to 1.5 m aside with good draft
+ * (wheel-pick.mjs; was in line within 0.44 m, then it read the next rider in line, often 10 m+ up the road) and stays on it; no pack calls on a bike that gets no draft sooner (draftless
+ * 10 s at 25 km/h+, not while a burrito is out, estimated gaps count half); your group no longer splits under 8 m (gap-curve
+ * GROUP_SPLIT_MIN_M: alone every few seconds on slow climbs); Position quiet on fast descents (POSITION_DESCENT: 45 km/h+,
+ * -2%); no "sit in" while a climb's move-up call runs ("hold spot" at the front).
+ * v0.60.0 (2026-11-07, the user: calls on screen, not heard for 30 s+): "close up" off the back (Position close-up 10 m+ from
+ * the wheel for 3 s, meter-engine OFF_BACK) is a spoken gap call (it was a word on the line only); a call type's new message
+ * waits 10 s, the same words 30 s (calls.mjs TYPE_NEW_S: "block right" after "block left", "losing group" after "gap
+ * opening" were held 30 s); "FEATHER in 10" over every finish call for 4 s (ds-data FEATHER_SOON_*); the call shown is one
+ * you can hear (engineCall audible).
  * v0.59.0 (EM v0.72.0): on roads Sauce has no map for, gaps from the riders' x/y (road-gaps.mjs; typical error 0.3 m at
  * 15–50 m, was 1.3; never missing); the recording keeps others' x/y (capture-1.2, ~a third more bytes).
  * v0.58.0: "losing group" (drop-watch.mjs, the gap call, state 'dropping'): the group you rode with followed after you lose it,
@@ -206,7 +216,7 @@ import {hrAckText} from './team-hr.mjs';
 import {GapNote} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 
-export const DS_VERSION = '0.59.0';
+export const DS_VERSION = '0.60.1';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -1079,7 +1089,9 @@ export async function main() {
         hrCheck.update(r.me, r.ds && r.ds.teamHr);
         gapNote.update(r.me, r.ds && r.ds.gapSource);
         const data = buildData(r);
-        data.call = engineCall(data, r.ds);
+        // v0.60.0: the call shown is one you can hear (a chime or the voice on for its type), like the voice's own pick
+        const heard = id => !!(delivery[id] && (delivery[id].chime || delivery[id].voice));
+        data.call = engineCall(data, r.ds, data.self ? heard : null);
         // the recording: the list as Sauce gave it (capture.mjs keeps only what docs/CAPTURE.md says) + the call
         if (rec) rec.tick(lastTick, list, data.self ? data.call : null);
         if (r.me.self) {
@@ -1176,7 +1188,6 @@ export async function main() {
         }
         // calls sound for you only, not for a rider you are watching (docs/DS-DATA.md). v0.57.0: two lanes, the bends
         // their own; each picks among the calls you can hear (a silent one no longer holds back one you hear)
-        const heard = id => !!(delivery[id] && (delivery[id].chime || delivery[id].voice));
         const lanes = data.self ? engineCalls(data, r.ds, heard) : {main: null, bend: null};
         for (const [lane, c] of [[announcer, lanes.main], [bendAnnouncer, lanes.bend]]) {
             const sound = lane.offer(c, c ? delivery[c.id] : null);

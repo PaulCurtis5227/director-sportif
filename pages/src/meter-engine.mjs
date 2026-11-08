@@ -75,7 +75,7 @@
  *                 each kind then rests 5 min, all nudges 1 min; quiet before a climb, in the finish, under a power-up
  *   cda           the CdA in use; cdaSource says where it comes from
  *   groupSize     riders in your group (chained ≤ 1 s apart), you included
- *   draftless     you get no draft at all (draftless.mjs: 0 W on a wheel for 20 s; a TT bike, a time trial): the pack
+ *   draftless     you get no draft at all (draftless.mjs: 0 W on a wheel for 10 s at 25 km/h+; a TT bike, a time trial): the pack
  *                 meters read 'draftless' and their calls stop (ds-data.mjs)
  *   settling      you just teleported (group hop): power and speed don't match for ~15 s
  */
@@ -108,6 +108,7 @@ import {featherCue, FeatherPick} from './engine/powerup-cue.mjs';
 import {withSpeeds, secsAlong, curvyStretch, S_CURVE} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
+import {WheelPick} from './wheel-pick.mjs';
 import {RideAwayWatch} from './ride-away.mjs';
 import {BridgeWatch, BridgeCoach} from './bridge.mjs';
 import {DropWatch} from './drop-watch.mjs';
@@ -123,7 +124,14 @@ import {remainingOnSurface, profileAheadOnMap, RoadTraffic} from './engine/road-
 import {SURFACES} from './engine/surfaces.mjs';
 import {riderModel} from './rider-model.mjs';
 
-const FEATHER_ROAD_M = 15000;   // the feather looks up the whole climb (or to the next arch): Alpe du Zwift is 12 km
+const FEATHER_ROAD_M = 15000;
+/*
+ * Off the back (v0.60.0; the user, 2026-11-07: "close up" read as "I'm drifting off the back", shown 30 s+ and never
+ * spoken): Position's close-up with the wheel ahead OFF_BACK.minM+ away (out of its draft) for OFF_BACK.holdS is a
+ * don't-get-dropped call, not an efficiency word. 2026-11-07 race: 15–22 m off a group of six for three minutes
+ * (27:46–30:40) with no call: the gap yo-yoed, so "losing group" (it needs 6 m of growth in 30 s) never fired.
+ */
+export const OFF_BACK = {minM: 10, holdS: 3};   // the feather looks up the whole climb (or to the next arch): Alpe du Zwift is 12 km
 
 /*
  * World z (cm) -> altitude (m), learned from your own state: Sauce's altitude is (z − seaLevel) / 100 × the world's
@@ -161,6 +169,8 @@ export class AltitudeScale {
 
 export const SETTLING_NOTE = 'teleported: settling';
 export const COASTING_NOTE = 'coasting: draft only adds speed';
+export const DESCENT_NOTE = 'fast descent: the draft mostly adds speed, your gap closes by itself';
+export const POSITION_DESCENT = {kmh: 45, grade: -0.02};   // Position quiet this fast on a descent this steep (v0.60.1)
 export const ALONE_NOTE = 'not in a group';
 // Beyond this there is no wheel to speak of (no draft left; pack-cost.mjs reads the wheel in line within 25 m too).
 export const GAP_MAX_M = 25;
@@ -262,6 +272,7 @@ export class MeterEngine {
         this.moveUpCoach = new MoveUpCoach();
         this.featherPick = new FeatherPick();   // the feather's target held where it is on the road (spent once passed)
         this.climbClock = new ClimbClock();   // how long you've been climbing ("over top" only after a real climb)
+        this.wheelPick = new WheelPick();   // your wheel: in line, or up to 1 m aside (v0.60.1)
         this.draftlessWatch = new DraftlessWatch();   // you get no draft at all (a TT bike, a time trial): pack calls off
         this.bendLast = null;                 // the bend cue's state last tick (called once it holds two ticks)
         this.sprintCoach = new SprintCoach();
@@ -309,6 +320,8 @@ export class MeterEngine {
             this.rideAway.reset();
             this.bridge.reset();
             this.dropWatch.reset();
+            this.offBackFrom = null;
+            this.wheelPick.reset();
             this.position.reset();
             this.posQuietWt = null;
             this.posGapOn = false;
@@ -318,7 +331,12 @@ export class MeterEngine {
         this.draftClass.update(entries, aheadMap);
         const ahead = aheadMap.get(me.athleteId) || null;
         const near = w => (w && w.gap <= GAP_MAX_M ? w : null);
-        const inline = near(ahead && ahead.inline);
+        // your draft quality (share of your cap): the finish, bends, and which wheel gives it
+        const cap = me.athlete && me.athlete.height > 0 && me.athlete.weight > 0 ?
+            predictedCap({heightCm: me.athlete.height, weightKg: me.athlete.weight}) : null;
+        const draftQ = cap && v > 3 ? (s.draft || 0) / (cap * 0.5 * 1.225 * v ** 3) : null;
+        // v0.60.1: the wheel giving you draft, in line or a little aside (wheel-pick.mjs); wheels.mjs's in line is 0.44 m
+        const inline = near(this.wheelPick.update(entries, me, {q: draftQ}));
         const layout = groupLayout(entries);
         this.gapCurve.ingest(entries, layout);
         const layoutL = layout.get(me.athleteId) || {size: 1, ahead: 0, vGroup: null, gapAhead: null};
@@ -333,8 +351,12 @@ export class MeterEngine {
 
         const noDraft = noDraftSpot(this.draftClass, {ahead, L, layout, entries, me, maxGapM: GAP_MAX_M});
         const noDraftWheel = noDraft.wheel;
-        const draftless = me.self && this.draftlessWatch.update({wt: s.worldTime, draft: s.draft, gapM: inline ? inline.gap : null,
-                                                                 noDraftWheel: !!noDraftWheel});
+        // burritos fired in your event (burrito.mjs): their cones take everyone's draft, so no draftless read while one is
+        // active; on roads Sauce has no map for the wheel is estimated, so it takes twice as long (v0.60.1: 10-27 and 11-07 races on road bikes, 0 W for 10–11 s on a wheel)
+        const burrito = me.self && !settling ? this.burritoWatch.update(entries, me, s.worldTime) : null;
+        const draftless = me.self && this.draftlessWatch.update({wt: s.worldTime, draft: s.draft, gapM: inline ? inline.gap : null, kmh: s.speed || 0,
+                                                                 noDraftWheel: !!noDraftWheel || !!(burrito && burrito.activeN > 0),
+                                                                 sure: this.gapSource === 'sauce'});   // estimated gaps: twice as long
         const wheel = inline || near(ahead);
         const sideM = wheel && Number.isFinite(wheel.lane) ?
             -wheel.lane / UNIT_PER_M * (s.reverse ? -1 : 1) : null;
@@ -369,6 +391,10 @@ export class MeterEngine {
         const drop = settling ? null : this.dropWatch.update(entries, me, s.worldTime);
         const pos = this.readPosition(s, spot, L, settling, power, noDraft.spot, away && away.state === 'shatter' ? {which: 'shatter'} :
             gapping || (away && {which: 'group', mps: away.mps}) || (drop && {which: 'drop', ...drop}) || (bridging && {which: 'bridge', ...bridging}));
+        // off the back: close-up 10 m+ from the wheel ahead, held (OFF_BACK)
+        const offNow = me.self && !settling && pos.state === 'close-up' && L.gapAhead != null && L.gapAhead >= OFF_BACK.minM;
+        this.offBackFrom = offNow ? (this.offBackFrom ?? s.worldTime) : null;
+        const offBack = offNow && s.worldTime - this.offBackFrom >= OFF_BACK.holdS * 1000;
         if (settling) this.block.reset();
         const blkRead = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
                                        massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
@@ -466,10 +492,7 @@ export class MeterEngine {
                 toLineM}) : null),
         }) : null;
         if (bridgeCall && bridgeCall.done) this.bridgeArmed = false;
-        // the finish: your draft quality (share of your cap), then the sprint coach (distance events only)
-        const cap = me.athlete && me.athlete.height > 0 && me.athlete.weight > 0 ?
-            predictedCap({heightCm: me.athlete.height, weightKg: me.athlete.weight}) : null;
-        const draftQ = cap && v > 3 ? (s.draft || 0) / (cap * 0.5 * 1.225 * v ** 3) : null;
+        // the finish: your draft quality (draftQ above), then the sprint coach (distance events only)
         // settled while you ride FTP: you slow by what FTP leaves short of your drag (AERO: CdA × 0.75)
         const easeModel = {cda: model.cda * (s.activePowerUp === 'AERO' ? 0.75 : 1), crr: model.crr, massKg: model.massKg};
         const settledFtp = (toLineM, near) => near && fit.ftpW > 0 &&
@@ -658,7 +681,7 @@ export class MeterEngine {
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
             surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather, bridge: bridgeCall,
-            burrito: me.self && !settling ? this.burritoWatch.update(entries, me, s.worldTime) : null,
+            burrito,
             teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
             card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
@@ -686,7 +709,8 @@ export class MeterEngine {
             settling,
             draftless,
             // state codes for the data object (ds-data.mjs buildData; docs/DS-DATA.md)
-            positionState: pos.state,
+            // before a climb your spot near the front is the plan: no "sit in" against "hold spot" (v0.60.1, 2026-11-07 1:13:14)
+            positionState: offBack ? 'off-back' : pos.state === 'sit-in' && climb && climb.state ? 'good' : pos.state,
             demandW,
             throughKmh,
             demandFtpW: (me.self ? (this.fitnessFor(me) || {}).ftpW : null) || (me.athlete && me.athlete.ftp) || null,
@@ -727,6 +751,12 @@ export class MeterEngine {
             return {w: null, note: NO_DRAFT_NOTE, state: 'no-draft'};
         }
         // Coasting (super tuck too): draft then only adds speed, it saves no pedaling watts, so there is nothing to show.
+        // a fast descent (v0.60.1): the draft mostly adds speed there and your gap closes by itself; priced at speed
+        // squared Position read 65–104 W "close up" at 50+ km/h with 150–177 W of draft (2026-11-07 30:25, 41:06)
+        if (L.size >= 2 && (s.speed || 0) >= POSITION_DESCENT.kmh && (s.grade || 0) <= POSITION_DESCENT.grade) {
+            this.position.reset();
+            return {w: null, note: DESCENT_NOTE, state: 'coasting'};
+        }
         if (L.size >= 2 && power < COAST_W) {
             this.position.reset();
             return {w: null, note: COASTING_NOTE, state: 'coasting'};

@@ -86,6 +86,7 @@ export const VOCAB = {
         'too-close': {word: 'back off', help: 'Too close to the wheel: ease back to the best gap (or drift to the back of the bunch).'},
         boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
         'close-up': {word: 'close up', help: 'Too far off the wheel: close up to the best gap.'},
+        'off-back': {word: 'close up', help: 'You are 10 m or more behind the wheel ahead, out of its draft: close up now, or you are off the back (v0.60.0: spoken, a gap call).'},
         'find-wheel': {word: 'find a wheel', help: 'Get on a wheel at the best gap.'},
         unsteady: {word: 'hold a wheel', help: 'Less draft than your gap should give: the wheel is moving about, or you are off its line. Hold one wheel, in line.'},
         'no-draft': {word: 'change wheel', help: 'This wheel gives no draft (a hand cycle or recumbent?): find another.'},
@@ -216,6 +217,12 @@ const GHOST_AT_M = 400;
 
 export const SURFACE_CALL_S = 45;
 export const FEATHER_FIRE_PRIORITY = 86.5;   // over the finish's "jump in N" (86), under "you can go" (87): your jump fires it anyway
+// v0.60.0: "FEATHER in 10" (the user, 2026-11-07: "FEATHER in 115" said once, then "jump in 45", "last wheel" and "you can go"
+// held the line for the last minute and the feather was never heard again): a short spoken reminder over every finish call,
+// FEATHER_SOON_S from the steep part, gone after FEATHER_SOON_FOR_S so it doesn't hold the line
+export const FEATHER_SOON_PRIORITY = 87.5;
+export const FEATHER_SOON_S = 12;
+export const FEATHER_SOON_FOR_S = 4;
 
 /* Seconds for a call: to 5 s above 20 s, whole seconds below (docs/DS-DATA.md). */
 export function roundIn(secs) {
@@ -305,8 +312,10 @@ export function directorCalls(ds) {
     // (Spiral Summit 2026-10-27: the Volcano's 9% kick came 320 m out, inside the jump countdown)
     const f = ds && ds.feather;
     if (f && (f.state === 'ready' || f.state === 'fire')) {
-        out.push({id: 'powerup', state: `feather-${f.state}`, word: f.state === 'fire' ? 'FEATHER now' : 'FEATHER',
-                  in: f.state === 'ready' ? roundIn(f.inS) : null, for: null, priority: f.state === 'fire' ? FEATHER_FIRE_PRIORITY : 50});
+        const soon = f.state === 'ready' && Number.isFinite(f.inS) && f.inS <= FEATHER_SOON_S && f.inS > FEATHER_SOON_S - FEATHER_SOON_FOR_S;
+        out.push({id: 'powerup', state: soon ? 'feather-soon' : `feather-${f.state}`, word: f.state === 'fire' ? 'FEATHER now' : 'FEATHER',
+                  in: f.state === 'ready' ? (soon ? 10 : roundIn(f.inS)) : null, for: null,
+                  priority: f.state === 'fire' ? FEATHER_FIRE_PRIORITY : soon ? FEATHER_SOON_PRIORITY : 50});
     }
     const n = !draftless && ds && ds.nudge;
     if (n && CALL_WORDS.nudge[n.state]) {
@@ -404,7 +413,7 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
         self: !!(me && me.self),
         meters: {
             // losing the group (v0.58.0) is said once you're out of it too: alone is exactly where it happens
-            position: meter('position', pack(ds.positionW), (common === 'alone' && ds.positionState === 'dropping' ? null : common) || ds.positionState || 'none'),
+            position: meter('position', pack(ds.positionW), (common === 'alone' && ds.positionState === 'dropping' && !ds.draftless ? null : common) || ds.positionState || 'none'),
             holding: meter('holding', pack(ds.holdingW), common || ds.holdingState || 'warming',
                            ds.holdingState === 'blocked' && ds.blockedStep ? {word: `step ${ds.blockedStep}`} : {}),   // the same words as Blocked
             pack: meter('pack', pack(ds.packW), draftless ? common : ds.packState || common || 'none'),
