@@ -66,6 +66,20 @@ export function roadPercent(s) {
     return null;
 }
 
+/*
+ * Roads Sauce's map has wrong (its bundled zwift-utils data can lag a Zwift rework): courseId -> roadId -> the
+ * surface style to use for the whole road. Drop one once Sauce's data agrees.
+ *   Watopia road 135 = Repack Rush, the only route on it: GRASS end to end in the map (the old Repack Ridge MTB
+ *   singletrack); paved since the rework (the user rode it, 2026-11-07; Zwift Insider's route page: "paved").
+ */
+export const ROAD_STYLE_FIXES = Object.freeze({6: Object.freeze({135: 'NORMAL'})});
+
+/* A road from Sauce with any fix above applied (a copy; the original is left alone). */
+export function fixRoad(courseId, road) {
+    const style = ROAD_STYLE_FIXES[courseId]?.[road?.id];
+    return style ? {...road, defaultStyle: style, styles: []} : road;
+}
+
 /* The style at road percent p: later sections override earlier ones (e.g. CITY −1..2 with cobbles on top). */
 export function styleAt(road, p) {
     let style = null;
@@ -146,7 +160,7 @@ export class RoadMap {
         }
         this.courses.set(courseId, 'loading');
         Promise.resolve(this.fetchRoads(courseId)).then(roads => {
-            this.courses.set(courseId, new Map((roads || []).map(r => [r.id, prepare(r)])));
+            this.courses.set(courseId, new Map((roads || []).map(r => [r.id, prepare(fixRoad(courseId, r))])));
         }).catch(e => {
             console.warn('road map unavailable for course', courseId, e);
             this.courses.set(courseId, 'failed');
@@ -154,7 +168,7 @@ export class RoadMap {
     }
 
     setRoads(courseId, roads) {
-        this.courses.set(courseId, new Map((roads || []).map(r => [r.id, prepare(r)])));
+        this.courses.set(courseId, new Map((roads || []).map(r => [r.id, prepare(fixRoad(courseId, r))])));
     }
 
     /* The course's measured road points by 20 m square (world cm / 2000): {key -> [{road, i}]}, built once. */

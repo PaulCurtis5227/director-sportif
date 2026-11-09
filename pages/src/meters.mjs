@@ -216,7 +216,7 @@ import {hrAckText} from './team-hr.mjs';
 import {GapNote} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 
-export const DS_VERSION = '0.60.1';
+export const DS_VERSION = '0.60.4';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)

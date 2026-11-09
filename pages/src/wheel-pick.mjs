@@ -15,12 +15,18 @@
  * wins; without it, the lone-pair factor. A rider beside you (wheels overlapping: under ASIDE_FROM_M center to
  * center) gives no draft and is no wheel unless right in line. The wheel you're on is kept while it scores within
  * KEEP of the best, so two riders side by side ahead don't swap every second.
+ * v0.60.3 (2026-11-08 Tour of Watopia stage 5: "right up on the wheel, and the wheel gap said 10 feet"): the share is flat
+ * to 3.5 m, so a rider who slotted in between you and your wheel scored no better than it, and KEEP held the wheel
+ * behind them: the gap read 2.5–3 m (8–10 ft) while you sat 0–0.5 m off the new wheel, on 25–50% of the ticks with a
+ * rider in front (research/2026-11-08/wheel-gap-check.mjs, 4 rides). Now every rider within KEEP of the best draft is a
+ * wheel you could be on, and the NEAREST of them is yours (the one between you and the others takes the wind); the
+ * wheel you are on stays until another is SWITCH_M nearer.
  * Pure: fed the engine's entries each tick.
  */
 import {gapBetween} from './engine/wheels.mjs';
 import {UNIT_PER_M} from './engine/pack-cost.mjs';
 
-export const WHEEL_PICK = {inlineM: 0.44, asideFromM: 1.5, maxGapM: 25, goodQ: 0.5, keep: 0.8};
+export const WHEEL_PICK = {inlineM: 0.44, asideFromM: 1.5, maxGapM: 25, goodQ: 0.5, keep: 0.8, switchM: 1};
 // [m, value] points, linear between, 0 past the last
 const SHARE_PTS = [[0, 0.49], [3.5, 0.49], [5, 0.45], [6, 0.39], [8, 0.30], [10, 0.22], [15, 0.17], [20, 0.08], [25, 0.02]];   // still a wheel at 25 m (GAP_MAX_M)
 const LONE_PTS = [[0, 1], [0.3, 1], [0.45, 0.91], [0.8, 0.66], [1.25, 0.40], [2, 0]];
@@ -60,13 +66,16 @@ export class WheelPick {
         const o = this.o;
         if (!me || !me.state || !Number.isFinite(me.gapDistance)) { this.prevId = null; return null; }
         const pack = Number.isFinite(q) && q >= o.goodQ;
-        let best = null, prev = null;
+        let best = null;
+        const cands = [];
         for (const r of entries || []) {
             if (!r || r === me || r.athleteId === me.athleteId || !r.state || !Number.isFinite(r.gapDistance)) continue;
             if (r.state.roadId !== me.state.roadId || !!r.state.reverse !== !!me.state.reverse) continue;
-            if (!(r.gapDistance < me.gapDistance)) continue;   // ahead of you on the road
             const g = gapBetween(me, r);
-            const gap = Math.max(0, g.gap);
+            // ahead of you once the states are time-aligned (v0.60.3): Sauce's raw gapDistance put a rider whose state was
+            // 1.4 s older 10 m behind you while they were 2.3 m in front (left out); one level with you was clamped to 0 (-5 ft)
+            if (!(g.gap > 0)) continue;
+            const gap = g.gap;
             if (gap > o.maxGapM) continue;
             const lane = (r.state.roadPosition ?? 0) - (me.state.roadPosition ?? 0);
             const asideM = Math.abs(lane) / UNIT_PER_M;
@@ -74,10 +83,17 @@ export class WheelPick {
             const score = wheelDraft(gap, asideM, pack);
             if (!(score > 0)) continue;
             const w = {id: r.athleteId, gap, gapSource: g.source, lane, speed: (r.state.speed || 0) / 3.6, score};
-            if (r.athleteId === this.prevId) prev = w;
+            cands.push(w);
             if (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && gap < best.gap)) best = w;
         }
-        const pick = prev && prev.score >= best.score * o.keep ? prev : best;
+        // within KEEP of the best draft: the nearest (the wheel you are on unless another is SWITCH_M nearer)
+        let pick = null, prev = null;
+        for (const w of cands) {
+            if (w.score < best.score * o.keep) continue;
+            if (w.id === this.prevId) prev = w;
+            if (!pick || w.gap < pick.gap) pick = w;
+        }
+        if (prev && pick && pick.gap > prev.gap - o.switchM) pick = prev;
         this.prevId = pick ? pick.id : null;
         if (!pick) return null;
         const {score, ...out} = pick;

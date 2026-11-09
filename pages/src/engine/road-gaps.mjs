@@ -25,6 +25,12 @@
  * truth, time-aligned), |error| P50 / P90: 0–15 m 0.07 / 0.45 (road completion: 0.2 / 1.0–1.5), 15–50 m 0.3 / 1.3–2.1
  * (1.3 / 7–9), 50–150 m 0.7–2.5 / ~20 (~10 / 43–52; the straight line cuts bends), and never missing (road completion: ~10%
  * before its scale). Road completion stays the fallback: a rider without x/y, or you not yet moved ROAD_GAPS.minDirM.
+ * EM v0.72.3 / DS v0.60.4 (2026-11-08 ToW stage 5 finish, a sprint report put a rider 333 m away as 6 m ahead and the user
+ * 2nd at the line): the projection was used whenever it was under nearM, however far to the side the rider was, so a rider
+ * level with you on another stretch of the same winding road (Watopia road 196: roadCompletion 630k vs your 190k) read
+ * as beside you. Now: within nearM in a straight line, the projection; further to the side than ahead by nearM or more =
+ * another stretch of the road (across a hairpin, a loop), no gap; else the straight line signed by the projection (a rider
+ * 14 m ahead in a bend, a few meters off your line of travel, or 40 m round a 90° bend, keep theirs).
  *
  *   new RoadGaps().update(all, me) -> {entries, source: 'sauce' | 'road' | 'none'}
  *     source 'road' = repaired (x/y, or road completion), 'none' = your road is broken and neither is known yet
@@ -146,7 +152,10 @@ export class RoadGaps {
                 if (dir && sameWay(t, s) && Number.isFinite(t.x) && Number.isFinite(t.y)) {
                     const dx = (t.x - s.x) / 100, dy = (t.y - s.y) / 100;
                     const p = dx * dir[0] + dy * dir[1];
-                    const lead = Math.abs(p) < ROAD_GAPS.nearM ? p : Math.sign(p) * Math.hypot(dx, dy);
+                    const d = Math.hypot(dx, dy);
+                    // far more to the side than along: another stretch of the same road, not near you
+                    const side = Math.sqrt(Math.max(0, d * d - p * p));
+                    const lead = d < ROAD_GAPS.nearM ? p : side > Math.abs(p) + ROAD_GAPS.nearM ? NaN : Math.sign(p) * d;
                     if (Math.abs(lead) <= ROAD_GAPS.maxLeadM) return {...o, gap: undefined, isGapEst: true, gapDistance: base - lead};
                     return {...o, gap: undefined, isGapEst: true, gapDistance: undefined};
                 }

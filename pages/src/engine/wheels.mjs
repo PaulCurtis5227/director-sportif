@@ -116,7 +116,8 @@ export function gapBehind(entries, athleteId, withinM = 25) {
     }
     let best = null;
     for (const o of entries) {
-        if (!o || o === me || !o.state || !Number.isFinite(o.gapDistance) || o.gapDistance <= me.gapDistance) {
+        // behind you once time-aligned (the g >= 0 below): Sauce's raw gapDistance misorders riders whose states are older
+        if (!o || o === me || !o.state || !Number.isFinite(o.gapDistance)) {
             continue;
         }
         if (o.state.roadId !== me.state.roadId || o.state.reverse !== me.state.reverse) {

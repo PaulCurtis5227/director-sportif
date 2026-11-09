@@ -47,6 +47,33 @@ test('the wheel you are on is kept against one barely better, not against one cl
     assert.equal(w.update([me], me), null);
 });
 
+test('v0.60.3 (2026-11-08): a rider who slots in between you and your wheel becomes your wheel', () => {
+    const w = new WheelPick();
+    assert.equal(w.update([me, rider(2, 4.3, 0)], me, {q: 0.6}).id, 2);
+    const pick = w.update([me, rider(2, 4.3, 0), rider(3, 1.7, 0.5)], me, {q: 0.6});
+    assert.equal(pick.id, 3, 'right up on the new wheel: not 10 ft to the one behind it');
+    assert.ok(Math.abs(pick.gap - 1.7) < 0.01);
+    assert.equal(new WheelPick().update([me, rider(2, 4.3, 0), rider(3, 1.7, 0.5)], me).id, 3, 'a fresh pick too');
+});
+
+test('v0.60.3: ahead by the time-aligned gap: a rider whose state is 1.4 s older is in front of you, not 10 m behind', () => {
+    const old = rider(2, -10.5, 0.2);   // Sauce: 10.5 m behind, but at 36 km/h they rode 14 m since that state
+    old.state.worldTime = T - 1400;
+    const pick = new WheelPick().update([me, old, rider(3, 16, 0)], me, {q: 0});
+    assert.equal(pick.id, 2);
+    assert.ok(Math.abs(pick.gap - 3.5) < 0.1, String(pick.gap));
+    const level = rider(4, 1, 0);   // 1 m ahead by Sauce, 3 m behind once aligned: no wheel at all
+    level.state.worldTime = T + 400;
+    assert.equal(new WheelPick().update([me, level], me), null);
+});
+
+test('v0.60.3: two riders side by side ahead: your wheel stays until the other is 1 m nearer', () => {
+    const w = new WheelPick();
+    assert.equal(w.update([me, rider(2, 3.0, 0.2), rider(3, 3.2, -0.3)], me, {q: 0.6}).id, 2);
+    assert.equal(w.update([me, rider(2, 3.1, 0.2), rider(3, 2.9, -0.3)], me, {q: 0.6}).id, 2, 'kept: 0.2 m nearer');
+    assert.equal(w.update([me, rider(2, 4.0, 0.2), rider(3, 2.9, -0.3)], me, {q: 0.6}).id, 3, 'switched: 1.1 m nearer');
+});
+
 test('v0.60.1: your group does not split under 8 m (a slow climb: 1 s is 4.4 m at 16 km/h)', () => {
     const slow = [rider(1, 0, 0, 16), rider(2, 6.2, 0, 16), rider(3, 12, 0, 16)];
     assert.equal(groupLayout(slow).get(1).size, 3);

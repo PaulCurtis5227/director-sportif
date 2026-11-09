@@ -27,9 +27,10 @@ Each shows a number, and a word under it when there's something to do ("back off
 - **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
 - **Blocked**: watts lost pushing into the wheel ahead, over the last 10 s; its word stops once you have eased or left the wheel. On fast descents sitting close costs the most of all: ease off to 4 m or more between wheels.
 - **Passing**: the closing speed when you creep up on a rider at the speed that gets you held, or one creeps up on you.
-- **Wheel gap**, **L/R**: to the wheel in front. Wheel gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
+- **Wheel gap**, **L/R**: to your wheel, the rider ahead giving you draft (in line, or a little to the side; the nearest when
+  several give about the same). Wheel gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
 - **Tuck**: the speed still needed for a supertuck; **Tuck drag**: your drag in the tuck against coasting.
-- **Surface**: the watts the road under you costs your tyres beyond pavement (wood, dirt, cobbles…).
+- **Surface**: the watts the road under you costs your tires beyond pavement (wood, dirt, cobbles…).
 - **FRC**: your reserve above FTP, from your power ("low", "empty").
 - **Director**: the one call to act on now. Plus a word slot per meter, and power, speed, draft, cadence, heart rate
   and grade.
@@ -49,7 +50,7 @@ windows always show it. Times are in seconds, never meters.
   closing fast), "keep going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
   hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
-- **Segment cards**: from a card with a plan (caffecter.com), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
+- **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
 - **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "move left in 6" when the
   inside is open and moving over gains ground (alone too, and in the finish), nothing when you're on the inside already; "cut the S in 5" before
   a stretch that twists enough for a steered line to pay (on your route: dirt S curves most, where the best line gains 4–6 m).
@@ -74,6 +75,13 @@ you ride); in a time trial a bike that isn't a TT bike turns it red.
 2. Download `director-sportif-<version>.zip` from the [releases](../../releases/latest) and unzip it into your
    `Documents\SauceMods` folder (create it if it isn't there; with OneDrive, the Documents folder OneDrive keeps).
 3. Quit Sauce fully (from the tray) and start it again.
+
+## Help
+
+- **The guide**: install, every call and meter, the Grid, recording, race cards and OBS, at
+  [caffecter.com/guide.html](https://www.caffecter.com/guide.html).
+- **Something not working?** [Troubleshooting](https://www.caffecter.com/guide/troubleshooting.html) first, then
+  [tell us](https://www.caffecter.com/contact.html).
 
 ## Use
 

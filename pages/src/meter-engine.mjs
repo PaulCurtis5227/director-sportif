@@ -772,7 +772,7 @@ export class MeterEngine {
             this.posGapOn = false;
             if (s.worldTime - this.posQuietWt < POSITION_TAU_S * 1000) {
                 const w = this.position.update(s.worldTime, spot.positionW, spot.smoothed);
-                return {w: L.size < 2 ? null : w, note: 'after the gap opening: reading your spot again', state: 'warming'};
+                return {w: L.size < 2 ? null : w, note: `a gap opened: Position starts over for ${POSITION_TAU_S} s`, state: 'warming'};
             }
             this.posQuietWt = null;
         }
