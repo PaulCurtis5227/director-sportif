@@ -109,7 +109,10 @@ import {withSpeeds, secsAlong, curvyStretch, S_CURVE} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
 import {WheelPick} from './wheel-pick.mjs';
+import {DangleWatch} from './dangle.mjs';
 import {RideAwayWatch} from './ride-away.mjs';
+import {FlyerWatch} from './flyer.mjs';
+import {leads} from './engine/wheels.mjs';
 import {BridgeWatch, BridgeCoach} from './bridge.mjs';
 import {DropWatch} from './drop-watch.mjs';
 import {planBridge} from './bridge-plan.mjs';
@@ -119,6 +122,7 @@ import {TeamHrWatch, isTeammate, teamTag} from './team-hr.mjs';
 import {aroundYou} from './outcome.mjs';
 
 const STEP_KEEP_S = 10;   // the way out of a block stays the same side this long
+const STEP_SWITCH_S = 2;  // ...and changes only when that side has been taken this long in a row (v0.66.0)
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
 import {remainingOnSurface, profileAheadOnMap, RoadTraffic} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
@@ -227,6 +231,7 @@ export class MeterEngine {
         this.altScale = new AltitudeScale();        // your z -> altitude (the map's road profile off a route)
         this.roadTraffic = new RoadTraffic();       // where the riders went (the map's way at a junction off a route)
         this.gapSource = 'sauce';
+        this.teamHrWatch = new TeamHrWatch();       // no heart rate in your race (team-hr.mjs): one for the window's life
         this.startRider();
     }
 
@@ -255,10 +260,13 @@ export class MeterEngine {
         this.posGapOn = false;    // that was the last tick (the next one starts Position over)
         this.gapWatch = new GapWatch();   // a hole opening in front of your wheel (or the next): about to be gapped
         this.rideAway = new RideAwayWatch();   // the group ahead leaves or splits: no "ease off" / "back off" then
+        this.flyerWatch = new FlyerWatch();    // one or two riders riding away off your group's front (v0.65.0): "flyer"
         this.bridge = new BridgeWatch();       // you're closing on riders up the road: no gap advice to the wheel you caught
         this.dropWatch = new DropWatch();      // you're losing the group you rode with (drop-watch.mjs): "losing the group"
         this.bridgeCoach = new BridgeCoach();  // the bridge call, while bridgeArmed (the window's Bridge button)
-        this.teamHrWatch = new TeamHrWatch();     // a teammate in your race with no heart rate (pen and race)
+        // a teammate (or you) in your race with no heart rate: made once (constructor), never here. v0.63.1: the window
+        // keeps it for "I know", and this runs again on the first tick (a new rider), so a fresh one here left "I know"
+        // acknowledging a watch nobody read: the banner couldn't be cleared (the user, 2026-11-09). It resets itself per event.
         this.burritoWatch = new BurritoWatch();   // burritos fired in your event: the cone ahead, how many are still to come
         this.accel = null;    // {wt, kmh, a}: your acceleration (km/h per s, ~2 s), to time-align the passing cue's speeds
         this.gapFor = null;               // whose (a camera change starts it fresh)
@@ -272,7 +280,8 @@ export class MeterEngine {
         this.moveUpCoach = new MoveUpCoach();
         this.featherPick = new FeatherPick();   // the feather's target held where it is on the road (spent once passed)
         this.climbClock = new ClimbClock();   // how long you've been climbing ("over top" only after a real climb)
-        this.wheelPick = new WheelPick();   // your wheel: in line, or up to 1 m aside (v0.60.1)
+        this.wheelPick = new WheelPick();
+        this.dangleWatch = new DangleWatch();   // last of your group, the wheel opening: "close up" earlier (v0.61.0)   // your wheel: in line, or up to 1 m aside (v0.60.1)
         this.draftlessWatch = new DraftlessWatch();   // you get no draft at all (a TT bike, a time trial): pack calls off
         this.bendLast = null;                 // the bend cue's state last tick (called once it holds two ticks)
         this.sprintCoach = new SprintCoach();
@@ -282,10 +291,24 @@ export class MeterEngine {
     }
 
     /* One tick: the meter rider's entry and their meters, or null with nobody to read. */
-    /* The side to step to: once called it stays through the block while it is free (STEP_KEEP_S after the last time asked). */
+    /*
+     * The side to step to: once called it stays through the block while it is free (STEP_KEEP_S after the last time
+     * asked), and through a moment it isn't: only taken for STEP_SWITCH_S in a row does it change (v0.66.0; the user,
+     * 2026-11-11: "a lot of text going up that just couldn't make up its mind. left, right, ease off": 5:02–5:05 a
+     * rider on the edge of the taken zone made it ease off, step right, step left in 3 s).
+     */
     stepFor(entries, me) {
         const wt = me.state.worldTime, was = this.stepWas;
-        const side = stepSide(entries, me, undefined, {keep: was && wt - was.wt <= STEP_KEEP_S * 1000 ? was.side : null});
+        const kept = was && wt - was.wt <= STEP_KEEP_S * 1000 ? was.side : null;
+        const side = stepSide(entries, me, undefined, {keep: kept});
+        if (kept && side !== kept) {   // the called side isn't free now (taken, or no room either way)
+            this.stepAgainst ??= wt;
+            if (wt - this.stepAgainst < STEP_SWITCH_S * 1000) {
+                this.stepWas = {side: kept, wt};
+                return kept;
+            }
+        }
+        this.stepAgainst = null;
         this.stepWas = side ? {side, wt} : was;
         return side;
     }
@@ -318,9 +341,11 @@ export class MeterEngine {
             this.gapSource = fixed.source;
             this.gapWatch.reset();
             this.rideAway.reset();
+            this.flyerWatch.reset();
             this.bridge.reset();
             this.dropWatch.reset();
             this.offBackFrom = null;
+            this.dangleWatch.reset();
             this.wheelPick.reset();
             this.position.reset();
             this.posQuietWt = null;
@@ -383,6 +408,10 @@ export class MeterEngine {
         // "ease off", "drop back" or "drift back"
         if (settling || L.size < 2) this.rideAway.reset();
         const away = settling || L.size < 2 ? null : this.rideAway.update(entries, me, s.worldTime);
+        // a flyer (flyer.mjs, v0.66.0): one or two riders jumping off your bunch's front, in any event (the user's
+        // 11-09 case was a Tour of Watopia stage, Zwift's GROUP_RIDE, raced): "flyer", and no "ease off" while it goes
+        const flyer = settling || !me.self ? null : this.flyerWatch.update({entries, me, wt: s.worldTime, layout, lead: leads(entries),
+                                                                             inEvent: !!s.eventSubgroupId});
         if (settling) this.bridge.reset();
         const upRoad = settling ? null : this.bridge.update(entries, me, s.worldTime);
         const bridging = upRoad && upRoad.closing ? upRoad : null;
@@ -394,7 +423,10 @@ export class MeterEngine {
         // off the back: close-up 10 m+ from the wheel ahead, held (OFF_BACK)
         const offNow = me.self && !settling && pos.state === 'close-up' && L.gapAhead != null && L.gapAhead >= OFF_BACK.minM;
         this.offBackFrom = offNow ? (this.offBackFrom ?? s.worldTime) : null;
-        const offBack = offNow && s.worldTime - this.offBackFrom >= OFF_BACK.holdS * 1000;
+        // or dangling: the last of your group with the wheel opening, at race speed (dangle.mjs)
+        const dangling = me.self && this.dangleWatch.update({wt: s.worldTime, inEvent: !!s.eventSubgroupId, settling, draftless: !!draftless,
+                                                             groupSize: L.size, groupAhead: L.ahead, gapM: L.gapAhead, kmh: s.speed || 0});
+        const offBack = (offNow && s.worldTime - this.offBackFrom >= OFF_BACK.holdS * 1000) || dangling;
         if (settling) this.block.reset();
         const blkRead = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
                                        massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
@@ -402,9 +434,9 @@ export class MeterEngine {
                                        behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
                                        powerUp: s.activePowerUp, coffee: s.coffeeStop});
         // the measured loss stays (blockedW); only the cue goes while they ride away
-        const blk = (away || drop || bridging) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
+        const blk = (away || drop || bridging || flyer) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
         const holdRead = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
-        const hold = (away || drop || bridging) && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
+        const hold = (away || drop || bridging || flyer) && holdRead.state === 'easy' ? {...holdRead, state: 'hold'} : holdRead;   // "easy": not now
         const ac = this.accel, dtAc = ac && Number.isFinite(s.worldTime) ? (s.worldTime - ac.wt) / 1000 : null;
         const accelKmhS = dtAc > 0 && dtAc < 5 ? ac.a + (1 - Math.exp(-dtAc / 2)) * (((s.speed || 0) - ac.kmh) / dtAc - ac.a) : ac ? ac.a : 0;
         if (!ac || dtAc !== 0) this.accel = {wt: s.worldTime, kmh: s.speed || 0, a: dtAc > 0 && dtAc < 5 ? accelKmhS : 0};
@@ -561,8 +593,10 @@ export class MeterEngine {
         const surfaceW = surface && surface !== 'pavement' && crrOf(surface) != null ?
             Math.max(0, (crrOf(surface) - pave) * model.massKg * 9.80665 * Math.max(v, 1)) : 0;
         let surfaceAhead = null;
-        if (this.roadMap && me.self && !settling && (!surface || surface === 'pavement' || surface === 'sand')) {
-            const ah = this.roadMap.ahead(s, 600, this.routeAhead ? this.routeAhead.sections(s) : null);
+        // on a rough surface too: the next different one after it (v0.66.1: brick onto cobbles onto dirt got no "dirt in N")
+        if (this.roadMap && me.self && !settling) {
+            const rough = surface && surface !== 'pavement' && surface !== 'sand' ? surface : null;
+            const ah = this.roadMap.ahead(s, 600, this.routeAhead ? this.routeAhead.sections(s) : null, {skip: rough});
             if (ah) {
                 const inS = secsAlong(roadAhead, ah.inM, vAhead);
                 const outS = secsAlong(roadAhead, ah.inM + ah.lengthM, vAhead);
@@ -573,7 +607,7 @@ export class MeterEngine {
         const climbedS = me.self ? this.climbClock.update(s.worldTime, s.grade || 0) : 0;
         if (me.self && !settling && roadAhead) {
             const pv = exactAhead && roadAhead[0] ? roadAhead[0].v : vAhead;   // no rescale on the route's / map's speeds
-            const pc = pacingCue({profile: roadAhead, v: pv, grade: s.grade || 0, climbedS});
+            const pc = pacingCue({profile: roadAhead, v: pv, grade: s.grade || 0, climbedS, climbGrade: this.climbClock.grade});
             if (pc.state === 'ready') {
                 const st = (climbAhead(roadAhead, {vNow: pv, grade: s.grade || 0}) || {}).steep;
                 const inS = secsAlong(roadAhead, pc.startM, vAhead);
@@ -682,6 +716,7 @@ export class MeterEngine {
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
             surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather, bridge: bridgeCall,
             burrito,
+            flyer: flyer ? {riders: flyer.riders, gapS: flyer.gapS, gapM: flyer.gapM, say: flyer.say} : null,
             teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,
             frc: frc ? {leftJ: frc.leftJ, frac: frc.frac, lowJ: frc.lowJ} : null,
             card: cardCall ? {about: cardCall.about, kind: cardCall.item ? cardCall.item.kind : null, plan: cardCall.plan || null,
@@ -706,6 +741,7 @@ export class MeterEngine {
             cda: model.cda,
             cdaSource: model.source,
             groupSize: L.size,
+            groupAhead: L.ahead,   // riders ahead of you in your group (last = groupSize - 1)
             settling,
             draftless,
             // state codes for the data object (ds-data.mjs buildData; docs/DS-DATA.md)

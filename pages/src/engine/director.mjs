@@ -28,6 +28,7 @@ export const PREP_SEC = 95;
 // above 3%, at the meter), so with exactFoot the windows are judged on secs + this, i.e. on the real 60–45 s.
 export const ESTIMATE_LATE_S = 5;
 export const MOVE_SEC = [50, 65];
+export const MOVE_BACK_S = 10;        // the move window, once open, closes again only if the climb is this much further off
 export const QUIET_SEC = 18;          // the last seconds belong to the climb cue
 export const CLIMB_START = 0.04;      // a climb starts where the smoothed grade reaches this…
 export const CLIMB_KEEP = 0.03;       // …and lasts while it stays above this
@@ -90,7 +91,10 @@ export class MoveUpCoach {
         const T = Math.round(c.secs);
         const climb = `${Math.round(c.lengthM / 10) * 10} m at ${(c.grade * 100).toFixed(0)}%`;
         const wellPlaced = group.ahead <= Math.max(3, Math.round(group.size * FRONT_SHARE));
-        if (w > MOVE_SEC[1]) {
+        // once the move window is open for this climb it stays open: only a climb MOVE_BACK_S further away again (the
+        // route changed) goes back to "prep" (v0.72.4, DS 0.66.0; the user's mark, 2026-11-11 17:49: the estimate sat at 65 s while
+        // they slowed, and the call went move, prep, move, prep, move in 5 s)
+        if (w > MOVE_SEC[1] && !(this.window && w <= MOVE_SEC[1] + MOVE_BACK_S)) {
             this.window = null;
             return {id: 'moveUp', state: 'prep', priority: PRIORITY.prep, secs: c.secs,
                     text: wellPlaced ? `Climb in ${T} s (${climb}): good spot, stay near the front` :
@@ -99,7 +103,7 @@ export class MoveUpCoach {
         if (!this.window) {
             this.window = {aheadAtStart: group.ahead};
         }
-        if (w >= MOVE_SEC[0]) {
+        if (w >= MOVE_SEC[0] || w > MOVE_SEC[1]) {   // the second: back over 65 s within MOVE_BACK_S, still "move"
             return wellPlaced ?
                 {id: 'moveUp', state: 'hold', priority: PRIORITY.hold, secs: c.secs, text: `Climb in ${T} s: good spot, hold it (${HOLD_W})`} :
                 {id: 'moveUp', state: 'move', priority: PRIORITY.move, secs: c.secs, text: `MOVE UP NOW along the edge — climb in ${T} s`};

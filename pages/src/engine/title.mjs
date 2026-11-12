@@ -35,6 +35,8 @@ export async function main() {
     if (p.startMs != null) sub.push(`start ${new Date(p.startMs).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`);
     $('sub').textContent = sub.join(' · ');
     $('kicker').textContent = p.rider ? `${p.rider} · race` : 'Race';
+    // the rider promised this race to caffecter.com: riders in it can get their report there (PLAN §24)
+    if ($('promo-keep')) $('promo-keep').hidden = !p.keep;
     const rows = cardRows(card, p.plan);
     if (rows.some(r => r.plan)) document.body.classList.add('has-plan');
     if (!rows.length) {

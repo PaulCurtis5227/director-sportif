@@ -26,9 +26,13 @@ const PU = {AERO: 'Aero', DRAFTBOOST: 'Draft van', VAN: 'Draft van', LIGHTNESS: 
             NINJA: 'Ghost', UNDRAFTABLE: 'Burrito', BOOST: 'Arrows', RANDOM: 'Random', XP: 'XP'};
 const KIND = {sprint: 'Sprint', kom: 'KOM', climb: 'Climb', arch: 'Arch', finish: 'Finish'};
 
-/* The query string for title.html. Everything optional. */
-export function titleQuery({cardId, eventName, subgroup, startMs, rider, plan} = {}) {
+/*
+ * The query string for title.html. Everything optional. keep: the rider promised this race to caffecter.com (Director
+ * Sportif "Keep my races on caffecter.com", PLAN §24: only then the card says "In this race? Get your free report").
+ */
+export function titleQuery({cardId, eventName, subgroup, startMs, rider, plan, keep = false} = {}) {
     const q = new URLSearchParams();
+    if (keep) q.set('keep', '1');
     if (cardId) q.set('card', cardId);
     if (eventName) q.set('event', eventName);
     if (subgroup) q.set('cat', subgroup);
@@ -47,7 +51,8 @@ export function parseTitleQuery(search) {
         if (p && typeof p === 'object') plan = p;
     } catch (e) { /* bad plan: show none */ }
     return {cardId: q.get('card') || null, eventName: q.get('event') || null, subgroup: q.get('cat') || null,
-            startMs: q.get('start') && Number.isFinite(start) ? start : null, rider: q.get('rider') || null, plan};
+            startMs: q.get('start') && Number.isFinite(start) ? start : null, rider: q.get('rider') || null, plan,
+            keep: q.get('keep') === '1'};
 }
 
 const PLAN = {contest: 'Contest', position: 'Position for it', skip: 'Skip'};

@@ -390,7 +390,7 @@ html[data-theme="transparent-dark"] .tile {
 }
 
 /* a rider with no heart rate (meters.mjs hrChecker): red until acknowledged */
-#hr-check, #gap-note {
+#hr-check, #gap-note, #keep-note {
     margin: 0.3em 0.4em 0;
     padding: 0.3em 0.5em;
     border-radius: 0.3em;
@@ -402,17 +402,23 @@ html[data-theme="transparent-dark"] .tile {
     color: #fff;
 }
 
+/* a promised race that didn't go to caffecter.com (meters.mjs keepReminder): yellow, something to do after the ride */
+#keep-note {
+    background: #f9c74f;
+    color: #222;
+}
+
 /* Sauce has no gaps here (meters.mjs gapNoter): yellow, a fact about the ride, not a problem */
 #gap-note {
     background: #f9c74f;
     color: #222;
 }
 
-#hr-check[hidden], #gap-note[hidden] {
+#hr-check[hidden], #gap-note[hidden], #keep-note[hidden] {
     display: none;
 }
 
-#hr-check .row, #gap-note .row {
+#hr-check .row, #gap-note .row, #keep-note .row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -423,12 +429,12 @@ html[data-theme="transparent-dark"] .tile {
     margin-top: 0.3em;
 }
 
-#hr-check .text, #gap-note .text {
+#hr-check .text, #gap-note .text, #keep-note .text {
     flex: 1 1 14em;
     font-weight: 600;
 }
 
-#hr-check button, #gap-note button {
+#hr-check button, #gap-note button, #keep-note button {
     flex: 0 0 auto;
     font-weight: 600;
 }
@@ -566,3 +572,8 @@ html[data-theme="transparent-dark"] #content.control {
 @keyframes ds-mark-flash {
     from { background: #f9c74f; }
 }
+
+/* Record tab: Link to Caffecter (caffecter-link.mjs) */
+.caffecter-link { margin-top: 1em; padding-top: 0.6em; border-top: 1px solid rgba(255, 255, 255, 0.15); }
+.caffecter-link .link-row { display: flex; gap: 0.6em; align-items: center; flex-wrap: wrap; margin-top: 0.4em; }
+.caffecter-link .link-code { font-size: 1.8em; font-weight: bold; letter-spacing: 0.12em; margin: 0.3em 0; user-select: all; }

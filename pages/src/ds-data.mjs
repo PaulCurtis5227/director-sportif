@@ -11,6 +11,7 @@
  */
 
 import {teamHrWord} from './team-hr.mjs';
+import {flyerWord} from './flyer.mjs';
 import {rangeLevel, DEFAULT_RANGES} from './tiles.mjs';
 
 export const DATA_VERSION = 1;
@@ -51,8 +52,9 @@ export const wheelGap = centerM => (Number.isFinite(centerM) ? centerM - BIKE_LE
 export const GAP_GOOD_M = [2, 3.5];
 export const GAP_CLOSE_M = 1;
 export const GAP_FAR_M = 5;
-export function gapLevel(wheelM, blockedState) {
+export function gapLevel(wheelM, blockedState, positionState = null) {
     if (!Number.isFinite(wheelM)) return null;
+    if (positionState === 'off-back') return 'alarm';   // off the back or dangling: the gap red (the user, 2026-11-09)
     if (blockedState === 'blocked' || blockedState === 'step-left' || blockedState === 'step-right') return 'alarm';
     if (wheelM >= GAP_GOOD_M[0] && wheelM <= GAP_GOOD_M[1]) return 'good';
     if (wheelM < GAP_CLOSE_M || wheelM > GAP_FAR_M) return 'warn';
@@ -86,7 +88,7 @@ export const VOCAB = {
         'too-close': {word: 'back off', help: 'Too close to the wheel: ease back to the best gap (or drift to the back of the bunch).'},
         boxed: {word: 'drift back', help: 'Boxed in close to the wheel: drift to the back, where there is room.'},
         'close-up': {word: 'close up', help: 'Too far off the wheel: close up to the best gap.'},
-        'off-back': {word: 'close up', help: 'You are 10 m or more behind the wheel ahead, out of its draft: close up now, or you are off the back (v0.60.0: spoken, a gap call).'},
+        'off-back': {word: 'close up', help: 'You are 10 m or more behind the wheel ahead, out of its draft, or the last of your group with the wheel 4 m+ away at race speed: close up now, or you are off the back (spoken, a gap call; the Wheel gap turns red).'},
         'find-wheel': {word: 'find a wheel', help: 'Get on a wheel at the best gap.'},
         unsteady: {word: 'hold a wheel', help: 'Less draft than your gap should give: the wheel is moving about, or you are off its line. Hold one wheel, in line.'},
         'no-draft': {word: 'change wheel', help: 'This wheel gives no draft (a hand cycle or recumbent?): find another.'},
@@ -277,6 +279,11 @@ export function directorCalls(ds) {
     } else if (bu && bu.state === 'done') {
         out.push({id: 'burrito', state: 'done', word: 'burritos done', in: null, for: null, priority: 30});
     }
+    // a flyer (flyer.mjs, v0.65.0): one or two riders riding away off the front of your group, said once per flyer
+    const fl = ds && ds.flyer;
+    if (fl && fl.say) {
+        out.push({id: 'flyer', state: 'away', word: flyerWord(fl), in: null, for: null, priority: 74});
+    }
     // a teammate with no heart rate (team-hr.mjs): said when it starts and every 2 min (some races DQ for it)
     const th = ds && ds.teamHr;
     if (th && th.say && th.names.length) {
@@ -421,7 +428,7 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
             passing: meter('passing', pack(ds.passKmh) ?? (common ? null : 0), passState),
             // below 0 = overlapping wheels: no word of its own (Blocked says "ease off" when it costs; the user, 2026-10-30)
             gap: meter('gap', wheelGap(ds.gapM), gapState, {centerM: fin(ds.gapM), ...(ds.gapApprox ? {approx: true} : {}),
-                                                             level: gapLevel(wheelGap(ds.gapM), blockedState)}),
+                                                             level: gapLevel(wheelGap(ds.gapM), blockedState, ds.positionState)}),
             side: meter('side', ds.sideM, sideState),
             // "supertuck in 6": the word carries the seconds (a display word, no chime: the "coast" chime stays the call)
             tuck: meter('tuck', tuckValue, tuckState, {...(drag ? {drag} : {}),

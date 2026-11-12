@@ -143,6 +143,27 @@
  * a note with one button when Sauce has no gaps here (gap-note.mjs); "block left / right" while the rider is still 3–9 s from 1.5 m behind you
  * (up to 10 m back), on the side they come up on, so there is time to act (blocking.mjs DEFEND_*); the step side stays through a
  * block; step, block and ease off answer: a done / failed chime and the word green / magenta (outcome.mjs, setting outcomeChime).
+ * v0.66.1 (EM v0.72.5; the user's double mark, 2026-11-11 30:18: "missed the transition at that junction to dirt"): the
+ * surface ahead is looked for on a rough surface too (road-map.mjs ahead skip): brick, then road 25's cobbles, then dirt.
+ * v0.66.0 (the user, 2026-11-11 ToW stage 4): the flyer called as the jump happens, "flyer, go" while the wheel can still be
+ * caught (flyer.mjs: 3 km/h+ over the bunch's median, under 2.5 s up; v0.65.0 waited for 20 m); the step side holds through a
+ * moment its side is taken (meter-engine stepFor STEP_SWITCH_S: "left, right, ease off" in 3 s); the climb's top is the
+ * real top, not a pause on the way up (pacing-cue.mjs, EM v0.72.4).
+ * v0.65.0 (the user, 2026-11-09: "I am thinking flyer"): the flyer call (flyer.mjs): one or two riders riding away off
+ * your group's front in an event, "flyer, 4 seconds" once per flyer from 20 m clear, no "ease off" / blocked calls while it
+ * goes (from 10 m); spoken for everyone. 11-09 replayed: "flyer" at 18:15, the 18:19 "ease off" gone. ~6 an event hour.
+ * v0.64.0 (PLAN §24 step 3): the promise. With Keep my races on and linked, the event record says keep: true (the report
+ * page ticks "Keep this ride" for that file), the OBS title card adds "In this race? Get your free report: caffecter.com",
+ * and a yellow reminder (#keep-note) says what to do when a promised race isn't going (never queued, or the queue gave up).
+ * v0.63.1: "I know I have no HR" clears the banner (the window kept the engine's first heart rate watch; the engine made a
+ * new one on the first tick, so the ack went nowhere: meter-engine.mjs now makes it once).
+ * v0.63.0 (PLAN §25): Keep my races on caffecter.com (Record tab): each 30 s piece the recording stores is also queued
+ * (ride-sender.mjs, IndexedDB ds-send), cut down (your name, id, heart rate out), sealed with the site's key and sent once
+ * the recording has been in an event; at Stop "done" with the count; whatever's left goes the next time the window opens.
+ * v0.62.1: the link's wait no longer throws in Sauce (Chromium's setTimeout called on the LinkFlow: "Illegal invocation"; the
+ * DS never asked again, so the approval was never collected), and any error in the link shows instead of a silent stop.
+ * v0.62.0 (2026-11-09, EfficiencyMeter PLAN §25): Link to Caffecter (Record tab; caffecter-link.mjs): the device flow, a code
+ * approved on caffecter.com/link.html, a token kept in localStorage that can only send rides (the sending comes next).
  * v0.60.1 (2026-11-07, the user's marks): the Wheel gap is the rider giving you the most draft, up to 1.5 m aside with good draft
  * (wheel-pick.mjs; was in line within 0.44 m, then it read the next rider in line, often 10 m+ up the road) and stays on it; no pack calls on a bike that gets no draft sooner (draftless
  * 10 s at 25 km/h+, not while a burrito is out, estimated gaps count half); your group no longer splits under 8 m (gap-curve
@@ -215,8 +236,10 @@ import {ProgressLeft} from './progress-left.mjs';
 import {hrAckText} from './team-hr.mjs';
 import {GapNote} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
+import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
+import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
 
-export const DS_VERSION = '0.60.4';
+export const DS_VERSION = '0.66.1';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -300,6 +323,9 @@ export const SETTING_DEFAULTS = {
     obsPassword: '',           // OBS's WebSocket password: kept in this window's settings on this computer
     obsRecordWithRace: false,  // start / stop OBS recording with the Director Sportif's recording
     obsTitleS: 15,             // the video opens on the title card this long (0 = none)
+    caffecterSite: 'www',      // which site Link to Caffecter links to (caffecter-link.mjs SITES; staging for testing)
+    linkName: 'My Zwift computer',   // what the site's account page calls this copy
+    sendRaces: false,          // keep my races on caffecter.com: sent while they record (ride-sender.mjs; linked, events only)
 };
 
 /*
@@ -495,6 +521,31 @@ function gapNoter({refit}) {
     };
 }
 
+/*
+ * A race you promised to caffecter.com (the title card told the riders in it) that isn't going (PLAN §24): yellow,
+ * stays until OK, with what to do. Shown at Stop when it was never queued, or when the send queue gives up on it.
+ */
+function keepReminder({refit}) {
+    const box = document.querySelector('#keep-note');
+    if (!box) return {show() {}};
+    let dismissed = null;   // the words OK was pressed on: not shown again (the queue says the same each time it tries)
+    const close = () => {
+        if (box.hidden) return;
+        dismissed = box.querySelector('.text').textContent;
+        box.hidden = true;
+        refit();
+    };
+    box.querySelector('button').addEventListener('click', close);
+    return {
+        show(text) {
+            if (text === dismissed) return;
+            box.querySelector('.text').textContent = text;
+            box.hidden = false;
+            refit();
+        },
+    };
+}
+
 export async function main() {
     Common.initInteractionListeners();
     applyDefaults();
@@ -570,8 +621,12 @@ export async function main() {
                             frcJ: (Number(settings.myFrcKJ) > 0 ? Number(settings.myFrcKJ) : 15) * 1000,
                             pMaxW: Number(settings.myPmaxW) > 0 ? Number(settings.myPmaxW) : null}),
     });
-    const hrCheck = hrChecker({watch: engine.teamHrWatch, refit: () => requestAnimationFrame(fitWindow)});
+    // the engine's watch as it is when asked (never a copy kept from now: v0.63.1)
+    const hrCheck = hrChecker({watch: {ack: (id, n) => engine.teamHrWatch.ack(id, n)}, refit: () => requestAnimationFrame(fitWindow)});
     const gapNote = gapNoter({refit: () => requestAnimationFrame(fitWindow)});
+    const keepNote = keepReminder({refit: () => requestAnimationFrame(fitWindow)});
+    // you promised this race to caffecter.com (PLAN §24): Keep my races on, and linked, so it will go
+    const promised = () => !!Common.settingsStore.get('sendRaces') && !!readLink();
     // Calls (calls.mjs): each type delivered as its settings say (text / chime / voice).
     const delivery = {};
     const readDelivery = () => {
@@ -660,6 +715,8 @@ export async function main() {
         });
     };
     let rec = null, cp = null, flushTimer = null, saving = false;   // the recording (below), used by the OBS link too
+    let sendRide = null;   // this recording's key in the send queue (ride-sender.mjs), when it's to be kept on caffecter.com
+    let recPromised = false;   // this recording holds a promised race (its event record says keep: true)
     // finished files: saved (Sauce's save window) only outside an event, never from the pen to the finish (save-queue.mjs)
     const saves = new SaveQueue(download), openedAt = Date.now();
     const saveNow = () => {
@@ -819,7 +876,9 @@ export async function main() {
             const cardId = rehearsing ? rehearsal && rehearsal.cardId : raceCards.card && raceCards.card.id;
             const query = titleQuery({cardId, eventName: rehearsing ? 'Rehearsal' : ev && ev.eventName, subgroup: ev && ev.subgroup,
                                       startMs: rehearsing ? Date.now() : ev && ev.startMs, rider: myName,
-                                      plan: cardId ? Common.settingsStore.get(cardPlanKey(cardId)) || {} : {}});
+                                      plan: cardId ? Common.settingsStore.get(cardPlanKey(cardId)) || {} : {},
+                                      // "In this race? Get your free report" only when this race will be kept
+                                      keep: !rehearsing && promised()});
             await prepareTitle(obs, `${base}${DS_TITLE.path}?${query}`, DS_TITLE);
             return await showTitle(obs, DS_TITLE);
         } catch (e) {
@@ -899,6 +958,23 @@ export async function main() {
 
     // ----- recording (capture format) -----
     const store = idbStore(CAPTURE_STORE);
+    // your races to caffecter.com as they record (v0.63.0, ride-sender.mjs): what's waiting from last time goes now
+    // a promised race the queue gives up on (unlinked, a piece lost): the reminder says so (PLAN §24)
+    const sender = new RideSender({store: idbSendStore(), onStatus: st => {
+        if (/couldn't|unlinked|not linked/.test(st.text)) keepNote.show(`Not sent to caffecter.com: ${st.text}. Your recording is in Downloads: upload it on caffecter.com's report page with "Keep this ride" ticked.`);
+    }});
+    sender.recover().catch(e => console.warn('send queue', e));
+    // the recording's own store, with every piece it stores also queued to send (only for a recording that's to go)
+    const storeFor = ride => (!ride ? store : {
+        putRide: r => store.putRide(r),
+        putChunk: async (id, seq, bytes) => {
+            await store.putChunk(id, seq, bytes);
+            sender.addPiece(ride, seq, bytes).catch(e => console.warn('send queue', e));
+        },
+        rides: () => store.rides(),
+        chunks: id => store.chunks(id),
+        remove: id => store.remove(id),
+    });
     const auto = new AutoRecord();
     // which events were recorded and which you finished, kept across a window reopen (auto-record.mjs state())
     const AUTO_STATE_KEY = 'director-sportif-auto-record';
@@ -943,7 +1019,10 @@ export async function main() {
         rec = new CaptureRecorder({meta: {app: 'director-sportif', version: DS_VERSION, routeId, routeName, rehearsal: rehearsing || undefined, ...meta}});
         recSg = null;
         recRaced = false;
-        cp = new Checkpoint(store, {name: `ds-${rehearsing ? 'rehearsal' : 'capture'}-${stamp(rec.startedAt)}`, rec, release: true});
+        recPromised = false;
+        // kept on caffecter.com: the setting on and this copy linked; sent once it's been in an event (markSend below)
+        sendRide = !rehearsing && Common.settingsStore.get('sendRaces') ? await sender.newRide().catch(() => null) : null;
+        cp = new Checkpoint(storeFor(sendRide), {name: `ds-${rehearsing ? 'rehearsal' : 'capture'}-${stamp(rec.startedAt)}`, rec, release: true});
         await cp.begin();
         // the video clocks as they stand (OBS already recording / streaming)
         for (const kind of ['record', 'stream']) {
@@ -976,10 +1055,12 @@ export async function main() {
         if (obsStarted.get() && obs && obs.connected) {
             obs.stopRecord().then(() => obsStarted.set(false)).catch(e => console.warn('OBS stop', e));
         }
-        const c = cp;
+        const c = cp, ride = sendRide, wasPromised = recPromised;
         clearInterval(flushTimer);
         rec = null;
         cp = null;
+        sendRide = null;
+        recPromised = false;
         saving = true;
         showRec();
         try {
@@ -988,6 +1069,10 @@ export async function main() {
         } catch (e) {
             console.error('capture save failed: kept for next time', e);   // left in the store: saved on the next open
         }
+        // to caffecter.com: the pieces stored are the whole ride (never in an event: dropped from the queue)
+        if (ride) sender.finish(ride, c.seq).catch(e => console.warn('send queue', e));
+        // promised (the title card said so) but not on its way (linked or switched on after Record): say what to do
+        else if (wasPromised) keepNote.show(`You promised this race to caffecter.com, but it isn't being sent (Keep my races or the link came after you pressed Record). Upload ${c.name}.ndjson.gz on caffecter.com's report page with "Keep this ride" ticked.`);
         saving = false;
         saveNow();
         showRec();
@@ -1104,9 +1189,13 @@ export async function main() {
             if (rec && mySg && recSg === mySg && Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0) recRaced = true;
             if (rec && rec !== stopping && mySg && recSg !== mySg) {
                 const sg = recSg = mySg, into = rec;
+                if (sendRide) sender.markSend(sendRide).catch(e => console.warn('send queue', e));   // in an event: it goes
+                // the promise in the recording (PLAN §24): kept on caffecter.com; the report page ticks "Keep this ride" for it
+                const keep = promised();
+                if (keep) recPromised = true;
                 evInfo.ready.then(v => {
                     if (rec === into) into.event(Date.now(), {sg, name: (v && v.eventName) || null, subgroup: (v && v.subgroup) || null,
-                                                              type: (v && v.eventType) || null});
+                                                              type: (v && v.eventType) || null, ...(keep ? {keep: true} : {})});
                 });
             }
             if (mySg && rehearsal) endRehearsal('rehearsal ended: you joined an event').catch(e => console.error('rehearsal', e));
@@ -1356,5 +1445,86 @@ export async function settingsMain() {
     showObsStatus();
     window.addEventListener('storage', ev => {
         if (ev.key === OBS_STATUS_KEY) showObsStatus();
+        if (ev.key === LINK_KEY) showLink();
+        if (ev.key === SEND_STATUS_KEY) showSend();
     });
+    const showLink = initCaffecterLink();
+    // what the Director Sportif window's send queue last said (ride-sender.mjs)
+    const showSend = () => {
+        const el = document.querySelector('.send-status');
+        if (!el) return;
+        let st = null;
+        try { st = JSON.parse(localStorage.getItem(SEND_STATUS_KEY) || 'null'); } catch (e) { /* none */ }
+        el.textContent = st && st.text ? st.text[0].toUpperCase() + st.text.slice(1) : '';
+    };
+    showSend();
+}
+
+/*
+ * Record tab, Link to Caffecter (caffecter-link.mjs, the device flow): the code shown, the site opened in your browser,
+ * linked once you approve it there. Opened while linked: asks the site whether it still is (unlinked there = here too).
+ */
+function initCaffecterLink() {
+    const box = document.querySelector('.caffecter-link');
+    if (!box) return () => {};
+    const btn = box.querySelector('button.link-button');
+    const status = box.querySelector('.link-status');
+    const codeEl = box.querySelector('.link-code');
+    const flow = new LinkFlow({open: url => Common.rpc.openExternalLink(url)});
+    let busy = false;
+    const show = (text, code = '') => {
+        status.textContent = text;
+        codeEl.textContent = code;
+        codeEl.hidden = !code;
+    };
+    const showLink = () => {
+        if (busy) return;
+        const link = readLink();
+        btn.textContent = link ? 'Unlink' : 'Link to Caffecter';
+        show(link ? `Linked to ${link.email || 'your account'} on ${siteUrl(link.site).replace('https://', '')}.` :
+            'Not linked. Link it to send your rides to your caffecter.com account (coming next).');
+    };
+    btn.addEventListener('click', async () => {
+        const link = readLink();
+        if (busy) {   // Cancel
+            flow.cancel();
+            busy = false;
+            showLink();
+            return;
+        }
+        if (link) {
+            if (!confirm('Unlink this Director Sportif from your caffecter.com account?')) return;
+            writeLink(null);
+            await unlinkSelf(link).catch(() => {});   // offline: it stays listed on the account page, unlink it there
+            showLink();
+            return;
+        }
+        busy = true;
+        btn.textContent = 'Cancel';
+        const s = Common.settingsStore.get();
+        await flow.start(s.caffecterSite, s.linkName, st => {
+            if (st.state === 'starting') show('Asking caffecter.com for a code…');
+            else if (st.state === 'code') show('Approve this code on the page that just opened in your browser (or at caffecter.com/link.html):', st.userCode);
+            else {
+                busy = false;
+                showLink();
+                if (st.state === 'linked') show(`Linked to ${st.email || 'your account'}.`);
+                else if (st.state === 'denied') show('Turned down on caffecter.com: not linked.');
+                else if (st.state === 'expired') show('The code ran out (10 minutes): press Link to Caffecter again.');
+                else if (st.state === 'error') show(`Not linked: ${st.error}`);
+            }
+        });
+    });
+    showLink();
+    const link = readLink();
+    if (link) {
+        linkCheck(link).then(r => {
+            if (r.linked === false && readLink()?.token === link.token) {
+                writeLink(null);
+                showLink();
+                show('Unlinked on caffecter.com. Link it again any time.');
+            }
+        }).catch(() => {});
+    }
+    return showLink;
 }

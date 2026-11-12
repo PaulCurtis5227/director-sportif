@@ -135,6 +135,32 @@
                     <key>Record all the time:</key>
                     <input type="checkbox" name="recordAlways"/>
                 </label>
+                <div class="caffecter-link">
+                    <div class="hint">Caffecter: link this Director Sportif to your caffecter.com account. You approve it on
+                        the site (it opens in your browser); the mod never sees your password, and it can only send your
+                        rides there. Unlink here or on your account page.</div>
+                    <label title="What your caffecter.com account page calls this computer">
+                        <key>This computer:</key>
+                        <input type="text" name="linkName" maxlength="40"/>
+                    </label>
+                    <label title="caffecter.com, or its staging site for testing">
+                        <key>Site:</key>
+                        <select name="caffecterSite">
+                            <option value="www">caffecter.com</option>
+                            <option value="staging">staging.caffecter.com</option>
+                        </select>
+                    </label>
+                    <div class="link-row">
+                        <button type="button" class="link-button">Link to Caffecter</button>
+                        <span class="hint link-status"></span>
+                    </div>
+                    <div class="link-code" hidden></div>
+                    <label title="Each event recording goes to your caffecter.com account while it records (every 30 s; what's left after Sauce quits goes the next time this window opens), kept like the report page's &quot;Keep this ride&quot;: your history, research, and riders in the same race getting their report from it with their FIT. Your name, Zwift id and heart rate are taken out first. Needs Record every event and a link.">
+                        <key>Keep my races on caffecter.com:</key>
+                        <input type="checkbox" name="sendRaces"/>
+                    </label>
+                    <div class="hint send-status"></div>
+                </div>
             </form>
 
             <form id="obs" class="section tab" data-id="obs">

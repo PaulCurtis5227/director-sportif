@@ -61,6 +61,9 @@ export const CALL_TYPES = [
      'gains ground (after the draft it costs); nothing when you are on the inside already or stuck outside; alone and in the finish too (v0.58.0); ' +
      '"cut the S" / "cut the bend" before a stretch that twists enough to steer a shorter line (dirt S curves most)',
      tones: [700, 940]},
+    {id: 'flyer', label: 'Flyer', hint: 'one or two riders jumping off the front of your bunch, in an event: "flyer, go", said as they ' +
+     'go (3 km/h+ faster than the bunch, under 2.5 s up) so the wheel can still be caught; while it goes, no "ease off" (v0.66.0, flyer.mjs)',
+     tones: [990, 1320, 990]},
     {id: 'teamHr', label: 'Teammate HR', hint: 'you or a teammate in your race (your team tag) with no heart rate for 20 s: ' +
      'in the pen, so they can pair a strap, and in the race (some races disqualify for it); every 2 min until you ' +
      'press I know on the red banner (a teammate: then quiet for the event; you: again only if it comes back and drops out again, up to 3 times)', tones: [880, 660, 880]},
@@ -85,7 +88,8 @@ export function deliveryKey(type, how) {
  * hears "ease off", "drop back" (your pass, stuck alongside), being passed or group shattering: on screen only (the
  * Wheel gap tile turns red when you push into the wheel). Step out is heard. Each one a checkbox away.
  */
-export const FRESH_VOICE = ['gap', 'step', 'moveUp', 'bridge', 'pace', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr'];
+export const FRESH_VOICE = ['gap', 'step', 'moveUp', 'bridge', 'pace', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr',
+                            'flyer'];
 
 /*
  * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
@@ -111,7 +115,9 @@ export function deliveryDefaults(old = {}) {
             out[deliveryKey(t.id, 'voice')] = false;
             continue;
         }
-        if (t.id === 'bridge' || t.id === 'pace') {   // v0.53.0: only after you press Bridge; v0.55.3: only with a segment card: spoken for everyone
+        // v0.53.0: only after you press Bridge; v0.55.3: only with a segment card; v0.65.0 flyer (the user asked for it; ~6 an
+        // hour of racing): spoken for everyone, existing installs too
+        if (t.id === 'bridge' || t.id === 'pace' || t.id === 'flyer') {
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = true;
             continue;

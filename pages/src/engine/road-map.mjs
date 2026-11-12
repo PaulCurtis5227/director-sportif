@@ -291,7 +291,12 @@ export class RoadMap {
      * next roads (v0.68.8; 2026-10-26: "dirt in 1 for 15" where a 285 m road's dirt ran on 1.1 km into the next road).
      * open = the stretch goes on past where the walk ended: lengthM is only its least length.
      */
-    ahead(s, maxM = 600, route = null) {
+    /*
+     * skip: the surface you're on (brick, dirt…): passed over until it ends, then the next one is reported (v0.72.5, DS
+     * 0.66.1; the user's double mark, 2026-11-11 30:18, "missed the transition at that junction to dirt": brick, then
+     * Watopia road 25's cobbles and dirt, onto road 21's dirt, and no "dirt in N": the DS only looked ahead from pavement).
+     */
+    ahead(s, maxM = 600, route = null, {skip = null} = {}) {
         const road = this.road(s.courseId, s.roadId);
         const p = roadPercent(s);
         if (!road || p == null) {
@@ -316,6 +321,10 @@ export class RoadMap {
                 }
                 const style = styleAt(leg.road, percentAtMeters(leg.road, leg.fromM + dir * x));
                 const surface = styleCategory(style);
+                if (skip) {   // still on the surface you're on: not news
+                    if (surface === skip) continue;
+                    skip = null;
+                }
                 if (!run) {
                     if (surface !== 'pavement' && surface !== 'sand') {
                         if (d > maxM) {

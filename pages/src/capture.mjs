@@ -110,7 +110,7 @@ export class CaptureRecorder {
         this._lines.push(JSON.stringify({t, video: change}));
     }
 
-    /* Your event (docs/CAPTURE.md): {sg, name, subgroup, type (Zwift's eventType: RACE, GROUP_RIDE…)} when it's known, {sg, place, finishers, started, timeMs} at the end. */
+    /* Your event (docs/CAPTURE.md): {sg, name, subgroup, type (Zwift's eventType: RACE, GROUP_RIDE…), keep? (promised to caffecter.com)} when it's known, {sg, place, finishers, started, timeMs} at the end. */
     event(t, info) {
         this._lines.push(JSON.stringify({t, event: info}));
     }

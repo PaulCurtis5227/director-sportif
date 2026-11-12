@@ -29,7 +29,21 @@ export const TOP_SEC = 15;          // "top coming" this long before the crest
 export const TOP_MIN_SEC = 5;       // ...but not closer than this (over it before the words are out)
 export const TOP_AFTER_S = 30;      // ...and only after this long climbing (a roller isn't a climb)
 export const STEEP_STEP = 0.015;    // on a climb, a steep part ahead must be this much steeper than where you are
-export const CLIMB_DIP_S = 10;      // ClimbClock: a dip below CLIMBING this short doesn't end the climb
+// v0.72.4 (DS 0.66.0; the user, 2026-11-11 ToW stage 4: "The top of the hill call was a little optimistic, it was going
+// off for little pauses in the slope, and missed the actual top"): a 8 -> 58 m climb with level bits at 36 m (10 s) and
+// 54.5 m (12 s) got "top in 13" and "top in 12" at both, then nothing at the real top (58 m: its last 20 s at 3–4%,
+// under CLIMBING, and the 12 s pause had restarted the climb's clock), and "steep in 11" for the same 7% after the first
+// pause. Now: a crest is where the road stops rising FOR GOOD (no more than CREST_RISE_M over the next CREST_HOLD_M); the
+// climb's clock survives dips up to CLIMB_DIP_S; the top is called on the last gentle bit too (TOP_GRADE); and on a
+// climb a steep part must be steeper than the climb's own recent grade (ClimbClock.grade), not just than a pause.
+export const CLIMB_DIP_S = 30;      // ClimbClock: a dip below CLIMBING this short doesn't end the climb (was 10)
+export const CREST_HOLD_M = 150;    // a crest: the road no more than CREST_RISE_M above it over this much road after it
+export const CREST_RISE_M = 2;
+export const TOP_GRADE = 0.015;     // "top in N" while you still climb at least this (the last bit of a climb eases)
+export const CLIMB_GRADE_S = 60;    // the climb's own grade: your average over this long, while on it
+// "top in N" only on a real climb: its own grade at least this (rolling ground kept the clock running through 30 s dips:
+// 2026-11-07 had six "tops" in 90 s at 0.2–1% averages)
+export const TOP_CLIMB_GRADE = 0.025;
 const SMOOTH_M = 40;                // grade measured over this much road
 
 const none = {state: null, text: ''};
@@ -113,13 +127,19 @@ export function climbAhead(pts, {vNow = 5, grade = 0} = {}) {
         }
         look = j + 1;
     }
+    // the crest: the first level point past the steep part that the road doesn't climb above again (a pause on the way
+    // up is not the top); a profile that ends too soon after it can't say, so no crest then
     let crest = null;
     const from = steep ? p.findIndex(x => x.d >= steep.endM) : 0;
     for (let c = Math.max(0, from); c + 1 < p.length; c++) {
-        if (g[c] < 0.01) {
-            crest = {crestM: p[c].d, crestSec: secsTo(p, c, vNow)};
-            break;
-        }
+        if (g[c] >= 0.01) continue;
+        let top = p[c].alt, k = c + 1;
+        for (; k < p.length && p[k].d - p[c].d <= CREST_HOLD_M; k++) top = Math.max(top, p[k].alt);
+        const seen = p[Math.min(k, p.length - 1)].d - p[c].d;
+        if (top - p[c].alt > CREST_RISE_M) continue;   // it climbs on: a pause
+        if (seen < CREST_HOLD_M / 2 && k >= p.length) break;   // the profile ends: can't tell
+        crest = {crestM: p[c].d, crestSec: secsTo(p, c, vNow)};
+        break;
     }
     return {steep, crest};
 }
@@ -132,15 +152,28 @@ export class ClimbClock {
     constructor() {
         this.since = null;
         this.lastUp = null;
+        this.recent = [];   // [{wt, grade}] while on the climb, the last CLIMB_GRADE_S
+        this.grade = null;  // the climb's own grade: your average over CLIMB_GRADE_S on it (null off a climb)
     }
 
     update(wt, grade) {
         if (!Number.isFinite(wt)) return 0;
         if (grade >= CLIMBING) {
-            if (this.since == null || wt - this.lastUp > CLIMB_DIP_S * 1000) this.since = wt;
+            if (this.since == null || wt - this.lastUp > CLIMB_DIP_S * 1000) {
+                this.since = wt;
+                this.recent = [];
+            }
             this.lastUp = wt;
         } else if (this.lastUp != null && wt - this.lastUp > CLIMB_DIP_S * 1000) {
             this.since = null;
+        }
+        if (this.since != null) {
+            this.recent.push({wt, grade});
+            while (this.recent.length && this.recent[0].wt < wt - CLIMB_GRADE_S * 1000) this.recent.shift();
+            this.grade = this.recent.reduce((a, x) => a + x.grade, 0) / this.recent.length;
+        } else {
+            this.recent = [];
+            this.grade = null;
         }
         return this.since == null ? 0 : (wt - this.since) / 1000;
     }
@@ -148,22 +181,26 @@ export class ClimbClock {
 
 /*
  * profile: BendMap.roadAhead(...).pts; v: m/s; grade: your current grade (fraction); climbedS: seconds on this climb
- * (ClimbClock; leave it out and any rise counts).
+ * (ClimbClock; leave it out and any rise counts); climbGrade: the climb's own recent grade (ClimbClock.grade), or null.
  */
-export function pacingCue({profile, v, grade = 0, climbedS = Infinity}) {
+export function pacingCue({profile, v, grade = 0, climbedS = Infinity, climbGrade = null}) {
     const c = climbAhead(profile, {vNow: v, grade});
     if (!c) {
         return none;
     }
     const {steep, crest} = c;
     const onSteep = steep && steep.startM <= ON_IT_M;
-    // The top is close (the crest is always past the steep part): the split risk is here, not a place to ease.
-    if (grade >= CLIMBING && climbedS >= TOP_AFTER_S && crest && crest.crestSec <= TOP_SEC && crest.crestSec >= TOP_MIN_SEC) {
+    // The top is close (the crest is always past the steep part): the split risk is here, not a place to ease. Still
+    // climbing, gently or not (the last bit of a climb eases: v0.72.4)
+    const realClimb = !Number.isFinite(climbGrade) || climbGrade >= TOP_CLIMB_GRADE;
+    if (grade >= TOP_GRADE && climbedS >= TOP_AFTER_S && realClimb && crest && crest.crestSec <= TOP_SEC && crest.crestSec >= TOP_MIN_SEC) {
         return {state: 'top', crestM: crest.crestM,
                 text: `Top in ~${Math.round(crest.crestSec)} s — hold the wheel over it, recover once the road is fast`};
     }
-    // Nothing while you're on the steep part.
-    if (steep && !onSteep && steep.secs >= STEEP_MIN_SEC && (grade < CLIMBING || steep.core >= grade + STEEP_STEP)) {
+    // Nothing while you're on the steep part. On a climb (a pause included) only a part steeper than the climb itself
+    const onClimb = climbedS > 0 && climbedS !== Infinity;
+    const ref = onClimb && Number.isFinite(climbGrade) ? Math.max(grade, climbGrade) : grade;
+    if (steep && !onSteep && steep.secs >= STEEP_MIN_SEC && ((!onClimb && grade < CLIMBING) || steep.core >= ref + STEEP_STEP)) {
         return {state: 'ready', startM: steep.startM, grade: steep.grade,
                 text: `Steep ${(steep.grade * 100).toFixed(1)}% in ${Math.round(steep.startM)} m, ${Math.round((steep.endM - steep.startM) / 10) * 10} m long`};
     }

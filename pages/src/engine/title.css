@@ -129,3 +129,12 @@ h2 {
     font-weight: 700;
     white-space: nowrap;
 }
+/* the rider promised this race to caffecter.com (Director Sportif, PLAN §24): riders in it can get their report */
+.promo-keep {
+    margin-top: 1.2vh;
+    font-size: 1.8vw;
+    font-weight: 700;
+}
+.promo-keep[hidden] {
+    display: none;
+}
