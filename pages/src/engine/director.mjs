@@ -11,9 +11,11 @@
  * out (two-thirds of those places were lost again), 54–68 J at 60–120 s, 38 J at 60–45 s, 73–85 J at 45–15 s and
  * 154 J in the last 15 s (the whole bunch surges). A place bought then costs about the same joules as climbing
  * harder for it (1 s further back at the foot = 1.6 s at the top; +0.1 W/kg on the climb buys ~1.7 s) but from
- * below threshold rather than out of the FRC. Moves along or just outside the edge cost ~20 J/m against ~80–110 J/m
- * through the middle. Riders who arrived early and eased to bunch power were recycled (Michael K 1st -> 39th).
- * Hence: get ready at 90 s, move at 60–45 s along the edge, then hold the spot at ~+20–30 W over bunch power.
+ * below threshold rather than out of the FRC. (That race also had moves along the edge at ~20 J/m against ~80–110 through
+ * the middle; 2026-11-12 the November captures and three Tuesday races found no route difference, and the cheapest
+ * meters at 3–5 km/h over the group: research/2026-11-12/move-up-*.mjs, docs/FINDINGS.md. So the route is no longer said.) Riders who arrived early and eased to bunch power were recycled (Michael K 1st -> 39th).
+ * Hence: get ready at 90 s, move at 60–45 s at 3–5 km/h over the bunch (any line, not wide out of the draft), then hold
+ * the spot at ~+20–30 W over bunch power.
  */
 
 import {smoothedGrades, secsTo} from './pacing-cue.mjs';
@@ -98,7 +100,7 @@ export class MoveUpCoach {
             this.window = null;
             return {id: 'moveUp', state: 'prep', priority: PRIORITY.prep, secs: c.secs,
                     text: wellPlaced ? `Climb in ${T} s (${climb}): good spot, stay near the front` :
-                        `Climb in ${T} s (${climb}): move up at 60 s, along the edge`};
+                        `Climb in ${T} s (${climb}): move up at 60 s, 3–5 km/h over the bunch`};
         }
         if (!this.window) {
             this.window = {aheadAtStart: group.ahead};
@@ -106,7 +108,7 @@ export class MoveUpCoach {
         if (w >= MOVE_SEC[0] || w > MOVE_SEC[1]) {   // the second: back over 65 s within MOVE_BACK_S, still "move"
             return wellPlaced ?
                 {id: 'moveUp', state: 'hold', priority: PRIORITY.hold, secs: c.secs, text: `Climb in ${T} s: good spot, hold it (${HOLD_W})`} :
-                {id: 'moveUp', state: 'move', priority: PRIORITY.move, secs: c.secs, text: `MOVE UP NOW along the edge — climb in ${T} s`};
+                {id: 'moveUp', state: 'move', priority: PRIORITY.move, secs: c.secs, text: `MOVE UP NOW, 3–5 km/h faster — climb in ${T} s`};
         }
         if (w <= QUIET_SEC) {
             return none;
@@ -277,7 +279,15 @@ export class NudgeCoach {
  * keeps to the spirit of that — it never fires one for the rider, not even from a button pressed earlier (the user,
  * 2026-10-02), although Sauce could (rpc.powerup).
  */
-export const SPRINT_POSITION_M = [1300, 1700];
+export const SPRINT_POSITION_M = [1300, 1700];   // the coach starts over beyond SPRINT_POSITION_M[1] + 500
+/*
+ * The heads-up before the sprint is TIMED, not by distance (the user, 2026-11-12: "it can't be distance based, or it will
+ * be a mess on the hills. 1.5 km at 10% grade might take a while"): seconds to the line along the road ahead (toLineS,
+ * the route's climbs in it) or remaining / speed, between SPRINT_POSITION_S (1.5 km ≈ 120–135 s at 40–45 km/h).
+ * 6+ in your group: "top ten" / "good spot"; fewer (2026-11-12 ToW stage 3: a group of 4 at 1.5 km heard nothing
+ * before "jump in 45"): "sprint in N", even alone.
+ */
+export const SPRINT_POSITION_S = [100, 140];
 export const WINDUP_M = 1000;
 export const GHOST_LAST_M = [400, 470];
 export const AERO_S = 15;
@@ -288,7 +298,7 @@ export const JUMP_PLUS_W = 150;
 // ...and this × FTP when known (2026-10-25: a surge to 440–474 W on the rise 650 m out read as the jump, and the window,
 // "you can go", never came; the jump itself was 580 W, then 940)
 export const JUMP_FTP = 2.2;
-export const SPRINT_PRIORITY = {fire: 95, closer: 94, keep: 93, ease: 92, easeFtp: 91, windup: 90, take: 89, last: 88, window: 87, windowPrep: 86, position: 85, shake: 80, prep: 70,
+export const SPRINT_PRIORITY = {fire: 95, closer: 94, keep: 93, ease: 92, easeFtp: 91, windup: 90, take: 89, last: 88, window: 87, windowPrep: 86, position: 85, headsUp: 85, shake: 80, prep: 70,
                                 good: 55};
 
 /*
@@ -750,6 +760,14 @@ export class SprintCoach {
                  text: `Last wheel of ${g.size}: be ready to go first — from 3–5 m back, up the edge — or you'll be held`};
         }
         if (!this.jumped && b && b.open) {
+            // holding AERO (the user, 2026-11-12: "Finish call said nothing about aero"; the "holding AERO" prep, 70, never
+            // beat "jump in N" / "you can go"): the window says when, "go, AERO in N" to AERO_S out ("AERO NOW" there or on
+            // your jump, above)
+            if (held === 'AERO' && toLine > AERO_S) {
+                const inS = toLine - AERO_S;
+                return {id: 'sprint', state: 'window-aero', priority: SPRINT_PRIORITY.window, inS,
+                        text: `You can go from here${hold}; AERO in ${Math.round(inS)} s, or when you jump`};
+            }
             return {id: 'sprint', state: 'window', priority: SPRINT_PRIORITY.window, text: `You can go from here${hold}`};
         }
         if (windup) return {id: 'sprint', state: 'windup', priority: SPRINT_PRIORITY.windup, text: 'They are going: get on a wheel'};
@@ -768,10 +786,16 @@ export class SprintCoach {
             return {id: 'sprint', state: `shake-${side}`, priority: SPRINT_PRIORITY.shake,
                     text: `Rider on your wheel: drift ${side}, make them work`};
         }
-        if (remaining >= SPRINT_POSITION_M[0] && remaining <= SPRINT_POSITION_M[1] && g.size >= 6) {
-            return g.ahead >= 10 ?
-                {id: 'sprint', state: 'position', priority: SPRINT_PRIORITY.position, text: 'Sprint in 1.5 km: get into the top 10, along the edge'} :
-                {id: 'sprint', state: 'good', priority: SPRINT_PRIORITY.good, text: 'Sprint in 1.5 km: good spot, stay in the top 10'};
+        const secsToLine = Number.isFinite(x.toLineS) ? x.toLineS : toLine;
+        if (!this.jumped && secsToLine >= SPRINT_POSITION_S[0] && secsToLine <= SPRINT_POSITION_S[1]) {
+            const inS = Math.round(secsToLine);
+            if (g.size >= 6) {
+                return g.ahead >= 10 ?
+                    {id: 'sprint', state: 'position', priority: SPRINT_PRIORITY.position, text: `Sprint in ${inS} s: get into the top 10, 3–5 km/h over the bunch`} :
+                    {id: 'sprint', state: 'good', priority: SPRINT_PRIORITY.good, text: `Sprint in ${inS} s: good spot, stay in the top 10`};
+            }
+            return {id: 'sprint', state: 'heads-up', priority: SPRINT_PRIORITY.headsUp,
+                    text: g.size >= 2 ? `Sprint in ${inS} s: ${g.size} in your group` : `Sprint in ${inS} s`};
         }
         return pu;
     }

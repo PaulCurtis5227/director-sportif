@@ -7,7 +7,7 @@
  * Director Sportif mod computes it the same way). Pure: the gap curve (gap-curve.mjs) is passed in.
  */
 
-import {BOXED_M} from './gap-curve.mjs';
+import {BOXED_M, placeOf} from './gap-curve.mjs';
 import {gapBetween} from './wheels.mjs';
 
 export const POSITION_TAU_S = 10;   // smoothing while the group zero isn't there yet (the group zero is smoothed already)
@@ -43,13 +43,13 @@ export function noDraftSpot(draftClass, {ahead, L, layout, entries, me, maxGapM 
  * The best spot for advice: the curve's best range at min(v, BEST_ADVICE_KMH) (your air drag scaled to that speed),
  * and its saving at your real speed (the curve over that range, every half meter).
  */
-export function adviceBest(gapCurve, aeroW, v) {
+export function adviceBest(gapCurve, aeroW, v, place = null) {
     const vc = BEST_ADVICE_KMH / 3.6;
-    if (!(v > vc)) return gapCurve.best(aeroW, v);
-    const b = gapCurve.best(aeroW * (vc / v) ** 3, vc);
+    if (!(v > vc)) return gapCurve.best(aeroW, v, place);
+    const b = gapCurve.best(aeroW * (vc / v) ** 3, vc, place);
     const at = [];
-    for (let g = b.lo + 0.25; g < b.hi; g += 0.5) at.push(gapCurve.savingW(g, aeroW, false, v));
-    return {...b, savingW: at.length ? at.reduce((x, y) => x + y, 0) / at.length : gapCurve.savingW(b.gap, aeroW, false, v)};
+    for (let g = b.lo + 0.25; g < b.hi; g += 0.5) at.push(gapCurve.savingW(g, aeroW, false, v, place));
+    return {...b, savingW: at.length ? at.reduce((x, y) => x + y, 0) / at.length : gapCurve.savingW(b.gap, aeroW, false, v, place)};
 }
 
 /*
@@ -69,9 +69,10 @@ export function spotCost(gapCurve, L, c, s, v, athleteId, packW = 0) {
     const aero = c.aero;
     const inGroup = L.size >= 2;
     const draftW = s.draft || 0;
-    const best = adviceBest(gapCurve, aero, v);
+    const place = placeOf(L.ahead);   // v0.73.0: the curve at your place in the group (2nd–3rd wheel / deeper)
+    const best = adviceBest(gapCurve, aero, v, place);
     const boxed = L.gapBehind != null && L.gapBehind < BOXED_M;
-    const gapW = inGroup && L.gapAhead != null ? Math.max(0, best.savingW - gapCurve.savingW(L.gapAhead, aero, boxed, v)) : null;
+    const gapW = inGroup && L.gapAhead != null ? Math.max(0, best.savingW - gapCurve.savingW(L.gapAhead, aero, boxed, v, place)) : null;
     const expectedW = Math.max(0, draftW - (packW || 0));
     // Your saving: the 10 s smoothed share (groupShare's mine) once known, else now (smoothed by PositionSmoother)
     const g = inGroup ? gapCurve.groupShare(athleteId, L) : null;

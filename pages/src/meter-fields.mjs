@@ -90,8 +90,10 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         shortName: 'Pack cost',
         longName: "Pack cost: what your spot costs beyond Zwift's draft",
         tooltip: tip('pack', "Watts your spot in the bunch costs on top of what Zwift's draft says, read from where " +
-            'you are now: gap to the wheel, riders close ahead, boxed in, your weight, tires and speed, the size of ' +
-            'the bunch. The steady part only: getting blocked shows under Blocked and in Holding.'),
+            "you are now: the wheel's box (in line within about a bike length of it, holding its speed or closing: about " +
+            "38 W at 40 km/h, more for heavier riders and at speed) and, deep in the draft, the part of Zwift's draft " +
+            "number it doesn't really give (above about a quarter of your air drag it counts about 60%). Drop back a " +
+            'meter, move half a lane over, or come by 3+ km/h faster to leave the box.'),
         format: watts('pack'),
         label: word('pack'),
         suffix: 'W',
@@ -99,8 +101,9 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         id: 'ds-position',
         shortName: 'Position',
         longName: 'Position: what your spot costs against the best spot at your speed',
-        tooltip: tip('position', 'Watts of draft your spot misses against the best spot at your speed, over 10 s (on a ' +
-            'fast descent the best spot is 2.5–4.5 m between wheels, not on the wheel). 0 alone or coasting.'),
+        tooltip: tip('position', 'Watts of draft your spot misses against the best spot at your speed and place in ' +
+            'the group, over 10 s: about 2–3 m between wheels, just behind the box (2nd–3rd wheel gets less draft than ' +
+            'deeper in the bunch). 0 alone or coasting.'),
         format: watts('position', true),
         label: word('position'),
         suffix: 'W',
@@ -109,7 +112,7 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         shortName: 'Holding',
         longName: 'Holding: watts beyond what keeping your place needs',
         tooltip: tip('holding', "Your power minus what keeping your place needed (air, rolling, Zwift's draft, the " +
-            'pack, matching your group, speed and height changes), over 10 s with one rider and 20 s in a group. ' +
+            'pack, matching your group, speed and height changes), over 10 s with one rider and 12 s in a group. ' +
             '± 20 W is holding.'),
         format: watts('holding', true),
         label: word('holding'),
@@ -118,8 +121,9 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         id: 'ds-blocked',
         shortName: 'Blocked',
         longName: 'Blocked: watts lost pushing into the wheel ahead',
-        tooltip: tip('blocked', 'Watts that went nowhere over the last 10 s because you pushed into the rider ahead ' +
-            '(single seconds where 80+ W vanish). Easing off a little or steering to space saves them. Part of Holding.'),
+        tooltip: tip('blocked', "Watts the wheel's box is taking from you now (5 s): in line within about a bike " +
+            "length of the rider ahead, holding their speed or closing. Its word comes before you reach the box: ease " +
+            'off, or step left / right out of its line. Part of Pack cost and Holding.'),
         format: watts('blocked'),
         label: word('blocked'),
         suffix: 'W',
@@ -127,8 +131,8 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         id: 'ds-pass',
         shortName: 'Passing',
         longName: 'Passing: closing on a rider at the speed that gets you held',
-        tooltip: tip('passing', 'Closing on a rider 1–5 km/h faster gets you held up to one second in five (each ' +
-            'held second costs the passer ~150 W and the rider in the way ~20 W); a pass at 5+ km/h goes through. ' +
+        tooltip: tip('passing', "Closing on a rider 1–3 km/h faster gets you held in their box (about 40 W at 40 " +
+            'km/h); a pass at 3+ km/h goes through. ' +
             'The closing speed when you creep up on a rider (↑) or one creeps up on you (↓).'),
         format: x => {
             const e = m(x, 'passing');

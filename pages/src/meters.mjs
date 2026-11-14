@@ -239,7 +239,7 @@ import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
 
-export const DS_VERSION = '0.66.1';
+export const DS_VERSION = '0.67.0';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)

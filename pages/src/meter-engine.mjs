@@ -84,7 +84,7 @@ import {freshEntries, DraftClassifier} from './engine/riders-live.mjs';
 import {wheelsAhead, gapBehind} from './engine/wheels.mjs';
 import {RoadGaps} from './engine/road-gaps.mjs';
 import {GapCurve, groupLayout} from './engine/gap-curve.mjs';
-import {packSituation, packCostW, packCostNote, packCostState, foreAftW, UNIT_PER_M} from './engine/pack-cost.mjs';
+import {packSituation, packCostW, packCostNote, packCostState, UNIT_PER_M} from './engine/pack-cost.mjs';
 import {TeleportGuard} from './engine/teleport.mjs';
 import {powerComponents} from './engine/physics.mjs';
 import {spotCost, PositionSmoother, POSITION_TAU_S, positionAdvice, positionState, noDraftSpot, GapWatch, DemandMeter, packDemandW, COAST_W, NO_DRAFT_NOTE}
@@ -100,7 +100,41 @@ import {tuckState, TuckDrag} from './engine/supertuck.mjs';
  * seconds to tuck speed at the speed you gained over the last windowS, shown only when it's within soonS.
  */
 export const TUCK_SOON = {windowS: 3, minGainKmhS: 0.2, soonS: 15};
-import {BendMap, lateralSituation, bendCue} from './engine/bend-live.mjs';
+
+/*
+ * v0.66.2 (2026-11-12 ToW stage 3, the user: "The super tuck messages were wrong. I was never going to hit the needed
+ * speed."): the straight-line gain said "supertuck in 7–12" on a −5% descent at ~180 W and you topped out at 54 km/h
+ * (twice), 49.8 the third time. Now the seconds come from riding the road ahead at your power: speed stepped every
+ * REACH_STEP_S from P = (½ρ·CdA·v² + m·g·(Crr + grade))·v, the grade from the profile ahead (alt over ±20 m) or the
+ * grade now off a profile. No speed within soonS = no countdown. Drafting doesn't count (no tuck in the draft).
+ */
+const RHO = 1.225, G = 9.80665, REACH_STEP_S = 0.5;
+export function tuckReachS({kmh, targetKmh, power, model, grade = 0, ahead = null, maxS = TUCK_SOON.soonS}) {
+    if (!(model && model.massKg > 0 && model.cda > 0) || !Number.isFinite(kmh) || !Number.isFinite(targetKmh)) return null;
+    const pts = Array.isArray(ahead) ? ahead.filter(p => Number.isFinite(p.d) && Number.isFinite(p.alt)) : [];
+    const altAt = d => {
+        if (!pts.length || d > pts.at(-1).d) return null;
+        let i = 0;
+        while (i + 1 < pts.length && pts[i + 1].d < d) i++;
+        const a = pts[i], b = pts[Math.min(i + 1, pts.length - 1)];
+        return b.d > a.d ? a.alt + (b.alt - a.alt) * (d - a.d) / (b.d - a.d) : a.alt;
+    };
+    const gradeAt = d => {
+        const lo = altAt(Math.max(0, d - 20)), hi = altAt(d + 20);
+        return lo != null && hi != null ? (hi - lo) / (d + 20 - Math.max(0, d - 20)) : grade;
+    };
+    const P = Math.max(0, power || 0), m = model.massKg, crr = model.crr || 0.004;
+    let v = kmh / 3.6, d = 0;
+    const target = targetKmh / 3.6;
+    for (let t = 0; t <= maxS; t += REACH_STEP_S) {
+        if (v >= target) return t;
+        const f = P / Math.max(v, 1) - 0.5 * RHO * model.cda * v * v - m * G * (crr + gradeAt(d));
+        v = Math.max(0.5, v + f / m * REACH_STEP_S);
+        d += v * REACH_STEP_S;
+    }
+    return null;
+}
+import {BendMap, RoadRails, lateralSituation, bendCue, bendsAlong, BEND_LOOK_M, BEND_LOOK_S, BEND_MIN_DEG} from './engine/bend-live.mjs';
 import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, SETTLED, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
 import {predictedCap, crowdingCue} from './engine/draft-live.mjs';
@@ -129,6 +163,11 @@ import {SURFACES} from './engine/surfaces.mjs';
 import {riderModel} from './rider-model.mjs';
 
 const FEATHER_ROAD_M = 15000;
+const BEND_MOVED_M = 0.5;   // moved this far toward the inside since a bend call: it has done its job (v0.67.0)
+const BEND_MOVED_S = 10;    // ...or in this long before it
+const BEND_SAME_CM = 1500;  // a bend starting within 15 m of one called before is that bend (v0.73.0)...
+const BEND_SAME_S = 60;     // ...within this long
+const BEND_MIN_WARN_S = 4;  // a bend call starts only with this much warning: less is too late to act on (v0.73.0)
 /*
  * Off the back (v0.60.0; the user, 2026-11-07: "close up" read as "I'm drifting off the back", shown 30 s+ and never
  * spoken): Position's close-up with the wheel ahead OFF_BACK.minM+ away (out of its draft) for OFF_BACK.holdS is a
@@ -227,6 +266,7 @@ export class MeterEngine {
         this.draftClass = new DraftClassifier();   // about the other riders: kept across camera changes
         this.tuckDrag = new TuckDrag();             // your tucks this session (a camera change doesn't matter: own ticks only)
         this.bendMap = new BendMap();               // the road, learned from where every rider rode: kept across camera changes
+        this.rails = new RoadRails();               // where the rails are, spot by spot, from where every rider rode (v0.67.0)
         this.roadGaps = new RoadGaps();             // roads Sauce has no map for (its gaps all 0): kept across camera changes
         this.altScale = new AltitudeScale();        // your z -> altitude (the map's road profile off a route)
         this.roadTraffic = new RoadTraffic();       // where the riders went (the map's way at a junction off a route)
@@ -236,18 +276,24 @@ export class MeterEngine {
     }
 
     /* Seconds until you reach tuck speed at the rate you're gaining it (your last TUCK_SOON.windowS), when within soonS; else null. */
-    tuckIn(s, needKmh) {
+    tuckIn(s, needKmh, reach = null) {
         const h = this.tuckSpeeds;
         if (Number.isFinite(s.worldTime) && Number.isFinite(s.speed) && (!h.length || s.worldTime > h.at(-1).wt)) {
-            h.push({wt: s.worldTime, kmh: s.speed});
+            h.push({wt: s.worldTime, kmh: s.speed, power: s.power || 0});
         }
         while (h.length > 2 && h[1].wt <= s.worldTime - TUCK_SOON.windowS * 1000) h.shift();
         if (!(needKmh > 0) || h.length < 2) return null;
         const dt = (h.at(-1).wt - h[0].wt) / 1000;
         if (dt < TUCK_SOON.windowS - 1) return null;
         const gain = (h.at(-1).kmh - h[0].kmh) / dt;
-        const inS = gain >= TUCK_SOON.minGainKmhS ? needKmh / gain : null;
-        return inS != null && inS <= TUCK_SOON.soonS ? inS : null;
+        if (gain < TUCK_SOON.minGainKmhS) return null;
+        // v0.66.2: reachable at your power on the road ahead (tuckReachS), not the gain drawn on in a straight line
+        if (reach && reach.model) {
+            const power = h.reduce((t, x) => t + x.power, 0) / h.length;
+            return tuckReachS({kmh: s.speed, targetKmh: s.speed + needKmh, power, model: reach.model, grade: s.grade || 0, ahead: reach.ahead});
+        }
+        const inS = needKmh / gain;
+        return inS <= TUCK_SOON.soonS ? inS : null;
     }
 
     /* A different rider (a camera change): their teleports, windows and smoothing start over. */
@@ -373,6 +419,7 @@ export class MeterEngine {
         // THROUGH_S; none alone, in a pair or while settling
         const throughKmh = this.through(s.worldTime, !settling && L.size >= 3 && Number.isFinite(L.vGroup) ? (v - L.vGroup) * 3.6 : null);
         this.bendMap.ingest(all);
+        this.rails.ingest(all);
 
         const noDraft = noDraftSpot(this.draftClass, {ahead, L, layout, entries, me, maxGapM: GAP_MAX_M});
         const noDraftWheel = noDraft.wheel;
@@ -393,7 +440,7 @@ export class MeterEngine {
         const model = {...base, crr: base.crr + (surface ? surfaceExtraCrr(surface, base.tyre || 'road') : 0)};
         // pack cost priced with your pavement Crr: riders pay the same pack extra on dirt as on pavement (2026-10-30, 6
         // recordings: +0.0022 vs +0.0027 in Crr); with the surface in, a tight spot read 96 W on dirt vs 22 W on pavement
-        const packW = packCostW(sit, L, v, {massKg: model.massKg, cda: model.cda, crr: base.crr});
+        const packW = packCostW(sit, L, v, {massKg: model.massKg, cda: model.cda, crr: base.crr}, s.draft || 0);
         const c = powerComponents({v, grade: s.grade || 0, massKg: model.massKg, cda: model.cda, crr: model.crr,
                                    draftW: s.draft || 0});
         const spot = spotCost(this.gapCurve, L, c, s, v, me.athleteId, packW);   // the same pack cost as Holding
@@ -428,11 +475,8 @@ export class MeterEngine {
                                                              groupSize: L.size, groupAhead: L.ahead, gapM: L.gapAhead, kmh: s.speed || 0});
         const offBack = (offNow && s.worldTime - this.offBackFrom >= OFF_BACK.holdS * 1000) || dangling;
         if (settling) this.block.reset();
-        const blkRead = this.block.update({wt: s.worldTime, v, alt: s.altitude, power, draft: s.draft || 0,
-                                       massKg: model.massKg, bodyKg: me.athlete?.weight, cda: model.cda, crr: model.crr, packW,
-                                       wheelGapM: sit ? sit.wheelGap : null, ahead3: sit ? sit.ahead3 : 0,
-                                       behind: L.size >= 2 && L.ahead > 0, beside: L.size >= 2 ? besideRider(entries, me) : null,
-                                       powerUp: s.activePowerUp, coffee: s.coffeeStop});
+        const blkRead = this.block.update({wt: s.worldTime, v, massKg: model.massKg, box: sit ? sit.box : null,   // v0.67.0: the box
+                                           powerUp: s.activePowerUp, coffee: s.coffeeStop});
         // the measured loss stays (blockedW); only the cue goes while they ride away
         const blk = (away || drop || bridging || flyer) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
         const holdRead = this.readHolding(s, c, spot, L, v, packW, power, model, settling, blk);
@@ -563,7 +607,7 @@ export class MeterEngine {
         const tuckIn = {kmh: s.speed, grade: s.grade, power, draft: s.draft || 0, bike: draftless ? 'tt' : base.bike,
                         powerUp: s.activePowerUp};
         const tuck0 = settling ? null : tuckState(tuckIn);
-        const tuckSoonS = me.self ? this.tuckIn(s, tuck0 && tuck0.state === 'build' ? tuck0.needKmh : null) : null;
+        const tuckSoonS = me.self ? this.tuckIn(s, tuck0 && tuck0.state === 'build' ? tuck0.needKmh : null, {model, ahead: roadAhead}) : null;
         const tuck = tuck0 && tuck0.state === 'build' ? {...tuck0, inS: tuckSoonS} : tuck0;
         if (me.self) {
             this.tuckDrag.update({wt: s.worldTime, v, alt: s.altitude, dist: s.distance, power, massKg: model.massKg,
@@ -619,6 +663,7 @@ export class MeterEngine {
         }
         // a bend ahead (yours only): take the inside when it pays (bend-live.mjs bendCue)
         let bend = null;
+        this.bendDebug = null;   // research: what the bend finder saw this tick (research/2026-11-13/bend-late.mjs)
         const self3 = this.bendMap.self;
         if (me.self && !settling && v > 5 && self3.length >= 3) {
             const [p0, p1, p2] = self3;
@@ -627,16 +672,61 @@ export class MeterEngine {
                 const dir = [(p2.x - p1.x) / L1, (p2.y - p1.y) / L1];
                 let turn = Math.atan2(p2.y - p1.y, p2.x - p1.x) - Math.atan2(p1.y - p0.y, p1.x - p0.x);
                 turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-                const b = this.bendMap.nextBend(s, 200, undefined, this.routeAhead ? this.routeAhead.sections(s) : null);
-                const lat = b ? lateralSituation(entries, me, dir, Math.sign(b.angleDeg), turn / ((L0 + L1) / 200), {right: b.right}) : null;
-                const cue = bendCue(b, lat, {v, q: draftQ ?? 0, cap: cap ?? 0.14, cda: model.cda,
-                                             fRollN: model.crr * model.massKg * 9.80665});
+                // the bends ahead: from Zwift's map where Sauce has the road (v0.73.0: the riders' road is pooled in ~100 m
+                // stretches on long roads, so "in 9" was 2–3 s early on 2026-11-13, up to 11), looking BEND_LOOK_S ahead at
+                // your speed; else the road learned from the riders (BendMap, 120 m)
+                const lookM = Math.max(BEND_LOOK_M[1], v * BEND_LOOK_S);
+                const onMapAhead = this.roadMap ? profileAheadOnMap(this.roadMap, s, lookM + 60, z => z, {route: sections, traffic, stepM: 5}) : null;
+                const fromMap = onMapAhead && onMapAhead.pts.length >= 4;
+                const candidates = fromMap ? bendsAlong(onMapAhead.pts).filter(x => Math.abs(x.angleDeg) >= BEND_MIN_DEG && x.startM >= BEND_LOOK_M[0])
+                    : [this.bendMap.nextBend(s, 200, undefined, sections)].filter(Boolean);
+                const ctx = {v, q: draftQ ?? 0, cap: cap ?? 0.14, cda: model.cda, fRollN: model.crr * model.massKg * 9.80665,
+                             lookM: fromMap ? lookM : undefined};
+                const curv = turn / ((L0 + L1) / 200), edges = this.rails.edgesAt(s);
+                // the first bend in reach that is worth a word: one not worth it doesn't hide the next (2026-11-13 20:18,
+                // 28:48: a small bend near you held a hairpin / a 45° left out of view until 33–45 m)
+                let b = null, lat = null, cue = bendCue(null, null, ctx);
+                for (const x of candidates) {
+                    const l = lateralSituation(entries, me, dir, Math.sign(x.angleDeg), curv, {right: x.right, edges});
+                    const c = bendCue(x, l, ctx);
+                    if (!b) { b = x; lat = l; cue = c; }
+                    if (c.state) { b = x; lat = l; cue = c; break; }
+                }
+                this.bendDebug = {startM: b ? b.startM : null, deg: b ? b.angleDeg : null, cue: cue.state, toEdge: lat ? lat.toEdge : null, room: lat ? lat.room : null, gainM: cue.gainM,
+                                  startXY: b && fromMap ? (onMapAhead.pts.find(p => p.d >= b.startM) || {}).xy ?? null : null, apexXY: b && fromMap ? (onMapAhead.pts.find(p => p.d >= (b.startM + b.endM) / 2) || {}).xy ?? null : null};
                 const key = cue.state ? `${cue.state}-${b.right ? 'right' : 'left'}` : null;
-                if (key && key === this.bendLast) {
+                // how far toward the bend's inside you are (m): roadPosition + = your right on a road ridden forward
+                const inward = b && Number.isFinite(s.roadPosition) ? s.roadPosition / UNIT_PER_M * (s.reverse ? -1 : 1) * (b.right ? 1 : -1) : null;
+                // a new bend: the same call again, but the bend start jumped further away (the last one is behind you)
+                const sameBend = b && this.bendMoved && this.bendMoved.key === key && b.startM <= this.bendMoved.startM + 30;
+                if (!sameBend) this.bendMoved = key && cue.state === 'open' && inward != null ? {key, from: inward, startM: b.startM, done: false} : null;
+                else this.bendMoved.startM = b.startM;
+                // moved over since the call (v0.67.0; the user, 2026-11-13: "telling me to turn left/right when I already
+                // had"; 9:55 that ride: 1.15 m right and still "move right" for 8 s): done for this bend
+                if (this.bendMoved && inward != null && inward - this.bendMoved.from >= BEND_MOVED_M) this.bendMoved.done = true;
+                // ...or before it: you started over in the last BEND_MOVED_S (that ride, 5 of the calls alone: 0.7–2.1 m in
+                // before the call came): you're already taking it
+                this.inwardHist = (this.inwardHist || []).filter(h => s.worldTime - h.wt <= BEND_MOVED_S * 1000 && h.right === b?.right);
+                if (inward != null) this.inwardHist.push({wt: s.worldTime, inward, right: b.right});
+                const movedBefore = inward != null && this.inwardHist.length ? inward - Math.min(...this.inwardHist.map(h => h.inward)) : 0;
+                if (this.bendMoved && !this.bendMoved.done && movedBefore >= BEND_MOVED_M) this.bendMoved.done = true;
+                // one call per bend (v0.73.0): a call that dropped for a moment came back as the same bend "in 2" (2026-11-13
+                // replay with Zwift's map: 20:11 / 20:18, 23:31 / 23:39 …); the bend by where it starts on the map
+                const startXY = b && fromMap ? (onMapAhead.pts.find(p => p.d >= b.startM) || {}).xy ?? null : null;
+                const near = (a, c) => a && c && Math.hypot(a[0] - c[0], a[1] - c[1]) <= BEND_SAME_CM;
+                this.bendsCalled = (this.bendsCalled || []).filter(x => s.worldTime - x.wt <= BEND_SAME_S * 1000);
+                const calledBefore = startXY && this.bendsCalled.some(x => near(x.xy, startXY) && !x.live);
+                // a new call needs BEND_MIN_WARN_S to act on; one already running counts down to 0 (v0.73.0)
+                const enoughTime = this.bendShown || (v > 0 && b && b.startM / v >= BEND_MIN_WARN_S);
+                if (key && key === this.bendLast && !calledBefore && enoughTime && !(this.bendMoved && this.bendMoved.done && cue.state === 'open')) {
                     bend = {state: cue.state, side: b.right ? 'right' : 'left', inS: b.startM / v,
                             moveM: cue.moveM, gainM: cue.gainM, lossM: cue.lossM};
                 }
+                // the call running now stays live; once it stops, that bend is done
+                for (const x of this.bendsCalled) x.live = !!(bend && startXY && near(x.xy, startXY));
+                if (bend && startXY && !this.bendsCalled.some(x => near(x.xy, startXY))) this.bendsCalled.push({xy: startXY, wt: s.worldTime, live: true});
                 this.bendLast = key;
+                this.bendShown = !!bend;
             }
         }
         // cut the S: a stretch ahead that twists enough for a steered line to pay (route-ahead.mjs curvyStretch, from the
@@ -832,8 +922,7 @@ export class MeterEngine {
         }
         if (settling) this.holding.reset();
         const w = this.holding.update({wt: s.worldTime, v, alt: s.altitude, power, massKg: model.massKg,
-                                       steadyW: c.aero + c.roll - (s.draft || 0) + packW + spot.groupW +
-                                           (L.size >= 3 ? foreAftW(v, L.vGroup) : 0),
+                                       steadyW: c.aero + c.roll - (s.draft || 0) + packW + spot.groupW,   // no fore/aft term since v0.73.0: the box is off while you drop back (box-crowd.mjs)
                                        powerUp: s.activePowerUp || (settling ? 'TELEPORT' : null), coffee: s.coffeeStop},
                                       L.size >= 3 ? HOLD_PACK_S : HOLD_PAIR_S);
         if (settling) return {w: null, bandW: w.bandW, note: SETTLING_NOTE, state: 'settling'};

@@ -50,11 +50,11 @@ test('at the back with room: gap to the wheel in line, side, the cheapest pack s
     assert.ok(Math.abs(ds.sideM - 0.3) < 1e-9, `side ${ds.sideM}: you are 0.3 m right of the wheel`);
     assert.equal(ds.beside, false);
     assert.equal(ds.groupSize, 4);
-    // the room figure (10 W at 37.4 km/h on a road tyre) for the rider model in use (riderModel defaults) at 36 km/h
+    // 4.2 m behind the wheel: clear of its box, nobody within 3 m ahead: free (v0.73.0, the box + crowd model)
     const m = riderModel({athlete: undefined});
-    const want = packCostW({wheelGap: 4.2, ahead3: 0, boxed: false}, {size: 4, ahead: 3}, KMH / 3.6, m);
-    assert.ok(Math.abs(ds.packW - want) < 1e-9, `pack ${ds.packW} vs ${want}`);
-    assert.ok(ds.packW > 7 && ds.packW < 15, `the cheapest spot (${ds.packW})`);
+    const want = packCostW({wheelGap: 4.2, ahead3: 0, boxed: false, box: {share: 0}}, {size: 4, ahead: 3}, KMH / 3.6, m);
+    assert.equal(want, 0);
+    assert.equal(ds.packW, 0, `the cheapest spot (${ds.packW})`);
     assert.match(ds.packNote, /room/);
 });
 
@@ -360,40 +360,44 @@ test('no draft on a wheel (a TT bike, whatever the setting): no supertuck at all
 });
 
 test('supertuck in N: seconds to tuck speed while you gain it, nothing when you never get there (2026-10-30)', () => {
-    // alone on a 4% descent, speeds per second: gaining 1 km/h a second from 48, or stuck at 46–48
-    const ride = (speeds, race = true) => {
+    // alone on a 9% descent (v0.66.2: the seconds come from riding the road at your power, tuckReachS), speeds per
+    // second: gaining 1 km/h a second from 48, or stuck at 46–48
+    const ride = (speeds, race = true, grade = -0.09) => {
         const e = new MeterEngine({raceFor: () => race});
         let out = null;
         speeds.forEach((kmh, i) => {
             const me = rider(1, 0, 0, {self: true, wt: 10000 + i * 1000});
-            Object.assign(me.state, {speed: kmh, grade: -0.04, power: 250, draft: 0, altitude: 500 - i * 0.5});
+            Object.assign(me.state, {speed: kmh, grade, power: 250, draft: 0, altitude: 500 - i * 0.5});
             out = e.update([me]);
         });
         return buildData(out).meters.tuck;
     };
     const gaining = ride([48, 49, 50, 51, 52]);
     assert.equal(gaining.state, 'soon');
-    assert.equal(gaining.inS, 6, '6 km/h short at 1 km/h a second');
-    assert.equal(gaining.word, 'supertuck in 6');
-    assert.equal(field('ds-tuck').label({dsData: {meters: {tuck: gaining}}}), 'supertuck in 6');
-    assert.equal(allWords({meters: {tuck: gaining}}).text, 'supertuck in 6');
+    assert.ok(gaining.inS >= 3 && gaining.inS <= 12, `6 km/h short on 9%: ${gaining.inS} s`);
+    assert.equal(gaining.word, `supertuck in ${gaining.inS}`);
+    assert.equal(field('ds-tuck').label({dsData: {meters: {tuck: gaining}}}), `supertuck in ${gaining.inS}`);
+    assert.equal(allWords({meters: {tuck: gaining}}).text, `supertuck in ${gaining.inS}`);
+    // 2026-11-12 ("I was never going to hit the needed speed"): gaining on a 4% descent at 250 W levels off short of
+    // 58 within the window: no countdown, however fast the last 3 s were
+    assert.equal(ride([48, 49, 50, 51, 52], true, -0.04).state, 'build', '4%: you never get there');
     const stuck = ride([46, 47, 48, 47.5, 47]);
     assert.equal(stuck.state, 'build', 'not gaining: no word');
     assert.equal(allWords({meters: {tuck: stuck}}).text, null);
     assert.equal(stuck.value, 11, 'the meter still shows the km/h short');
     assert.equal(ride([48, 49, 50, 51, 52], false).state, 'build', 'a group ride or free ride: no word at all');
     assert.equal(ride([48, 49, 50, 51, 52], null).state, 'build', 'not known to be a race: no word');
-    const far = ride([45, 45.3, 45.6, 45.9, 46.2]);
+    const far = ride([45, 45.3, 45.6, 45.9, 46.2], true, -0.04);
     assert.equal(far.state, 'build', '12 km/h short at 0.3 km/h a second: 39 s away is not soon');
 });
 
 test('block left / right: in a race only, never a teammate, never straight behind (2026-10-30)', () => {
-    // a rider coming up behind you on your right, 3 km/h faster (the held band), and a wheel ahead so you're in a group
+    // a rider coming up behind you on your right, 2 km/h faster (the held band: 1–3 since v0.67.0), and a wheel ahead so you're in a group
     const tick = (e, k, {lat = 0.8, ahead = -6, team = null} = {}) => {
         const me = rider(1, 0, 0, {self: true, wt: 10000 + k * 1000});
         me.athlete = {team: 'Dinos'};
         const o = rider(2, ahead, lat, {wt: 10000 + k * 1000});
-        o.state.speed = KMH + 3;
+        o.state.speed = KMH + 2;
         o.athlete = {team};
         return e.update([me, o, rider(3, 3, 0, {wt: 10000 + k * 1000})]);
     };

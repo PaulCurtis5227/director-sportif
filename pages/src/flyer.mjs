@@ -69,6 +69,9 @@ export class FlyerWatch {
         let best = null;
         for (let k = 1; k <= o.maxRiders && k < bunch.length - 2; k++) {
             const front = bunch.slice(0, k), rest = bunch.slice(k);
+            // your own attack is no flyer (v0.67.0; 2026-11-13 ToW stage 2 12:37: you went off the front of 15 at 300–340 W
+            // and were told "flyer, away", then pressed Mark)
+            if (front.includes(me)) continue;
             const gap = lead.get(front[k - 1]) - lead.get(rest[0]);
             const vRest = median(rest.map(r => r.state.speed || 0));
             const dv = Math.min(...front.map(r => r.state.speed || 0)) - vRest;   // km/h: each of them faster

@@ -20,7 +20,9 @@ export const HOLD_BAND_W = 20;   // the ± band Holding reads as "holding" (live
  * Power-ups, coffee stops and teleports restart the window; coasting is fine (the balance holds at any power).
  */
 export const HOLD_PAIR_S = 10;   // window with one other rider
-export const HOLD_PACK_S = 20;   // in a group of 3+ (20 s ±27 W vs 30 s ±25: little gained by waiting longer)
+// in a group of 3+: 12 s since v0.73.0 (the user, 2026-11-12: "set it to 12 s"; research/2026-11-12/holding-window.mjs:
+// with the box model your balance scatters ±17–18 W at 10–12 s, what the old table gave at 20 s; was 20 s, ±27 W vs 30 s ±25)
+export const HOLD_PACK_S = 12;
 
 export class HoldingMeter {
     constructor() {

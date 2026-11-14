@@ -493,7 +493,8 @@ export function profileAheadOnMap(roadMap, s, maxM, zToAlt, {route = null, stepM
         for (let x = 0; x <= span; x += stepM) {
             const d = base + x;
             if (d > maxM) return {pts, open: false};
-            if (!pts.length || d > pts.at(-1).d) pts.push({d, alt: zToAlt(zAtMeters(leg.road, leg.fromM + dir * x))});
+            // xy: where the road is (world, cm), for the bends (bend-live.mjs bendsAlong, v0.73.0)
+            if (!pts.length || d > pts.at(-1).d) pts.push({d, alt: zToAlt(zAtMeters(leg.road, leg.fromM + dir * x)), xy: xyAtMeters(leg.road, leg.fromM + dir * x)});
         }
         base += span;
         last = {...leg, toM: leg.fromM + dir * span};

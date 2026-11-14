@@ -41,12 +41,16 @@ import {leads} from './wheels.mjs';
 export const BEND_BIN = 2500;          // roadCompletion units per spot (as surface-live.mjs)
 export const BEND_BINS = 1_000_000 / BEND_BIN;
 export const BEND_LOOK_M = [15, 120];  // cue while the bend starts this far ahead
+export const BEND_LOOK_S = 15;         // ...from Zwift's map: this many seconds at your speed (v0.73.0; 120 m is 11 s at 40 km/h)
 export const BEND_MIN_DEG = 30;        // smaller bends aren't worth steering for
-export const BEND_MIN_GAIN_M = 1.0;    // …nor is less than this much road
+// v0.73.0 (the user, 2026-11-13: "Getting them to do the correct thing with fewer calls is better than many calls. Precision
+// in this is not likely to be required"): on that race 49 calls offered 112 m; the 10 with 3 m+, 1.5 m+ from the inside and
+// 4 s+ of warning carried 48 m (was 1.0 m and 0.5 m: the last half meter of road is worth ~0.6 m on a 90° bend)
+export const BEND_MIN_GAIN_M = 3.0;    // …nor is less than this much road
 export const BEND_START_DEG = 5;       // the road has turned this much -> the bend has started
 export const INSIDE_MAX_M = 1.5;       // never suggest moving further than this (in a bunch, the road's edge not known)
 export const ROAD_ROOM_MAX_M = 3;      // with the road's edge known: up to it, at most this
-export const ALREADY_INSIDE_M = 0.5;   // this close to the inside edge: you're there
+export const ALREADY_INSIDE_M = 1.5;   // this close to the inside edge: close enough (v0.73.0, was 0.5)
 export const BIKE_WIDTH_M = 0.6;       // lateral room you need beside a rider
 export const CORRIDOR_ALONG_M = [-2, 1];   // riders beside you (along-track m) block moving in
 export const OUTSIDE_M = 0.3;          // this far outside the local bunch centre counts as "on the outside"
@@ -348,6 +352,54 @@ export class BendMap {
 }
 
 /*
+ * The bends along Zwift's own road ahead (v0.73.0; the user, 2026-11-13: "I heard the call left/right in 9 seconds. I
+ * count down 9 seconds. I am into the corner a long ways"): the road learned from the riders is pooled in BEND_BIN
+ * stretches of road completion, ~100 m on a 39 km road like Watopia's 81, so a bend's start sat at the far end of a
+ * stretch: on 2026-11-13's race, calls of 9–15 s started 2–3 s early (median), 6–11 s at worst. pts = road-map.mjs
+ * profileAheadOnMap's points [{d (m from you), xy (world, cm)}] (it follows the route, or the riders' way, past
+ * junctions). Same bend rule as BendMap.bendsAhead: starts when the road has turned BEND_START_DEG from its direction
+ * just before, ends where it stops turning (8° back from its maximum) or turns the other way. Bends starting within
+ * minM of you are the one you're in. Returns [{startM, endM, angleDeg (x/y, + = CCW), right (map sense)}].
+ */
+export function bendsAlong(pts, {minM = 0} = {}) {
+    if (!Array.isArray(pts) || pts.length < 3) return [];
+    const seg = [];
+    for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1].xy, b = pts[i].xy;
+        if (!a || !b) continue;
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        if (Math.hypot(dx, dy) < 50) continue;   // under half a meter: no direction
+        seg.push({d: pts[i - 1].d, a: deg(Math.atan2(dy, dx))});
+    }
+    if (seg.length < 2) return [];
+    const out = [];
+    let ref = seg[0].a, cur = null;
+    const close = () => {
+        if (cur.startM >= minM) out.push({startM: cur.startM, endM: cur.endM, angleDeg: cur.best, right: XY_CCW_IS_RIGHT ? cur.best > 0 : cur.best < 0});
+        cur = null;
+    };
+    for (const p of seg) {
+        const rel = wrapDeg(p.a - ref);
+        if (!cur) {
+            if (Math.abs(rel) >= BEND_START_DEG) cur = {startM: p.d, endM: p.d, best: rel};
+            else ref = wrapDeg(ref + 0.2 * rel);   // follow a slowly drifting straight
+            continue;
+        }
+        if (Math.sign(rel) !== Math.sign(cur.best) || Math.abs(rel) < Math.abs(cur.best) - 8) {
+            ref = p.a;
+            close();
+            continue;
+        }
+        if (Math.abs(rel) > Math.abs(cur.best)) {
+            cur.best = rel;
+            cur.endM = p.d;
+        }
+    }
+    if (cur) close();
+    return out;
+}
+
+/*
  * Where you sit across the bunch for a bend turning `sign` (+1 = CCW in x/y). entries: the nearby
  * snapshot; me: your entry; dir: your x/y direction (unit); kRadPerM: current road curvature (x/y sense)
  * for the sagitta correction. Returns {inside (m, + = inside of the bunch centre), room (m you can move
@@ -355,13 +407,54 @@ export class BendMap {
  * wheelInside (m your own wheel sits inside of you, or null), riders, toEdge (m to the road's inside edge, or null)}.
  * right (the bend's way as you ride, bend.right): with it, your place on the road counts too, so alone works (v0.71.0).
  */
-export function lateralSituation(entries, me, dir, sign, kRadPerM = 0, {right = null} = {}) {
+/*
+ * Where the rails are, spot by spot (v0.73.0; the user, 2026-11-13: "I turned and was up against the rails before the call
+ * came"): a road's usable width changes along it (on that ride's road 81 riders stopped at 90.8–90.9 m at one bend, 1.1 m
+ * inside the 92.0 m of ROAD_M), so every rider's roadPosition is kept by road, direction and a short stretch of it
+ * (RAIL_BIN of road completion), and the edges there are the farthest anyone rode, once RAIL_MIN_N positions are in;
+ * never wider than ROAD_M. Pure: fed snapshots.
+ */
+export const RAIL_BIN = 1500;      // roadCompletion units (of 1e6 = the whole road) per stretch
+export const RAIL_MIN_N = 30;      // positions in a stretch before its edges are trusted
+
+export class RoadRails {
+    constructor() {
+        this.bins = new Map();
+    }
+
+    static key(s) {
+        return `${s.roadId}|${s.reverse ? 'r' : 'f'}|${Math.round(s.roadCompletion / RAIL_BIN)}`;
+    }
+
+    ingest(entries) {
+        for (const o of entries || []) {
+            const s = o && o.state;
+            if (!s || !Number.isFinite(s.roadPosition) || !Number.isFinite(s.roadCompletion)) continue;
+            const k = RoadRails.key(s), p = s.roadPosition / UNIT_PER_M;
+            const b = this.bins.get(k) || this.bins.set(k, {lo: Infinity, hi: -Infinity, n: 0}).get(k);
+            if (p < b.lo) b.lo = p;
+            if (p > b.hi) b.hi = p;
+            b.n++;
+        }
+    }
+
+    /* [lo, hi] (m) where you are: the farthest anyone rode here, inside ROAD_M; null until RAIL_MIN_N. */
+    edgesAt(s) {
+        if (!s || !Number.isFinite(s.roadCompletion)) return null;
+        const b = this.bins.get(RoadRails.key(s));
+        if (!b || b.n < RAIL_MIN_N) return null;
+        const [lo, hi] = s.reverse ? ROAD_M.reverse : ROAD_M.forward;
+        return [Math.max(lo, b.lo), Math.min(hi, b.hi)];
+    }
+}
+
+export function lateralSituation(entries, me, dir, sign, kRadPerM = 0, {right = null, edges = null} = {}) {
     const s = me.state;
     // the road: roadPosition + = your right on a road ridden forward, your left in reverse (CLAUDE.md)
     const roadMode = right != null && Number.isFinite(s.roadPosition);
     let toEdge = null, roadInside = null;
     if (roadMode) {
-        const [lo, hi] = s.reverse ? ROAD_M.reverse : ROAD_M.forward;
+        const [lo, hi] = edges || (s.reverse ? ROAD_M.reverse : ROAD_M.forward);   // the rails here (RoadRails) when known
         const pos = s.roadPosition / UNIT_PER_M;
         if (pos >= lo - 1 && pos <= hi + 1) {   // outside that: not a road we measured, no edges
             const toRight = s.reverse ? pos - lo : hi - pos, toLeft = s.reverse ? hi - pos : pos - lo;
@@ -451,7 +544,8 @@ export function insideDraftFactor(x) {
  */
 export function bendCue(bend, lat, ctx = {}) {
     const none = {state: null, text: '', bend, gainM: 0, lossM: 0, moveM: 0};
-    if (!bend || !lat || bend.startM < BEND_LOOK_M[0] || bend.startM > BEND_LOOK_M[1] ||
+    // ctx.lookM: how far ahead (v0.73.0: BEND_LOOK_S at your speed, from Zwift's map; else BEND_LOOK_M's 120 m)
+    if (!bend || !lat || bend.startM < BEND_LOOK_M[0] || bend.startM > (ctx.lookM ?? BEND_LOOK_M[1]) ||
         Math.abs(bend.angleDeg) < BEND_MIN_DEG) {
         return none;
     }

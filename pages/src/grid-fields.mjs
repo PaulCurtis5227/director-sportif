@@ -165,10 +165,13 @@ export function gridGroups(opts = {}) {
  * A fresh Grid (v0.44.0, the user): the five that matter, numbers only. The words are in one place, the Director
  * Sportif window's All words line ("spread over a lot of meters they aren't where you are looking"); a slot shows its
  * meter's word only when you switch it on (note).
+ * v0.67.0 (the user, 2026-11-12: Holding is "like telling me my feet are wet when I am standing in a pond"; L/R, Blocked
+ * and Wheel gap "all have direct meaning"): Pack cost in Holding's slot: its box / room says whether your spot costs.
+ * Holding stays a meter you can add, and in the report.
  */
 export const GRID_DEFAULT_TILES = [
     {id: 'grid-position', field: 'ds-position', size: 'large', note: false},
-    {id: 'grid-holding', field: 'ds-holding', size: 'large', note: false},
+    {id: 'grid-pack', field: 'ds-pack', size: 'large', note: false},
     {id: 'grid-blocked', field: 'ds-blocked', size: 'normal', note: false},
     {id: 'grid-gap', field: 'ds-gap', size: 'normal', note: false},
     {id: 'grid-side', field: 'ds-side', size: 'normal', note: false},

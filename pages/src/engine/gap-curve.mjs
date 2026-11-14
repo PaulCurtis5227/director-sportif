@@ -15,7 +15,30 @@
 
 import {TeleportGuard} from './teleport.mjs';
 import {leads} from './wheels.mjs';
-import {packSituation, packCostW} from './pack-cost.mjs';
+import {packSituation, packCostW, DEFAULT_RIDER, DRAFT_KNEE, DRAFT_DISCOUNT} from './pack-cost.mjs';
+/* A share of air the draft really saves: above DRAFT_KNEE Zwift's number counts 1 − DRAFT_DISCOUNT (pack-cost.mjs). */
+const realShare = x => x - DRAFT_DISCOUNT * Math.max(0, x - DRAFT_KNEE);
+import {boxShare, boxW} from './pack-box.mjs';
+
+// v0.73.0 / DS v0.67.0 (docs/PLAN.md §26): the "too close" penalty is Zwift's box (pack-box.mjs) for a typical
+// rider holding the wheel's speed: in line 0.5–3.25 m center to center, full 1.25–3.0 m, 0.0037 × m × v². The
+// PENALTY rows below are no longer used for the saving (kept for the stored curve's format).
+// By place in the group (v0.73.0 / DS v0.67.0, docs/PLAN.md §26 step 5; research/2026-11-12/pack-depth.mjs: the draft grows
+// with riders ahead up to about the 4th wheel). The in-line draft by gap bin from the November place maps
+// (pack-maps-v2.mjs: all places, 1–2 riders ahead, 3+), scaled so the all-places peak is the prior's level (its 0.494,
+// the cap), as a factor on the prior (the Data Tap's learned share keeps working); past 12 m the last factor; never
+// above the cap (F_MAX). The prior alone said 0.49 down to overlapping wheels; the maps: 0.35 at 0–0.5 m, peak 2–3 m.
+export const PLACE_SHARE_X = {all: [0.88, 0.94, 0.97, 0.99, 1, 1, 0.98, 0.95, 0.93, 0.92, 0.92, 0.9, 0.94, 0.94, 0.94, 0.92, 0.73, 0.73, 0.73],
+                              wheel23: [0.56, 0.69, 0.79, 0.88, 0.9, 0.91, 0.87, 0.82, 0.81, 0.79, 0.8, 0.79, 0.85, 0.86, 0.85, 0.85, 0.76, 0.76, 0.76],
+                              deep: [0.94, 1.01, 1.03, 1.06, 1.08, 1.08, 1.07, 1.05, 1.04, 1.05, 1.04, 1.02, 1.05, 1.05, 1.07, 1.07, 0.94, 0.94, 0.94]};
+export const placeOf = ahead => (ahead >= 3 ? 'deep' : ahead >= 1 ? 'wheel23' : 'all');
+const BOX_SAMPLES = 10;
+/* The box's mean cost (W) over a gap bin, at v (m/s), for a typical rider in line. */
+const binBoxW = (i, v) => {
+    let t = 0;
+    for (let k = 0; k < BOX_SAMPLES; k++) t += boxShare(GAP_EDGES[i] + (k + 0.5) / BOX_SAMPLES * (GAP_EDGES[i + 1] - GAP_EDGES[i]), 0);
+    return boxW(DEFAULT_RIDER.massKg, v, t / BOX_SAMPLES);
+};
 
 export const GAP_EDGES = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10, 12, 15, 20];
 // [up to this gap (m), value]: steps over the bins [GAP_EDGES[i], GAP_EDGES[i + 1]); nothing at >= 20 m
@@ -104,37 +127,42 @@ export class GapCurve {
         return this.curve[kind][i];
     }
 
-    interp(kind, gap) {
+    /* A bin's estimate, the share scaled to a place (PLACE_SHARE_X; null = all places). */
+    est(kind, i, place = 'all') {
+        const x = this.estimate(kind, i);
+        return kind === 'share' && PLACE_SHARE_X[place || 'all'] ? Math.min(F_MAX, x * PLACE_SHARE_X[place || 'all'][i]) : x;
+    }
+
+    interp(kind, gap, place = null) {
         if (!(gap >= 0) || gap >= GAP_EDGES.at(-1)) return 0;
         const n = PRIOR_SHARE.length;
-        if (gap <= center(0)) return this.estimate(kind, 0);
+        if (gap <= center(0)) return this.est(kind, 0, place);
         for (let i = 0; i < n - 1; i++) {
             if (gap <= center(i + 1)) {
                 const t = (gap - center(i)) / (center(i + 1) - center(i));
-                return this.estimate(kind, i) + t * (this.estimate(kind, i + 1) - this.estimate(kind, i));
+                return this.est(kind, i, place) + t * (this.est(kind, i + 1, place) - this.est(kind, i, place));
             }
         }
         const t = (gap - center(n - 1)) / (GAP_EDGES.at(-1) - center(n - 1));
-        return this.estimate(kind, n - 1) * (1 - t);
+        return this.est(kind, n - 1, place) * (1 - t);
     }
 
     /* The "too close" penalty (W) at a gap and speed v (m/s); boxed = a rider within BOXED_M behind you. */
     penalty(gap, boxed = false, v = REF_KMH / 3.6) {
-        return this.interp(boxed ? 'boxed' : 'open', gap) * speedScale(v);
+        return boxW(DEFAULT_RIDER.massKg, v, boxShare(gap, 0));   // the box (boxed in: no different, 2026-11-12)
     }
 
     /* What a typical rider really saves (W) at a gap, for your air-drag power aeroW at speed v (m/s). */
-    savingW(gap, aeroW, boxed = false, v = REF_KMH / 3.6) {
-        return this.interp('share', gap) * aeroW - this.penalty(gap, boxed, v);
+    savingW(gap, aeroW, boxed = false, v = REF_KMH / 3.6, place = null) {
+        return realShare(this.interp('share', gap, place)) * aeroW - this.penalty(gap, boxed, v);
     }
 
     /*
      * The best spot at your air drag (with room behind): {savingW, gap, lo, hi}, chosen on a 3-bin running mean
      * and its mean saving reported.
      */
-    best(aeroW, v = REF_KMH / 3.6) {
-        const k = speedScale(v);
-        const raw = PRIOR_SHARE.map((_, i) => this.estimate('share', i) * aeroW - this.estimate('open', i) * k);
+    best(aeroW, v = REF_KMH / 3.6, place = null) {
+        const raw = PRIOR_SHARE.map((_, i) => realShare(this.est('share', i, place)) * aeroW - binBoxW(i, v));
         const sm = raw.map((_, i) => {
             const w = raw.slice(Math.max(0, i - 1), i + 2);
             return w.reduce((a, b) => a + b, 0) / w.length;
@@ -176,7 +204,7 @@ export class GapCurve {
             r.L = L || null;
             const cda = L && L.size >= 3 ? this.cdaOf(o.athleteId) : null;
             const packW = cda ? packCostW(packSituation(entries, o, lead), L, v,
-                                          {massKg: (r.w || 75) + BIKE_KG, cda, crr: CRR}) : 0;
+                                          {massKg: (r.w || 75) + BIKE_KG, cda, crr: CRR}, s.draft || 0) : 0;
             this.trackShare(r, o.athleteId, s, v, L, settling, packW);
         }
         for (const [id, r] of this.riders) {

@@ -39,6 +39,7 @@ export function playChime(ctx, tones = CHIME.tones) {
 export function speechText(text) {
     return String(text || '')
         .replace(/~(?=\d)/g, 'about ')
+        .replace(/(\d+)–(\d+)(?= (km\/h|mph))/g, '$1 to $2')   // "3–5 km/h" (move up, 2026-11-12): an en dash isn't spoken as "to"
         .replace(/\+(\d+(?:\.\d+)?) km\/h/g, '$1 kilometers an hour faster')
         .replace(/\+(\d+(?:\.\d+)?) mph/g, '$1 miles an hour faster')
         .replace(/(\d+(?:\.\d+)?)\+? km\/h/g, '$1 kilometers an hour')
@@ -98,7 +99,7 @@ export class Speaker {
     }
 
     /* Speak now, ignoring the call bookkeeping (the "try this voice" sample). */
-    sample(text = 'Move up now, along the edge. Climb in 60 seconds.') {
+    sample(text = 'Move up now, 3 to 5 km/h faster. Climb in 60 seconds.') {
         return this.utter(text);
     }
 

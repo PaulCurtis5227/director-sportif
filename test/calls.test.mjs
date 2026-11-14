@@ -175,6 +175,9 @@ test('the finish: words, seconds to the line where they help, power-ups by Zwift
     assert.deepEqual(sprint('position', {p: 'position'})[0], {id: 'sprint', state: 'position', word: 'top ten', in: 120,
                                                              for: null, priority: 85});
     assert.equal(sprint('good')[0].word, 'good spot');
+    // 2026-11-12: a small group's heads-up, timed ("sprint in 120"); holding AERO in the window: "go, AERO in 14"
+    assert.deepEqual(sprint('heads-up', {p: 'headsUp'})[0], {id: 'sprint', state: 'heads-up', word: 'sprint', in: 120, for: null, priority: 85});
+    assert.deepEqual(sprint('window-aero', {p: 'window', inS: 13.6})[0], {id: 'sprint', state: 'window-aero', word: 'go, AERO', in: 14, for: null, priority: 87});
     assert.equal(sprint('windup')[0].word, 'get a wheel');
     assert.equal(sprint('last')[0].word, 'last wheel, be ready');
     assert.equal(sprint('last-go', {p: 'windup'})[0].word, 'jump now');

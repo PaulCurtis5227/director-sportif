@@ -22,11 +22,15 @@ Each shows a number, and a word under it when there's something to do ("back off
 
 - **Position**: what your spot in the group costs you in watts, against the best spot at your speed (2.5–4.5 m between wheels on a
   fast descent, not on the wheel). Blank behind a rider who gives no draft (a hand cycle): "change wheel".
-- **Holding**: watts beyond what keeping your place needs, over 10–20 s. Its word follows the cause: "step left", "step right" or "ease off" when
+- **Holding**: watts beyond what keeping your place needs, over 10–12 s. Its word follows the cause: "step left", "step right" or "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
-- **Pack cost**: the steady watts your spot costs beyond Zwift's draft (tight, crowded, boxed in).
-- **Blocked**: watts lost pushing into the wheel ahead, over the last 10 s; its word stops once you have eased or left the wheel. On fast descents sitting close costs the most of all: ease off to 4 m or more between wheels.
-- **Passing**: the closing speed when you creep up on a rider at the speed that gets you held, or one creeps up on you.
+- **Pack cost**: the watts your spot costs beyond Zwift's draft: the wheel's box (in line within about a bike length of
+  the rider ahead, holding their speed or closing: "box") and, deep in the draft, the part of Zwift's draft number it
+  doesn't really give (above about a quarter of your air drag it counts about 60%).
+- **Blocked**: the watts the wheel's box takes from you now; its word comes a few seconds before you reach the box, so
+  you can ease off or step out of its line first.
+- **Passing**: the closing speed when you creep up on a rider at the speed that gets you held (1–3 km/h; 3+ goes
+  through), or one creeps up on you.
 - **Wheel gap**, **L/R**: to your wheel, the rider ahead giving you draft (in line, or a little to the side; the nearest when
   several give about the same). Wheel gap is wheel to wheel; below 0 your wheels overlap, and Zwift cuts your draft for it.
 - **Tuck**: the speed still needed for a supertuck; **Tuck drag**: your drag in the tuck against coasting.
@@ -43,7 +47,8 @@ Each kind reaches you the way you pick in the settings: a chime (its own sound),
 windows always show it. Times are in seconds, never meters.
 
 - **The pack**: "go harder", "drop back" (your pass), "block left" / "block right" (in a race, a rider creeping up beside you),
-  "step left" / "step right" (blocked on the wheel: half a meter that way gets your watts back), "ease off" (blocked, no room).
+  "step left" / "step right" (about to enter the wheel's box: half a meter that way and it costs nothing), "ease off"
+  (the same, no room to step out).
 - **Climbs**: "climb in 90", "move up" 60–45 s before it, "hold spot" or "stay in line"; "steep in 20 for 30",
   "over top in 15". From your route: it works alone, from the start.
 - **The finish**: "top ten in 120", "get a wheel", "last wheel, be ready", "jump in 20", "you can go", "dig in" (a rider
@@ -103,7 +108,7 @@ Sauce quit.
 2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
    use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
    Zwift profile's FTP and 15 kJ).
-3. **Lay out the Grid.** It starts with Position, Holding, Blocked, Wheel gap and L/R, numbers only (the words are on the
+3. **Lay out the Grid.** It starts with Position, Pack cost, Blocked, Wheel gap and L/R, numbers only (the words are on the
    Director Sportif window). Its gear adds, removes and orders slots, shows a meter's word under it if you want it
    there, and sets the yellow / red ranges. Place it over Zwift, or capture it in OBS.
 
@@ -216,8 +221,9 @@ the color.
   change needs a full Sauce quit.
 - `npm run build` writes a release copy to `dist/`; `npm run release` also zips it (`dist/director-sportif-<version>.zip`).
 
-The meters in `pages/src/engine/` come from measured Zwift pack physics. Pack cost and the draft-by-gap curve are
-crude tables (`engine/pack-cost.mjs`, `engine/gap-curve.mjs`): a few watts from the full model, the same words and calls.
+The meters in `pages/src/engine/` come from measured Zwift pack physics. Pack cost is Zwift's box rule and a crowd cost
+(`engine/pack-box.mjs`, `engine/pack-cost.mjs`), both measured on race recordings; the draft-by-gap curve
+(`engine/gap-curve.mjs`) is a crude table shaped by your place in the group.
 
 ## License
 

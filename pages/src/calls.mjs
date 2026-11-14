@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * The calls worth hearing or reading on the Zwift screen, picked from the meters (meter-engine.mjs `ds`): your own
- * slow pass (closing 1–5 km/h faster gets you held), being blocked, a rider creeping up on you. Each call type has its
+ * slow pass (closing 1–3 km/h faster gets you held; 5 before v0.67.0), being blocked, a rider creeping up on you. Each call type has its
  * own delivery, either or both of: a chime (its own sound per type), the browser's voice (engine/speech.mjs); the
  * windows show it too. A call is a word or two from the data object (ds-data.mjs VOCAB, docs/DS-DATA.md: the tile and
  * the voice say the same), plus seconds when something is ahead (`in`, `for`). v0.30.0: no more Zwift messages to
@@ -33,13 +33,13 @@ export const CALL_TYPES = [
      tones: [740, 1100]},
     {id: 'shatter', label: 'Group shattering', hint: 'the riders ahead splitting or leaving: hold the front part, or the group you can (v0.57.0: its own row, was part of Gap opening)',
      tones: [740, 1100, 740]},
-    {id: 'blocked', label: 'Ease off (blocked)', hint: 'pushing into the wheel ahead: the watts vanish; the Wheel gap tile turns red too. Never while you move up through the group', tones: [1320, 880]},
-    {id: 'step', label: 'Step out', hint: 'held on the wheel ahead: half a meter left or right, out of its line (v0.57.0: its own row, was part of Blocked)',
+    {id: 'blocked', label: 'Ease off (blocked)', hint: "about to enter the wheel's box, or pushing into it, with no room to step out: about 40 W at 40 km/h. Never while you move up through the group", tones: [1320, 880]},
+    {id: 'step', label: 'Step out', hint: "about to enter the wheel's box: half a meter left or right, out of its line, and it costs nothing (v0.57.0: its own row, was part of Blocked)",
      tones: [1320, 1100]},
-    {id: 'alongside', label: 'Stuck alongside', hint: 'stuck beside a rider: drop back, pass where there is room. Never while you move up through the group (v0.57.0: its own row, was part of Blocked)',
+    {id: 'alongside', label: 'Stuck alongside', hint: 'stuck beside a rider: drop back, pass where there is room. Not called since v0.67.0 (the November recordings show no such grab); the row stays for your settings',
      tones: [1100, 880]},
     {id: 'tuck', label: 'Supertuck', hint: 'fast enough on a descent to tuck: stop pedaling', tones: [990, 990]},
-    {id: 'moveUp', label: 'Move up', hint: 'before a climb: move up along the edge 60–45 s out, then hold the spot',
+    {id: 'moveUp', label: 'Move up', hint: 'before a climb: move up 60–45 s out, 3–5 km/h faster than the bunch (any line, not out of the draft), then hold the spot',
      tones: [660, 880, 1100]},
     {id: 'sprint', label: 'Finish', hint: 'the last 1.5 km: your spot, the wind-up, last wheel, when you can go, keep going, ease to FTP / ease off once your place is safe (intermediate sprints too, from the race card), shake a wheel',
      tones: [1100, 1320, 1100]},

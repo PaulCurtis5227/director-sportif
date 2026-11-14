@@ -105,26 +105,29 @@ export const VOCAB = {
         ...COMMON,
         pair: {word: '', help: 'With one rider: no pack cost.'},
         front: {word: 'front', help: 'Front of the group.'},
-        room: {word: 'room', help: 'Room around you, at the best gap: the cheapest spot.'},
-        tight: {word: 'tight', help: 'Close to the wheel: it costs more than the draft says.'},
-        crowded: {word: 'crowded', help: 'Several riders close ahead: it costs more than the draft says.'},
-        boxed: {word: 'boxed', help: 'Boxed in: riders close behind and beside you.'},
+        // v0.67.0 (docs/PLAN.md §26): Zwift's box + the draft near its cap, not the old table's tight / boxed / crowded
+        room: {word: 'room', help: "Clear of the wheel's box with room ahead: the cheapest spot."},
+        box: {word: 'box', help: "In the wheel's box: within about a bike length of it, in line, holding its speed. Zwift slows you " +
+             '(about 40 W at 40 km/h). Drop back a meter, move half a lane over, or come by 3+ km/h faster.'},
+        edge: {word: 'edge', help: "At the edge of the wheel's box: part of its cost."},
         group: {word: '', help: 'In the group.'},
     },
     blocked: {
         ...COMMON,
-        clear: {word: '', help: 'Not blocked.'},
-        blocked: {word: 'ease off', help: 'Pushing into the wheel: the watts vanish. It happens within 1.5 m of their wheel, ' +
-                 'in line, closing slowly, and nearly stops further back or half a meter to the side. No room to step out here: ease off.'},
-        'step-left': {word: 'step left', help: 'Held on the wheel in front: half a meter to the left, out of its line, gets the watts back.'},
-        'step-right': {word: 'step right', help: 'Held on the wheel in front: half a meter to the right, out of its line, gets the watts back.'},
+        // v0.67.0 (docs/PLAN.md §26): from where the riders are (pack-box.mjs), said before you reach the box; the value is
+        // the box's watts now (5 s), not spikes
+        clear: {word: '', help: "Not in a wheel's box."},
+        blocked: {word: 'ease off', help: "Closing on the wheel's box, or pushing into it: within about a bike length of their wheel, " +
+                 'in line, Zwift slows you (about 40 W at 40 km/h). No room to move over here: ease off. Coming by 3+ km/h faster skips it.'},
+        'step-left': {word: 'step left', help: "Closing on the wheel's box: half a meter to the left, out of its line, and it costs nothing."},
+        'step-right': {word: 'step right', help: "Closing on the wheel's box: half a meter to the right, out of its line, and it costs nothing."},
         'blocked-left': {word: 'drop back', help: 'Stuck alongside a rider on your left: drop back, pass where there is room.'},
         'blocked-right': {word: 'drop back', help: 'Stuck alongside a rider on your right: drop back, pass where there is room.'},
     },
     passing: {
         ...COMMON,
-        'too-slow': {word: 'go harder', help: 'Closing on a rider too slowly gets you held: go with 5+ km/h more, or wait.'},
-        'go-wide': {word: 'go wide', help: 'In line with the rider you are closing on: go wide (1.5 m+) or with 5+ km/h more.'},
+        'too-slow': {word: 'go harder', help: 'Closing on a rider too slowly gets you held: go with 3+ km/h more, or wait.'},
+        'go-wide': {word: 'go wide', help: 'In line with the rider you are closing on: go wide (1.5 m+) or with 3+ km/h more.'},
         'drop-back': {word: 'drop back', help: 'Glued to their wheel: pulling out here gets you held. Drop back to 1.5–3.5 m between wheels, pull out to the edge, come by fast.'},
         'rider-left': {word: 'block left', help: 'In a race, a rider creeping up behind you on your left: ease over into their way while they are still behind. Being held costs them far more than you.'},
         'rider-right': {word: 'block right', help: 'In a race, a rider creeping up behind you on your right: ease over into their way while they are still behind. Being held costs them far more than you.'},
@@ -199,8 +202,8 @@ export const VOCAB = {
  */
 export const CALL_WORDS = {
     moveUp: {prep: 'climb', move: 'move up', hold: 'hold spot', late: 'stay in line'},
-    sprint: {position: 'top ten', good: 'good spot', 'window-prep': 'jump', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
-             'keep-going': 'keep going', ease: 'ease off', clear: 'safe, coast', 'ease-ftp': 'ease to FTP', window: 'you can go', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
+    sprint: {position: 'top ten', good: 'good spot', 'heads-up': 'sprint', 'window-prep': 'jump', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
+             'keep-going': 'keep going', ease: 'ease off', clear: 'safe, coast', 'ease-ftp': 'ease to FTP', window: 'you can go', 'window-aero': 'go, AERO', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
     nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line', crowd: 'give room'},
 };
 
@@ -334,11 +337,11 @@ export function directorCalls(ds) {
         if (CALL_WORDS.sprint[sp.state] && !(draftless && WHEEL_SPRINT.has(sp.state))) {
             // the line's seconds only 1.5 km out: inside 1 km the bunch winds up and a cruising estimate runs long
             // (Urumaze 2026-10-06: +13 s median), and "get a wheel" means now anyway ("last wheel, be ready" is timed by the engine)
-            const timed = ['position', 'good'].includes(sp.state);
+            const timed = ['position', 'good', 'heads-up'].includes(sp.state);
             // "take the wheel" is its own call type (v0.26.0: turned off without the rest of the finish); "jump in 20":
             // the seconds to the sprint window
             out.push({id: /^take-wheel/.test(sp.state) ? 'wheel' : 'sprint', state: sp.state, word: CALL_WORDS.sprint[sp.state],
-                      in: sp.state === 'window-prep' ? roundIn(sp.inS) : timed ? roundIn(toLine) : null, for: null, priority: sp.priority});
+                      in: sp.state === 'window-prep' || sp.state === 'window-aero' ? roundIn(sp.inS) : timed ? roundIn(toLine) : null, for: null, priority: sp.priority});
         } else if (/^fire-/.test(sp.state)) {
             const name = sp.state.slice(5);   // SprintCoach's own names: AERO, VAN, GHOST, BURRITO, ARROWS
             out.push({id: 'powerup', state: `fire-${name.toLowerCase()}`, word: `${name} now`, in: null, for: null,

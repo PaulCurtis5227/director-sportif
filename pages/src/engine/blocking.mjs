@@ -46,7 +46,9 @@
 
 import {leads} from './wheels.mjs';
 import {UNIT_PER_M} from './pack-cost.mjs';
+import {boxW, THROUGH_KMH} from './pack-box.mjs';
 
+// v0.73.0: no spikes any more (BlockWatch reads the box); kept for research scripts that import them
 export const SPIKE_W = 80;          // a tick whose balance exceeds this lost power to blocking
 export const BLOCK_WINDOW_S = 10;   // what the lost watts are averaged over
 export const FAST_DESCENT_CLOSE_M = 5.5;  // spikes count only this close to the wheel in line (further back: the draft swinging; any speed since v0.70.1)
@@ -95,66 +97,78 @@ export function withPowerUp(tick, grade = 0) {
     return {cda: tick.cda * (eff.cdaX || 1), crr: eff.roadCrr ? Math.min(tick.crr, ROAD_CRR) : tick.crr, m};
 }
 
+/*
+ * v0.73.0 (DS v0.67.0, docs/PLAN.md §26 step 3): Blocked from where the riders are, not from the energy balance. The
+ * "spikes" were the ±66 W per-step timing noise in other riders' states over a steady loss (research/2026-11-12/
+ * block-shift.mjs); the loss is Zwift's box (pack-box.mjs), on at once and the same however hard you push. So:
+ *   lostW = the box's watts at your mass and speed (pack-box.mjs boxW × your share of it), averaged over BLOCK_AVG_S;
+ *   blocked (the cue) = pushing into a box: closing on its rider at PUSH_KMH+ (under THROUGH_KMH) and in it, or
+ *   reaching its full part within APPROACH_S. Sitting in it level is not cued here (Position says back off); dropping
+ *   back or coming by at 3+ km/h ends it at once.
+ * "Blocked alongside" (a failed pass beside a rider) is gone with the spikes: November's captures show no such grab
+ * (research/2026-11-12/grabbed.mjs); besideRider stays for the pass calls.
+ */
+export const BLOCK_AVG_S = 5;       // the meter's watts: the box's cost averaged over this
+export const PUSH_KMH = 0.3;        // closing this much faster on the box's rider = pushing into it
+export const APPROACH_S = 3;        // the cue comes this long before you reach the full box (your reaction: ~2–5 s)
+export const BLOCK_HOLD_S = 2;      // the cue stays this long after its reason ends (no flicker on state timing)
+export const CONFIRM_N = 2;         // ...and starts only once its reason is seen this many ticks in a row (others' speeds jitter)
+export const CUE_AGAIN_S = 20;      // one cue per wheel: the same rider's box is not cued again within this...
+export const CUE_GAP_S = 30;        // ...and no new cue within this of the last one, any wheel (replays of 11-01 / 11-12: 56 / 44
+                                    // step calls with neither, 30 / 32 per wheel only; 20 / 9 with the old spikes)
+
 export class BlockWatch {
     constructor() {
         this.reset();
     }
 
     reset() {
-        this.last = null;
-        this.spikes = [];   // {wt, lostJ}
-        this.lastWt = null;
+        this.pts = [];        // {wt, w}
+        this.cueUntil = null;
         this.beside = null;
-        this.close = false;
+        this.seen = 0;        // ticks in a row with a reason to cue
+        this.cued = new Map();   // rider id -> when their box was last cued (ms)
+        this.lastCue = null;
     }
 
     /*
-     * tick: {wt (ms), v (m/s), alt (m), power, draft (W), massKg, bodyKg (optional: your weight, for the feather), cda,
-     * crr, packW (the steady pack cost now), wheelGapM (m to the wheel in line, pack-cost.mjs packSituation; null =
-     * none within 25 m), ahead3 (riders 0–3 m ahead, packSituation), behind (true when someone is ahead of you in your group), beside
-     * (besideRider() or null), powerUp (applied through POWER_UPS; an unknown one restarts the watch), coffee}.
-     * Returns {lostW (W lost to spikes over BLOCK_WINDOW_S, null until there is a window), spikes (count in the
-     * window), blocked (the cue), beside (the rider level with you now, or null), tickW (this tick's balance or null)}.
+     * tick: {wt (ms), v (m/s), massKg (with bike), box (pack-box.mjs boxOf result, or null), powerUp, coffee}.
+     * Returns {lostW (W, null until BLOCK_AVG_S of ticks), blocked (the cue), approaching (true when the cue is for a box
+     * still ahead), secsToBox, share (now), beside (always null since v0.73.0)}.
      */
     update(tick) {
-        const ok = (!tick.powerUp || POWER_UPS[tick.powerUp]) && !tick.coffee && [tick.wt, tick.v, tick.alt, tick.massKg, tick.cda, tick.crr]
-            .every(Number.isFinite) && tick.v * 3.6 >= 10;
+        const ok = Number.isFinite(tick.wt) && Number.isFinite(tick.v) && Number.isFinite(tick.massKg) && !tick.coffee;
         if (!ok) {
             this.reset();
             return this.read(tick.wt, null);
         }
-        const a = this.last;
-        if (a && !(tick.wt > a.wt)) return this.read(tick.wt, null);
-        this.beside = tick.beside || null;
-        // anywhere (v0.70.1): only close to the wheel, a rider just ahead, or alongside is a spike the cost of where you are
-        const close = !!tick.beside || tick.ahead3 > 0 || (Number.isFinite(tick.wheelGapM) && tick.wheelGapM < FAST_DESCENT_CLOSE_M);
-        this.close = close;
-        this.last = {wt: tick.wt, v: tick.v, alt: tick.alt, p: Math.max(0, tick.power || 0), d: tick.draft || 0, tick};
-        if (this.lastWt == null) this.lastWt = tick.wt;
-        const dt = a ? (tick.wt - a.wt) / 1000 : null;
-        if (!a || dt < 0.5 || dt > 2.5) return this.read(tick.wt, null);
-        // each end of the tick with its own power-up; one mass for the energy change, so a power-up switching on or
-        // off (the anvil's extra kilos) doesn't count as energy
-        const run = (a.v + tick.v) / 2 * dt;
-        const grade = run > 0.5 ? (tick.alt - a.alt) / run : 0;
-        const e0 = withPowerUp(a.tick, grade), e1 = withPowerUp(tick, grade);
-        const m = (e0.m + e1.m) / 2;
-        const res = (a.p + this.last.p) / 2 + (a.d + this.last.d) / 2 -
-            0.5 * RHO * (e0.cda * a.v ** 3 + e1.cda * tick.v ** 3) / 2 - G * (e0.crr * e0.m * a.v + e1.crr * e1.m * tick.v) / 2 -
-            (0.5 * m * (tick.v ** 2 - a.v ** 2) + m * G * (tick.alt - a.alt)) / dt;
-        if ((tick.behind || tick.beside) && close && res > SPIKE_W) this.spikes.push({wt: tick.wt, lostJ: (res - Math.max(0, tick.packW || 0)) * dt});
-        return this.read(tick.wt, res);
+        const box = tick.box || null;
+        const share = box && box.share > 0 ? box.share : 0;
+        if (!this.pts.length || tick.wt > this.pts.at(-1).wt) this.pts.push({wt: tick.wt, w: boxW(tick.massKg, tick.v, share)});
+        while (this.pts.length && tick.wt - this.pts[0].wt > BLOCK_AVG_S * 1000) this.pts.shift();
+        const closing = box && Number.isFinite(box.closingKmh) ? box.closingKmh : null;
+        const pushing = share >= 0.5 && closing != null && closing >= PUSH_KMH;
+        const approaching = !pushing && box && Number.isFinite(box.secsToBox) && box.secsToBox <= APPROACH_S;
+        this.seen = pushing || approaching ? this.seen + 1 : 0;
+        const id = box && box.rider ? box.rider.athleteId ?? box.rider : null;
+        const last = id != null ? this.cued.get(id) : null;
+        const fresh = (last == null || tick.wt - last > CUE_AGAIN_S * 1000) && !(this.lastCue != null && tick.wt - this.lastCue <= CUE_GAP_S * 1000);
+        const running = this.cueUntil != null && tick.wt <= this.cueUntil;
+        if (this.seen >= CONFIRM_N && (running || fresh)) {
+            if (!running) { if (id != null) this.cued.set(id, tick.wt); this.lastCue = tick.wt; }
+            this.cueUntil = tick.wt + BLOCK_HOLD_S * 1000;
+        }
+        // dropping back or coming through ends it at once, whatever the hold
+        if (closing != null && (closing < 0 || closing >= THROUGH_KMH) && !approaching) this.cueUntil = null;
+        return this.read(tick.wt, {share, approaching: !!approaching, secsToBox: approaching ? box.secsToBox : null});
     }
 
-    read(wt, tickW) {
-        while (this.spikes.length && wt - this.spikes[0].wt > BLOCK_WINDOW_S * 1000) this.spikes.shift();
-        const warm = this.lastWt != null && wt - this.lastWt >= BLOCK_WINDOW_S * 1000;
-        const lostW = warm ? this.spikes.reduce((s, x) => s + x.lostJ, 0) / BLOCK_WINDOW_S : null;
-        // the watts stay on the meter for the whole window; the cue is about now: a wheel near and a spike just now (v0.70.3;
-        // 2026-11-02: "drop back" 10 s after the last spike at 57 W, with the wheel 25 m up the road, under "close up")
-        const fresh = this.spikes.length > 0 && wt - this.spikes[this.spikes.length - 1].wt <= BLOCK_FRESH_S * 1000;
-        return {lostW, spikes: this.spikes.length, tickW, beside: this.beside,
-                blocked: this.close && fresh && lostW != null && lostW >= BLOCK_CUE_W && this.spikes.length >= BLOCK_CUE_N};
+    read(wt, now) {
+        const warm = this.pts.length > 1 && this.pts.at(-1).wt - this.pts[0].wt >= (BLOCK_AVG_S - 1.5) * 1000;
+        const lostW = warm ? this.pts.reduce((t, p) => t + p.w, 0) / this.pts.length : null;
+        const blocked = !!now && this.cueUntil != null && wt <= this.cueUntil;
+        return {lostW, blocked, approaching: !!(now && now.approaching), secsToBox: now ? now.secsToBox : null,
+                share: now ? now.share : 0, beside: null, spikes: 0, tickW: null};
     }
 }
 
@@ -191,12 +205,16 @@ export function besideRider(entries, me, lead = leads(entries)) {
  * (research/2026-11-01/road-width.mjs). Both free: keep (the side already called), else away from the wheel, else toward the
  * middle of the road.
  */
-export const STEP_WHEEL_M = [0.5, 3.5];
+export const STEP_WHEEL_M = [0.5, 6];   // v0.73.0: 6 (was 3.5): the cue now comes before the box, up to ~5.5 m back
 export const STEP_LINE_M = 0.6;
 export const STEP_M = 0.7;
 export const STEP_TAKEN_M = [0.25, 1.15];
 export const STEP_AHEAD_M = 4;
-export const ROAD_M = {forward: [88, 92.3], reverse: [84, 88.3]};
+// v0.73.0 (2026-11-13 ToW stage 2, the user: "instructions were telling me to turn left/right when I already had"): the
+// high edge is where riders can actually get to, not the farthest anyone was seen: all riders' P99.9 92.00 / 92.00 / 92.06
+// / 92.02 on forward roads 81, 79, 21, 0 and 88.01–88.29 in reverse (P0.1 at the low edge 88.05 / 84.02, as before); was
+// 92.3 / 88.3, so "move right" ran on with you 0.3 m from where riders stop
+export const ROAD_M = {forward: [88, 92.0], reverse: [84, 88.0]};
 
 export function stepSide(entries, me, lead = leads(entries), {keep = null} = {}) {
     if (!me || !me.state) return null;
@@ -234,9 +252,8 @@ export function stepSide(entries, me, lead = leads(entries), {keep = null} = {})
  * numbers). */
 export function blockedNote(r) {
     if (!r || r.lostW == null) return '';
-    if (!r.blocked) return 'clear';
-    return r.beside ? `blocked alongside a rider on your ${r.beside.side} — ease off and pass where there's room` :
-        'blocked: pushing into the wheel — ease off or steer to space';
+    if (!r.blocked) return r.share > 0 ? "in the wheel's box" : 'clear';
+    return r.approaching ? "closing on the wheel's box: ease off or move over" : "pushing into the wheel's box: ease off or move over";
 }
 
 /*
@@ -252,8 +269,11 @@ export function blockedNote(r) {
  * at 2–3 km/h, so on average ~30 W to the passer and ~4 W to the rider in the way. The defence note no longer quotes
  * them (user, 2026-10-12: numbers in the messages should be close to reality).
  */
-export const HELD_KMH = [1, 5];     // closing this much faster gets you held
-export const GO_KMH = 5;            // ...this much faster goes through
+// v0.73.0 (DS v0.67.0, docs/PLAN.md §26 step 4): 3 km/h, was 5. research/2026-11-12/block-rule.mjs: in line 1.5–3 m,
+// closing 2–3 km/h is still held (13.6% of steps, +28..33 W) but 3–5 km/h already goes through (4.3%, −13 W); the box is
+// off from THROUGH_KMH 3 (pack-box.mjs). The lower edge stays 1: under it others' speeds jitter (Blocked covers it in line).
+export const HELD_KMH = [1, THROUGH_KMH];   // closing this much faster gets you held
+export const GO_KMH = THROUGH_KMH;          // ...this much faster goes through
 export const PASS_AHEAD_M = 4;      // a rider up to this far ahead (centre to centre)...
 // The defence ends this far behind you (v0.70.3): a block is a wheel to push into, 1.5–3 m center to center and in line, so a
 // rider beside you has nothing left to be held by (2026-11-02 + 11-01: called level, 19 of 28 were already ahead, all 2 s on)

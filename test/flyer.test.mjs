@@ -53,3 +53,19 @@ test('not a flyer: a turn at the front (the one swinging off slows), a rider alr
     for (let s = 0; s <= 20; s++) any = notEvent.update({...tick(s, {jump: t => Math.max(0, t - 5) * 1.7, kmh: t => (t >= 5 ? V + 6 : V)}), inEvent: false}) || any;
     assert.equal(any, false);
 });
+
+test('your own attack is no flyer (2026-11-13 ToW stage 2: "flyer, away" while you went off the front of 15)', () => {
+    const w = new FlyerWatch();
+    let any = null;
+    // you are the rider at the front who jumps: the others in line behind you, you going away 3.5 km/h faster
+    for (let s = 0; s <= 20; s++) {
+        const t = tick(s);
+        const me = t.entries[0], d = Math.max(0, s - 5) * 1.0;   // 3.5 km/h faster: about 1 m/s
+        me.gapDistance = 0;
+        me.state.speed = s >= 5 ? V + 3.5 : V;
+        // the others: in line behind you, 1 m apart, starting 2 m back plus the gap you opened
+        t.entries.slice(1).forEach((o, i) => { o.gapDistance = 2 + d + i; o.state.speed = V; });
+        any = w.update({...t, lead: leads(t.entries)}) || any;
+    }
+    assert.equal(any, null, 'never called for yourself');
+});
