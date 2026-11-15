@@ -242,6 +242,8 @@ const WHEEL_SPRINT = new Set(['windup', 'last', 'last-go', 'take-wheel', 'take-w
 
 export function directorCalls(ds) {
     const out = [];
+    // join the race you signed up for (v0.67.0, join-watch.mjs: set by the DS window from Sauce's event list)
+    if (ds && ds.join && ds.join.word) out.push({id: 'join', state: ds.join.state, word: ds.join.word, in: null, for: null, priority: 97});
     const draftless = !!(ds && ds.draftless);   // no draft at all: no move up, habits or wheel calls (v0.40.0)
     const m = !draftless && ds && ds.moveUp;
     if (m && CALL_WORDS.moveUp[m.state]) {

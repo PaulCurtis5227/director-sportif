@@ -238,8 +238,9 @@ import {GapNote} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
+import {JoinWatch, upcomingSignups} from './join-watch.mjs';
 
-export const DS_VERSION = '0.67.0';
+export const DS_VERSION = '0.67.1';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -690,6 +691,18 @@ export async function main() {
     let myName = null;
     // the event's name, category and start for the title card: looked up once per event
     let evInfo = {sg: null, ready: Promise.resolve(null), at: 0, done: true, value: null};
+    // the race you signed up for, from Sauce's event list (join reminders, v0.67.0): looked at every 30 s, Sauce asked
+    // for newer events every 10 min (its own refresh may be slower); errors leave the last answer
+    const joinWatch = new JoinWatch();
+    let nextJoin = null, lastNewer = 0;
+    const refreshSignups = async () => {
+        try {
+            if (Date.now() - lastNewer > 600000) { lastNewer = Date.now(); await Common.rpc.loadNewerEvents().catch(() => null); }
+            nextJoin = upcomingSignups(await Common.rpc.getCachedEvents(), Date.now());
+        } catch (e) { console.warn('event signups', e); }
+    };
+    refreshSignups();
+    setInterval(refreshSignups, 30000);
     // the event's start for the auto-record: ms, 'pending' (being looked up, up to 10 s) or null (not known: no wait)
     const eventStart = sg => {
         if (!sg || evInfo.sg !== sg) return 'pending';
@@ -725,6 +738,11 @@ export async function main() {
             .then(() => showRec());
     };
     let recSg = null;   // the event whose name went into this recording
+    // sent to caffecter.com only once this recording has SEND_EVENT_S of riding IN the event: started (distance > 0), not
+    // finished (v0.67.0; the user, 2026-11-14: "Caffecter.com got 4 saved rides from today. Two of them were free rides":
+    // a free ride that ended in the next event's pen, and one that began as the last event let go after its finish)
+    const SEND_EVENT_S = 60;
+    let recEventMs = 0, recEventAt = null, recSendMarked = false;
     let recRaced = false;   // and it saw that race under way (else no result: 2026-10-26, the warm-up's file closed in the pen got "0 finishers")
     let stopping = null;   // the recording being stopped (its result being asked for)
     /*
@@ -1019,6 +1037,9 @@ export async function main() {
         rec = new CaptureRecorder({meta: {app: 'director-sportif', version: DS_VERSION, routeId, routeName, rehearsal: rehearsing || undefined, ...meta}});
         recSg = null;
         recRaced = false;
+        recEventMs = 0;
+        recEventAt = null;
+        recSendMarked = false;
         recPromised = false;
         // kept on caffecter.com: the setting on and this copy linked; sent once it's been in an event (markSend below)
         sendRide = !rehearsing && Common.settingsStore.get('sendRaces') ? await sender.newRide().catch(() => null) : null;
@@ -1173,6 +1194,8 @@ export async function main() {
         bikeCheck.update(r.me);
         hrCheck.update(r.me, r.ds && r.ds.teamHr);
         gapNote.update(r.me, r.ds && r.ds.gapSource);
+        // join the race you signed up for: reminders before its start while you're not in it (join-watch.mjs)
+        if (r.ds && r.me && r.me.self) r.ds.join = joinWatch.update({now: Date.now(), next: nextJoin, mySg: r.me.state.eventSubgroupId || null});
         const data = buildData(r);
         // v0.60.0: the call shown is one you can hear (a chime or the voice on for its type), like the voice's own pick
         const heard = id => !!(delivery[id] && (delivery[id].chime || delivery[id].voice));
@@ -1187,9 +1210,16 @@ export async function main() {
             noteEvent(mySg);
             // your event's name into the recording, once per event (the report's title and summary)
             if (rec && mySg && recSg === mySg && Number.isFinite(r.me.state.eventDistance) && r.me.state.eventDistance > 0) recRaced = true;
+            // riding in the event (not the pen, not after your finish): counted toward sending this recording
+            const inEventNow = rec && mySg && recSg === mySg && r.me.state.eventDistance > 0 && !auto.hasEnded(mySg);
+            if (inEventNow && recEventAt != null && lastTick > recEventAt) recEventMs += Math.min(3000, lastTick - recEventAt);
+            recEventAt = inEventNow ? lastTick : null;
+            if (sendRide && !recSendMarked && recEventMs >= SEND_EVENT_S * 1000) {
+                recSendMarked = true;
+                sender.markSend(sendRide).catch(e => console.warn('send queue', e));   // ridden in an event: it goes
+            }
             if (rec && rec !== stopping && mySg && recSg !== mySg) {
                 const sg = recSg = mySg, into = rec;
-                if (sendRide) sender.markSend(sendRide).catch(e => console.warn('send queue', e));   // in an event: it goes
                 // the promise in the recording (PLAN §24): kept on caffecter.com; the report page ticks "Keep this ride" for it
                 const keep = promised();
                 if (keep) recPromised = true;

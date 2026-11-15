@@ -61,6 +61,10 @@ export const CALL_TYPES = [
      'gains ground (after the draft it costs); nothing when you are on the inside already or stuck outside; alone and in the finish too (v0.58.0); ' +
      '"cut the S" / "cut the bend" before a stretch that twists enough to steer a shorter line (dirt S curves most)',
      tones: [700, 940]},
+    {id: 'join', label: 'Join the race', hint: 'a race you signed up for is about to start and you are not in it yet (warming up on a ' +
+     'free ride): "join in 3 minutes", 2, 1, "join now: 30 seconds"; still riding an earlier event: "next event in 3 minutes" … ' +
+     '(v0.67.0, join-watch.mjs; Sauce\'s event list, every signup in turn). Never joins for you',
+     tones: [660, 990, 1320]},
     {id: 'flyer', label: 'Flyer', hint: 'one or two riders jumping off the front of your bunch, in an event: "flyer, go", said as they ' +
      'go (3 km/h+ faster than the bunch, under 2.5 s up) so the wheel can still be caught; while it goes, no "ease off" (v0.66.0, flyer.mjs)',
      tones: [990, 1320, 990]},
@@ -89,7 +93,7 @@ export function deliveryKey(type, how) {
  * Wheel gap tile turns red when you push into the wheel). Step out is heard. Each one a checkbox away.
  */
 export const FRESH_VOICE = ['gap', 'step', 'moveUp', 'bridge', 'pace', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr',
-                            'flyer'];
+                            'flyer', 'join'];
 
 /*
  * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
@@ -117,7 +121,8 @@ export function deliveryDefaults(old = {}) {
         }
         // v0.53.0: only after you press Bridge; v0.55.3: only with a segment card; v0.65.0 flyer (the user asked for it; ~6 an
         // hour of racing): spoken for everyone, existing installs too
-        if (t.id === 'bridge' || t.id === 'pace' || t.id === 'flyer') {
+        // v0.67.0 join (the user asked for it: "Sometimes I forget/almost forget to join"): spoken for everyone too
+        if (t.id === 'bridge' || t.id === 'pace' || t.id === 'flyer' || t.id === 'join') {
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = true;
             continue;
@@ -188,7 +193,7 @@ export function localizeUnits(text, imperial) {
 }
 
 /* Call priorities (docs/DS-DATA.md; the director's move-up 80 / sprint 55–93 sit around them). */
-export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace']);   // Announcer: no wait per type
+export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace', 'join']);   // Announcer: no wait per type
 
 export const CALL_PRIORITY = {gap: 75, shatter: 75, pass: 70, blocked: 65, step: 65, alongside: 65, passed: 60, tuck: 40};
 

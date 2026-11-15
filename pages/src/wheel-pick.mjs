@@ -21,12 +21,15 @@
  * rider in front (research/2026-11-08/wheel-gap-check.mjs, 4 rides). Now every rider within KEEP of the best draft is a
  * wheel you could be on, and the NEAREST of them is yours (the one between you and the others takes the wind); the
  * wheel you are on stays until another is SWITCH_M nearer.
+ * v0.67.0 (2026-11-14: "wheel gap went to -4.x" ft): a rider level with you, under MIN_GAP_M 0.5 m center to center (where
+ * the box starts), is on top of you, not a wheel: your draft was 0 W on 23 of 30 such ticks over 4 rides, and the rest came
+ * from a rider further up (research/2026-11-14/neg-gap.mjs). The Wheel gap's floor is now -1 m (-3.3 ft), true overlap.
  * Pure: fed the engine's entries each tick.
  */
 import {gapBetween} from './engine/wheels.mjs';
 import {UNIT_PER_M} from './engine/pack-cost.mjs';
 
-export const WHEEL_PICK = {inlineM: 0.44, asideFromM: 1.5, maxGapM: 25, goodQ: 0.5, keep: 0.8, switchM: 1};
+export const WHEEL_PICK = {minGapM: 0.5, inlineM: 0.44, asideFromM: 1.5, maxGapM: 25, goodQ: 0.5, keep: 0.8, switchM: 1};
 // [m, value] points, linear between, 0 past the last
 const SHARE_PTS = [[0, 0.49], [3.5, 0.49], [5, 0.45], [6, 0.39], [8, 0.30], [10, 0.22], [15, 0.17], [20, 0.08], [25, 0.02]];   // still a wheel at 25 m (GAP_MAX_M)
 const LONE_PTS = [[0, 1], [0.3, 1], [0.45, 0.91], [0.8, 0.66], [1.25, 0.40], [2, 0]];
@@ -76,7 +79,7 @@ export class WheelPick {
             // 1.4 s older 10 m behind you while they were 2.3 m in front (left out); one level with you was clamped to 0 (-5 ft)
             if (!(g.gap > 0)) continue;
             const gap = g.gap;
-            if (gap > o.maxGapM) continue;
+            if (gap > o.maxGapM || gap < o.minGapM) continue;   // level with you (v0.67.0): no wheel
             const lane = (r.state.roadPosition ?? 0) - (me.state.roadPosition ?? 0);
             const asideM = Math.abs(lane) / UNIT_PER_M;
             if (asideM > o.inlineM && gap < o.asideFromM) continue;   // beside you
