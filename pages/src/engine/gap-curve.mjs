@@ -15,13 +15,14 @@
 
 import {TeleportGuard} from './teleport.mjs';
 import {leads} from './wheels.mjs';
-import {packSituation, packCostW, DEFAULT_RIDER, DRAFT_KNEE, DRAFT_DISCOUNT} from './pack-cost.mjs';
-/* A share of air the draft really saves: above DRAFT_KNEE Zwift's number counts 1 − DRAFT_DISCOUNT (pack-cost.mjs). */
-const realShare = x => x - DRAFT_DISCOUNT * Math.max(0, x - DRAFT_KNEE);
-import {boxShare, boxW} from './pack-box.mjs';
+import {packSituation, packCostW, DEFAULT_RIDER} from './pack-cost.mjs';
+import {boxShare, BOX_FLOOR} from './pack-box.mjs';
+/* v0.74.0 (DS v0.68.0): the share of air the draft really saves at a reported share x, in share b of the box: the box
+   applies only BOX_FLOOR of air (pack-box.mjs); out of it the reported draft is what you get (no discount). */
+const appliedShare = (x, b = 0) => x - b * Math.max(0, x - BOX_FLOOR);
 
-// v0.73.0 / DS v0.67.0 (docs/PLAN.md §26): the "too close" penalty is Zwift's box (pack-box.mjs) for a typical
-// rider holding the wheel's speed: in line 0.5–3.25 m center to center, full 1.25–3.0 m, 0.0037 × m × v². The
+// v0.74.0 / DS v0.68.0 (docs/FINDINGS.md 2026-11-16): the "too close" penalty is Zwift's box as a draft cut (pack-box.mjs) for a typical
+// rider holding the wheel's speed: full 1.0–2.25 m center to center, fading to nothing by 5.25 m, ~8% of air applied. The
 // PENALTY rows below are no longer used for the saving (kept for the stored curve's format).
 // By place in the group (v0.73.0 / DS v0.67.0, docs/PLAN.md §26 step 5; research/2026-11-12/pack-depth.mjs: the draft grows
 // with riders ahead up to about the 4th wheel). The in-line draft by gap bin from the November place maps
@@ -33,11 +34,11 @@ export const PLACE_SHARE_X = {all: [0.88, 0.94, 0.97, 0.99, 1, 1, 0.98, 0.95, 0.
                               deep: [0.94, 1.01, 1.03, 1.06, 1.08, 1.08, 1.07, 1.05, 1.04, 1.05, 1.04, 1.02, 1.05, 1.05, 1.07, 1.07, 0.94, 0.94, 0.94]};
 export const placeOf = ahead => (ahead >= 3 ? 'deep' : ahead >= 1 ? 'wheel23' : 'all');
 const BOX_SAMPLES = 10;
-/* The box's mean cost (W) over a gap bin, at v (m/s), for a typical rider in line. */
-const binBoxW = (i, v) => {
+/* The box's mean share over a gap bin, for a typical rider in line (straight behind, holding the wheel's speed). */
+const binBox = i => {
     let t = 0;
     for (let k = 0; k < BOX_SAMPLES; k++) t += boxShare(GAP_EDGES[i] + (k + 0.5) / BOX_SAMPLES * (GAP_EDGES[i + 1] - GAP_EDGES[i]), 0);
-    return boxW(DEFAULT_RIDER.massKg, v, t / BOX_SAMPLES);
+    return t / BOX_SAMPLES;
 };
 
 export const GAP_EDGES = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10, 12, 15, 20];
@@ -147,14 +148,16 @@ export class GapCurve {
         return this.est(kind, n - 1, place) * (1 - t);
     }
 
-    /* The "too close" penalty (W) at a gap and speed v (m/s); boxed = a rider within BOXED_M behind you. */
-    penalty(gap, boxed = false, v = REF_KMH / 3.6) {
-        return boxW(DEFAULT_RIDER.massKg, v, boxShare(gap, 0));   // the box (boxed in: no different, 2026-11-12)
+    /* The "too close" penalty (W) at a gap for your air-drag power aeroW: the box's cut (v0.74.0: a share of the draft,
+       not m·v²; boxed = a rider within BOXED_M behind you: no different). */
+    penalty(gap, aeroW, boxed = false, place = null) {
+        const x = this.interp('share', gap, place);
+        return (x - appliedShare(x, boxShare(gap, 0))) * (Number.isFinite(aeroW) ? aeroW : 0);
     }
 
     /* What a typical rider really saves (W) at a gap, for your air-drag power aeroW at speed v (m/s). */
     savingW(gap, aeroW, boxed = false, v = REF_KMH / 3.6, place = null) {
-        return realShare(this.interp('share', gap, place)) * aeroW - this.penalty(gap, boxed, v);
+        return appliedShare(this.interp('share', gap, place), boxShare(gap, 0)) * aeroW;
     }
 
     /*
@@ -162,7 +165,7 @@ export class GapCurve {
      * and its mean saving reported.
      */
     best(aeroW, v = REF_KMH / 3.6, place = null) {
-        const raw = PRIOR_SHARE.map((_, i) => realShare(this.est('share', i, place)) * aeroW - binBoxW(i, v));
+        const raw = PRIOR_SHARE.map((_, i) => appliedShare(this.est('share', i, place), binBox(i)) * aeroW);
         const sm = raw.map((_, i) => {
             const w = raw.slice(Math.max(0, i - 1), i + 2);
             return w.reduce((a, b) => a + b, 0) / w.length;

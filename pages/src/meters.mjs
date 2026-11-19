@@ -238,9 +238,9 @@ import {GapNote} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
-import {JoinWatch, upcomingSignups} from './join-watch.mjs';
+import {JoinWatch, ServerClock, upcomingSignups} from './join-watch.mjs';
 
-export const DS_VERSION = '0.67.1';
+export const DS_VERSION = '0.68.0';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -691,9 +691,9 @@ export async function main() {
     let myName = null;
     // the event's name, category and start for the title card: looked up once per event
     let evInfo = {sg: null, ready: Promise.resolve(null), at: 0, done: true, value: null};
-    // the race you signed up for, from Sauce's event list (join reminders, v0.67.0): looked at every 30 s, Sauce asked
+    // the race you signed up for, from Sauce's event list (join reminders, v0.67.1): looked at every 30 s, Sauce asked
     // for newer events every 10 min (its own refresh may be slower); errors leave the last answer
-    const joinWatch = new JoinWatch();
+    const joinWatch = new JoinWatch(), serverClock = new ServerClock();
     let nextJoin = null, lastNewer = 0;
     const refreshSignups = async () => {
         try {
@@ -739,7 +739,7 @@ export async function main() {
     };
     let recSg = null;   // the event whose name went into this recording
     // sent to caffecter.com only once this recording has SEND_EVENT_S of riding IN the event: started (distance > 0), not
-    // finished (v0.67.0; the user, 2026-11-14: "Caffecter.com got 4 saved rides from today. Two of them were free rides":
+    // finished (v0.67.1; the user, 2026-11-14: "Caffecter.com got 4 saved rides from today. Two of them were free rides":
     // a free ride that ended in the next event's pen, and one that began as the last event let go after its finish)
     const SEND_EVENT_S = 60;
     let recEventMs = 0, recEventAt = null, recSendMarked = false;
@@ -1195,7 +1195,9 @@ export async function main() {
         hrCheck.update(r.me, r.ds && r.ds.teamHr);
         gapNote.update(r.me, r.ds && r.ds.gapSource);
         // join the race you signed up for: reminders before its start while you're not in it (join-watch.mjs)
-        if (r.ds && r.me && r.me.self) r.ds.join = joinWatch.update({now: Date.now(), next: nextJoin, mySg: r.me.state.eventSubgroupId || null});
+        // timed by Zwift's clock, not the PC's (v0.67.2: the PC ran 1 s behind; join-watch.mjs ServerClock)
+        if (r.me && r.me.self && r.me.state) serverClock.observe(r.me.state.worldTime);
+        if (r.ds && r.me && r.me.self) r.ds.join = joinWatch.update({now: serverClock.now(), next: nextJoin, mySg: r.me.state.eventSubgroupId || null});
         const data = buildData(r);
         // v0.60.0: the call shown is one you can hear (a chime or the voice on for its type), like the voice's own pick
         const heard = id => !!(delivery[id] && (delivery[id].chime || delivery[id].voice));

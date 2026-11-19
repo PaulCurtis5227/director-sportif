@@ -132,12 +132,12 @@ test('ride warnings: the surface meter and the FRC meter; surface and pacing cal
     assert.equal(directorCalls({surfaceAhead: {surface: 'wood', inS: 105, forS: 10}}).length, 0, 'not 2 minutes ahead');
 });
 
-test('bend call: "move left / right" when the inside is open, with the seconds to it; nothing outside or already inside', async () => {
+test('bend call: "left / right in N" when the inside is open, with the seconds to it; nothing outside or already inside', async () => {
     const {directorCalls} = await import('../pages/src/ds-data.mjs');
     const {callWords, dsCall} = await import('../pages/src/calls.mjs');
     const [open] = directorCalls({bend: {state: 'open', side: 'left', inS: 6.2}});
-    assert.deepEqual([open.id, open.state, open.word, open.in], ['bend', 'open-left', 'move left', 6]);
-    assert.equal(callWords(open), 'move left in 6');
+    assert.deepEqual([open.id, open.state, open.word, open.in], ['bend', 'open-left', 'left', 6]);
+    assert.equal(callWords(open), 'left in 6');
     // v0.58.0: "stay close" was a hold-the-wheel call, not a steering one (the user, 2026-11-06)
     assert.deepEqual(directorCalls({bend: {state: 'outside', side: 'right', inS: 4}}), []);
     assert.deepEqual(directorCalls({bend: {state: 'inside', side: 'right', inS: 4}}), []);

@@ -48,10 +48,13 @@ export const wheelGap = centerM => (Number.isFinite(centerM) ? centerM - BIKE_LE
  * 'alarm' while you push into the wheel (the Blocked meter's blocked / step states: watts vanishing into it), 'good'
  * in the good seat (GAP_GOOD_M, wheel to wheel: one-gap-wheel-gap), 'warn' too close (under GAP_CLOSE_M) or drifting
  * off it (over GAP_FAR_M, the draft fading), else none. No wheel: none.
+ * v0.68.0 (docs/FINDINGS.md 2026-11-16 "THE BOX IS A DRAFT CUT"): the box fades out to 3.75 m wheel gap, so the good
+ * seat is 3–4 m (was 2–3.5), too close is under 2 m (the box still takes a third or more of the draft there; was 1 m),
+ * drifting off over 6 m (was 5). The last wheel's "close up" (dangle.mjs) stays at 4 m: being gapped, not watts.
  */
-export const GAP_GOOD_M = [2, 3.5];
-export const GAP_CLOSE_M = 1;
-export const GAP_FAR_M = 5;
+export const GAP_GOOD_M = [3, 4];
+export const GAP_CLOSE_M = 2;
+export const GAP_FAR_M = 6;
 export function gapLevel(wheelM, blockedState, positionState = null) {
     if (!Number.isFinite(wheelM)) return null;
     if (positionState === 'off-back') return 'alarm';   // off the back or dangling: the gap red (the user, 2026-11-09)
@@ -204,7 +207,7 @@ export const CALL_WORDS = {
     moveUp: {prep: 'climb', move: 'move up', hold: 'hold spot', late: 'stay in line'},
     sprint: {position: 'top ten', good: 'good spot', 'heads-up': 'sprint', 'window-prep': 'jump', windup: 'get a wheel', last: 'last wheel, be ready', 'last-go': 'jump now',
              'keep-going': 'keep going', ease: 'ease off', clear: 'safe, coast', 'ease-ftp': 'ease to FTP', window: 'you can go', 'window-aero': 'go, AERO', 'take-wheel': 'wheel, jump', 'take-wheel-light': 'wheel, jump light', 'take-wheel-medium': 'wheel, jump medium', 'take-wheel-hard': 'wheel, jump hard', 'shake-left': 'drift left', 'shake-right': 'drift right', closer: 'dig in'},
-    nudge: {wheel: 'ease off', middle: 'use edge', front: 'sit in', line: 'get in line', crowd: 'give room'},
+    nudge: {wheel: 'ease off', front: 'sit in', line: 'get in line', crowd: 'give room'},
 };
 
 /*
@@ -217,7 +220,7 @@ export const CALL_WORDS = {
  */
 export const POWERUP_NAMES = {AERO: 'AERO', DRAFTBOOST: 'VAN', NINJA: 'GHOST', UNDRAFTABLE: 'BURRITO', BOOST: 'ARROWS',
                               LIGHTNESS: 'FEATHER'};
-const FIRE_AT_S = {AERO: 15, DRAFTBOOST: 40, UNDRAFTABLE: 20};
+const FIRE_AT_S = {AERO: 15, DRAFTBOOST: 45, UNDRAFTABLE: 20};   // the van called at 45 s (engine/director.mjs VAN_S)
 const GHOST_AT_M = 400;
 
 export const SURFACE_CALL_S = 45;
@@ -242,7 +245,7 @@ const WHEEL_SPRINT = new Set(['windup', 'last', 'last-go', 'take-wheel', 'take-w
 
 export function directorCalls(ds) {
     const out = [];
-    // join the race you signed up for (v0.67.0, join-watch.mjs: set by the DS window from Sauce's event list)
+    // join the race you signed up for (v0.67.1, join-watch.mjs: set by the DS window from Sauce's event list)
     if (ds && ds.join && ds.join.word) out.push({id: 'join', state: ds.join.state, word: ds.join.word, in: null, for: null, priority: 97});
     const draftless = !!(ds && ds.draftless);   // no draft at all: no move up, habits or wheel calls (v0.40.0)
     const m = !draftless && ds && ds.moveUp;
@@ -308,7 +311,7 @@ export function directorCalls(ds) {
         out.push({id: 'pacing', state: pc.state, word: pc.state === 'steep' ? 'steep' : 'over top', in: roundIn(pc.inS),
                   for: pc.state === 'steep' ? roundIn(pc.forS) : null, priority: 35});
     }
-    // a bend: the inside open (move over: it gains ground): "move left / right" (v0.58.0, was "inside left / right"; the user,
+    // a bend: the inside open (move over: it gains ground): "left / right in N" (v0.67.3; "move left / right" from v0.58.0, was "inside left / right"; the user,
     // 2026-11-06: say what to do). On the outside with no way in ('outside', was "stay close": a hold-the-wheel call, not a
     // steering one, the user) or already on the inside ('inside'): nothing to steer, no call (ds.bend keeps the state)
     // a stretch that twists enough to steer a shorter line (engine sCurve): "cut the S in 5" (a hairpin: "cut the bend")
@@ -317,7 +320,10 @@ export function directorCalls(ds) {
                       in: roundIn(sc.inS), for: null, priority: 46});
     const b = ds && ds.bend;
     if (b && b.state === 'open') {
-        out.push({id: 'bend', state: `open-${b.side}`, word: `move ${b.side}`, in: roundIn(b.inS), for: null, priority: 45});
+        // "right in 10" (v0.67.3, was "move right in 10"; the user, 2026-11-16: it read as start turning in 10, when the
+        // count is to the bend: be over by then). Done (v0.67.2: moved over or the inside closed) counts on in the same
+        // words and state: not said again
+        out.push({id: 'bend', state: `open-${b.side}`, word: b.side, in: roundIn(b.inS), for: null, priority: 45});
     }
     // the feather you hold, for the steepest 30 s ahead. The name and the seconds, no "hold" (v0.46.1; the user,
     // 2026-10-26: "hold feather in 25 is hard to parse. Maybe just feather in 25"). "FEATHER now" outranks "jump in N"

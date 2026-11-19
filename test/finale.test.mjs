@@ -46,7 +46,8 @@ test('a segment card rides through: every call heard, on time, in the finish too
         const o = a.offer(c, {voice: true, chime: false}, t);
         if (o) heard.push(o.say);
     }
-    assert.deepEqual(heard.slice(1), ['go in 10', 'go, 730', 'empty it'], 'each on time, over the finish\'s advice');
+    // "go in 10" is said "go in 9": the number is heard ~1 s into the words (v0.67.3 spokenWords)
+    assert.deepEqual(heard.slice(1), ['go in 9', 'go, 730', 'empty it'], 'each on time, over the finish\'s advice');
     assert.equal(engineCall({meters: {}}, {card: say('go'), sprint: {state: 'closer', priority: 94}, finale: 'run-in'}).word, 'dig in', 'a rider closing still wins');
     assert.equal(engineCall({meters: {}}, {card: say('go'), finale: 'done'}), null, 'past the line');
     assert.equal(engineCall({meters: {}}, {card: {about: 'pace', say: null, state: 'x', priority: 79}}), null, 'nothing to say');

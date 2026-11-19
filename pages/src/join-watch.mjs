@@ -3,7 +3,7 @@
  * Copyright (C) 2026 Paul Curtis
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Join reminders (v0.67.0; the user, 2026-11-14: "Events become visible on the screen 30 minutes before they start. This
+ * Join reminders (v0.67.1; the user, 2026-11-14: "Events become visible on the screen 30 minutes before they start. This
  * is when you want to get into the pen. Then exit the ride (to get out of the pen). Then start a new ride somewhere. …
  * at about 5 minutes and 30 seconds before the event you get a pop up that says would you like to join … I click no. Then
  * I wait until about 1-2 minutes before the event to join. Sometimes I forget/almost forget to join. DS should give me 1
@@ -50,6 +50,40 @@ export function joinWord(S, inEvent = false) {
     if (S >= 120) return `${what} in ${Math.round(S / 60)} minutes`;
     if (S >= 60) return `${what} in 1 minute`;
     return inEvent ? `next event: ${S} seconds` : `join now: ${S} seconds`;
+}
+
+/*
+ * Zwift's clock from your own states (v0.67.2; 2026-11-15: the reminders went up on the second by the PC clock, which
+ * time.gov put 1 s behind; Zwift's pen timer was right to ~0.1 s). A state's worldTime is Zwift server time (Sauce's
+ * WorldTimer, epoch WORLD_EPOCH_MS) when it was made, so it arrives a little old: server minus PC is at least
+ * worldTime + epoch − arrival; the largest over the last minute is the estimate (that ride: 0.9–1.0 s against the 1 s
+ * time.gov saw). Sauce syncs its own clock by SNTP but offers no call for it. 0 until a state is seen.
+ */
+export const WORLD_EPOCH_MS = 1414016074400;
+export const CLOCK_WINDOW_MS = 60000;
+export const CLOCK_MAX_MS = 15 * 60000;   // further off than this: not a clock skew (bad data), ignored
+
+export class ServerClock {
+    constructor() {
+        this.samples = [];   // [{at (PC ms), off (ms)}]
+    }
+
+    observe(worldTime, localMs = Date.now()) {
+        if (!Number.isFinite(worldTime) || !Number.isFinite(localMs)) return;
+        const off = worldTime + WORLD_EPOCH_MS - localMs;
+        if (Math.abs(off) > CLOCK_MAX_MS) return;
+        this.samples.push({at: localMs, off});
+        while (this.samples.length && this.samples[0].at < localMs - CLOCK_WINDOW_MS) this.samples.shift();
+    }
+
+    /* Server minus PC (ms): add it to Date.now() for Zwift's time. */
+    offsetMs() {
+        return this.samples.length ? Math.max(...this.samples.map(x => x.off)) : 0;
+    }
+
+    now(localMs = Date.now()) {
+        return localMs + this.offsetMs();
+    }
 }
 
 export class JoinWatch {

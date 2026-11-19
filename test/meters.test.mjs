@@ -43,16 +43,16 @@ test('alone: no wheel, no pack cost', () => {
 
 test('at the back with room: gap to the wheel in line, side, the cheapest pack spot', () => {
     const me = rider(1, 0, 0.3, {self: true});
-    const all = [me, rider(2, 4.2, 0), rider(3, 5.5, 0.9), rider(4, 7, -0.4)];
+    const all = [me, rider(2, 5.6, 0), rider(3, 7, 0.9), rider(4, 8.5, -0.4)];
     const {ds} = new MeterEngine().update(all);
-    assert.ok(Math.abs(ds.gapM - 4.2) < 1e-9, `gap ${ds.gapM}`);
+    assert.ok(Math.abs(ds.gapM - 5.6) < 1e-9, `gap ${ds.gapM}`);
     assert.equal(ds.gapApprox, false);
     assert.ok(Math.abs(ds.sideM - 0.3) < 1e-9, `side ${ds.sideM}: you are 0.3 m right of the wheel`);
     assert.equal(ds.beside, false);
     assert.equal(ds.groupSize, 4);
-    // 4.2 m behind the wheel: clear of its box, nobody within 3 m ahead: free (v0.73.0, the box + crowd model)
+    // 5.6 m behind the wheel (center to center): past its box's tail (v0.74.0: 5.25 m), free
     const m = riderModel({athlete: undefined});
-    const want = packCostW({wheelGap: 4.2, ahead3: 0, boxed: false, box: {share: 0}}, {size: 4, ahead: 3}, KMH / 3.6, m);
+    const want = packCostW({wheelGap: 5.6, ahead3: 0, boxed: false, box: {share: 0}}, {size: 4, ahead: 3}, KMH / 3.6, m);
     assert.equal(want, 0);
     assert.equal(ds.packW, 0, `the cheapest spot (${ds.packW})`);
     assert.match(ds.packNote, /room/);

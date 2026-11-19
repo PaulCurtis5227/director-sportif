@@ -56,12 +56,12 @@ windows always show it. Times are in seconds, never meters.
   hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
 - **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
-- **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "move left in 6" when the
+- **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "left in 6" (be on the left by the bend, 6 s on) when the
   inside is open and moving over gains ground (alone too, and in the finish), nothing when you're on the inside already; "cut the S in 5" before
   a stretch that twists enough for a steered line to pay (on your route: dirt S curves most, where the best line gains 4–6 m).
 - **Which calls you hear** is yours, call by call, on the Calls tab (a chime, the voice, both or neither). A fresh install
   doesn't speak "ease off", "drop back", being passed or "group shattering": they stay on screen, and the Wheel gap tile
-  turns red when you push into the wheel ahead (green in the good seat, 2–3.5 m; yellow too close or drifting off).
+  turns red when you push into the wheel ahead (green in the good seat, 3–4 m; yellow under 2 m or past 6 m).
   While you move up through the group (1 km/h or more faster than it), the director never says "ease off" or "drop back".
   Bends have their own timing: turn them on and you hear every one.
 - **Did it work?** After "step left / right", "block left / right" and "ease off" the word turns green with a high chime when it worked, magenta with a low chime when it did not. "Worked" means clear of the wheel (step, ease off), or the rider now in line behind you (block). You only get an answer if you tried: steered the way it said, or for ease off lowered your power. Turn the chime off in the Calls tab.

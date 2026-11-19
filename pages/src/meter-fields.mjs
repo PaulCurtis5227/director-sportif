@@ -102,7 +102,7 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         shortName: 'Position',
         longName: 'Position: what your spot costs against the best spot at your speed',
         tooltip: tip('position', 'Watts of draft your spot misses against the best spot at your speed and place in ' +
-            'the group, over 10 s: about 2–3 m between wheels, just behind the box (2nd–3rd wheel gets less draft than ' +
+            'the group, over 10 s: about 3–4 m between wheels, past the box (2nd–3rd wheel gets less draft than ' +
             'deeper in the bunch). 0 alone or coasting.'),
         format: watts('position', true),
         label: word('position'),

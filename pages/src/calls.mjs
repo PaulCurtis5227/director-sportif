@@ -57,13 +57,13 @@ export const CALL_TYPES = [
      tones: [660, 990, 1320]},
     {id: 'pacing', label: 'Climb pacing', hint: 'a steep part ahead (when and how long), the top of the climb close',
      tones: [600, 800]},
-    {id: 'bend', label: 'Bends', hint: 'their own lane (v0.57.0): every bend, not held back by the other calls. A bend ahead: "move left / right" when the inside is open and moving over ' +
+    {id: 'bend', label: 'Bends', hint: 'their own lane (v0.57.0): every bend, not held back by the other calls. A bend ahead: "right in 6" (be on the right by the bend, 6 s on) when the inside is open and moving over ' +
      'gains ground (after the draft it costs); nothing when you are on the inside already or stuck outside; alone and in the finish too (v0.58.0); ' +
      '"cut the S" / "cut the bend" before a stretch that twists enough to steer a shorter line (dirt S curves most)',
      tones: [700, 940]},
     {id: 'join', label: 'Join the race', hint: 'a race you signed up for is about to start and you are not in it yet (warming up on a ' +
      'free ride): "join in 3 minutes", 2, 1, "join now: 30 seconds"; still riding an earlier event: "next event in 3 minutes" … ' +
-     '(v0.67.0, join-watch.mjs; Sauce\'s event list, every signup in turn). Never joins for you',
+     '(v0.67.1, join-watch.mjs; Sauce\'s event list, every signup in turn). Never joins for you',
      tones: [660, 990, 1320]},
     {id: 'flyer', label: 'Flyer', hint: 'one or two riders jumping off the front of your bunch, in an event: "flyer, go", said as they ' +
      'go (3 km/h+ faster than the bunch, under 2.5 s up) so the wheel can still be caught; while it goes, no "ease off" (v0.66.0, flyer.mjs)',
@@ -74,8 +74,8 @@ export const CALL_TYPES = [
     {id: 'burrito', label: 'Burritos', hint: 'a burrito fired just ahead of you: no draft in its cone for 20 s, move ' +
      'over; "burritos done" once nearly everyone in your race has fired theirs (the Grid Burritos field counts the ' +
      'ones still ahead of you)', tones: [500, 750, 500]},
-    {id: 'nudge', label: 'Habits', hint: 'a habit worth changing, after it lasts: pushing into the wheel, moving up the ' +
-     'middle, sitting on the front, off the wheel in a small group, crowding the wheel (each at most every 5 min)', tones: [520, 660]},
+    {id: 'nudge', label: 'Habits', hint: 'a habit worth changing, after it lasts: pushing into the wheel, ' +
+     'sitting on the front, off the wheel in a small group, crowding the wheel (each at most every 5 min)', tones: [520, 660]},
 ];
 export const DELIVERY = ['chime', 'voice'];
 
@@ -121,7 +121,7 @@ export function deliveryDefaults(old = {}) {
         }
         // v0.53.0: only after you press Bridge; v0.55.3: only with a segment card; v0.65.0 flyer (the user asked for it; ~6 an
         // hour of racing): spoken for everyone, existing installs too
-        // v0.67.0 join (the user asked for it: "Sometimes I forget/almost forget to join"): spoken for everyone too
+        // v0.67.1 join (the user asked for it: "Sometimes I forget/almost forget to join"): spoken for everyone too
         if (t.id === 'bridge' || t.id === 'pace' || t.id === 'flyer' || t.id === 'join') {
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = true;
@@ -297,6 +297,25 @@ export function callWords(c) {
 }
 
 /*
+ * The voice's seconds land when the number is heard, not when the call starts (v0.67.3; the user, 2026-11-16: "the
+ * time is correct at the start of the message, but by the time it gets to the number a second or two has elapsed"):
+ * the chime's wait (engine/speech.mjs CHIME.speakAfterMs), the voice starting, and the words before the number.
+ * A count of 20 s or under (exact seconds) is said that much lower; one that would reach 0 drops its number. The
+ * windows keep the engine's own count.
+ */
+export const SPEECH_START_S = 0.3;   // the browser's voice starting to speak
+export const SPEECH_WORD_S = 0.33;   // a short word at the voice's rate (1.05)
+export const CHIME_WAIT_S = 0.38;    // the chime before the words (speech.mjs CHIME.speakAfterMs)
+export function spokenWords(c, {chime = false} = {}) {
+    if (!c) return '';
+    if (!Number.isFinite(c.in) || c.in > 20) return callWords(c);
+    const before = String(c.word || '').trim().split(/\s+/).filter(Boolean).length + 1;   // the words, then "in"
+    const leadS = (chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + before * SPEECH_WORD_S;
+    const n = Math.round(c.in - leadS);
+    return callWords({...c, in: n >= 1 ? n : null});
+}
+
+/*
  * Decides what a call sounds like now: offer(call, delivery, nowMs) -> {tones (chime, or null), say (words for the
  * voice, or null)} or null. Only a new call (id|state changed) sounds, at least MIN_GAP_S after the last sound,
  * CALL_REPEAT_S after the same call and TYPE_NEW_S after another of its type (v0.60.0); a call held back sounds when the wait is over if it is still on.
@@ -339,6 +358,7 @@ export class Announcer {
         this.typeAt.set(key, now);
         if (!byKey) this.typeAt.set(call.id, now);
         const type = CALL_TYPES.find(t => t.id === call.id);
-        return {tones: delivery.chime && type ? type.tones : null, say: delivery.voice ? speechText(callWords(call) || call.say || call.text) : null};
+        const tones = delivery.chime && type ? type.tones : null;
+        return {tones, say: delivery.voice ? speechText(spokenWords(call, {chime: !!tones}) || call.say || call.text) : null};
     }
 }

@@ -176,10 +176,12 @@ export class Director {
  * all nudges for GAP_S. Quiet before a climb and in the finale, where the real calls take over.
  * v0.68.4 (DS 0.41.0): crowding the wheel (draft-live.mjs crowdingCue 'crowding': under 1 m at full draft, ~+5 W for the
  * same speed, 2026-09-27 pack data): "give room", from the Data Tap's on-screen cue.
+ * EM v0.73.1 / DS v0.67.1 (the user, 2026-11-14): "use edge" (moving up through the middle) is gone: at 3–5 km/h over the
+ * bunch the line doesn't matter (research/2026-11-12/move-up-*.mjs, the November captures and three Tuesday races), and the
+ * move-up calls say so; the Innsbruck 4x was creeping up the middle, sitting in one box after another.
  */
 export const NUDGE = {
     wheel: {holdS: 30, priority: 20},
-    middle: {holdS: 10, priority: 22},
     front: {holdS: 20, priority: 21},
     line: {holdS: 15, priority: 19},
     crowd: {holdS: 10, priority: 18},
@@ -188,7 +190,6 @@ export const NUDGE_COOLDOWN_S = 300;
 export const NUDGE_GAP_S = 60;
 export const NUDGE_SHOW_S = 8;
 export const WHEEL_HOLD_W = 25;        // Holding above this while holding your place
-export const DEEP_INSIDE_M = 1;        // more than this inside the outermost rider on your side
 export const SMALL_GROUP = 16;
 export const UNIT_PER_M = 113513;      // roadPosition units per meter (lateral)
 
@@ -230,11 +231,9 @@ export class NudgeCoach {
         if (this.showing && wt <= this.showing.until) return this.showing.call;
         this.showing = null;
         const inGroup = x.size >= 2;
-        const moving = x.relMs > 0.14;
         const holding = Math.abs(x.relMs) <= 0.14;
         const now = {
             wheel: inGroup && holding && x.holdW > WHEEL_HOLD_W,
-            middle: inGroup && x.size >= 6 && moving && x.depthM != null && x.depthM > DEEP_INSIDE_M,
             front: x.size >= 6 && x.ahead === 0,
             line: inGroup && x.size < SMALL_GROUP && x.ahead > 0 && x.gapAhead != null && x.gapAhead < 4 && x.q != null && x.q < 0.8,
             crowd: inGroup && !!x.crowding,
@@ -251,7 +250,6 @@ export class NudgeCoach {
         const w = v => (Number.isFinite(v) && v >= 5 ? ` (~${Math.round(v / 5) * 5} W)` : '');
         const text = {
             wheel: `Easy, you are pushing into the wheel${w(x.holdW)} for nothing`,
-            middle: 'Moving up through the middle costs 4x: go round the edge',
             front: `Front of the group: sit in${w(x.positionW)}`,
             line: 'Small group: line up right behind a wheel',
             crowd: 'Crowding the wheel: under a meter costs ~5 W for the same speed, 2–3 m keeps the full draft',
@@ -291,14 +289,24 @@ export const SPRINT_POSITION_S = [100, 140];
 export const WINDUP_M = 1000;
 export const GHOST_LAST_M = [400, 470];
 export const AERO_S = 15;
-export const VAN_S = 40;
+/*
+ * The van (40 s) is CALLED at VAN_S = 45 s to go: ~5 s to hear it and press, so it runs to the line (the user,
+ * 2026-11-14: "It should have timed out 45 seconds from the finish and told me to fire it"). Its countdown "VAN in N"
+ * from VAN_SOON_S out ranks SPRINT_PRIORITY.puSoon, over "jump in N" / "sprint in N": the 70 "holding the van" note never
+ * beat them (11-14 Tick Tock: silent from 1.5 km, the user fired it at 45 s on their own, before the 40 s "VAN NOW").
+ */
+export const VAN_S = 45;
+export const VAN_SOON_S = 25;
+// The feather on a flat finish goes with your jump (no seconds to count down): "FEATHER at jump" at puSoon for
+// FEATHER_NOTE_S once inside 1.2 km, so it is heard over "jump in N" / "sprint in N" (the user, 2026-11-14), then back to prep
+export const FEATHER_NOTE_S = 4;
 export const BURRITO_S = 20;
 export const JUMP_RATIO = 1.4;
 export const JUMP_PLUS_W = 150;
 // ...and this × FTP when known (2026-10-25: a surge to 440–474 W on the rise 650 m out read as the jump, and the window,
 // "you can go", never came; the jump itself was 580 W, then 940)
 export const JUMP_FTP = 2.2;
-export const SPRINT_PRIORITY = {fire: 95, closer: 94, keep: 93, ease: 92, easeFtp: 91, windup: 90, take: 89, last: 88, window: 87, windowPrep: 86, position: 85, headsUp: 85, shake: 80, prep: 70,
+export const SPRINT_PRIORITY = {fire: 95, closer: 94, keep: 93, ease: 92, easeFtp: 91, windup: 90, take: 89, last: 88, window: 87, puSoon: 86.5, windowPrep: 86, position: 85, headsUp: 85, shake: 80, prep: 70,
                                 good: 55};
 
 /*
@@ -643,9 +651,11 @@ export class SprintCoach {
         this.peak = 0;         // your sprint's peak power since the jump
         this.budget = null;    // sprintBudget: {targetW, secs, open} this tick
         this.wheelCall = null; // the last "wheel, jump …": {wt, call} (held WHEEL_JUMP.holdS)
+        this.featherNoteWt = null; // when "FEATHER at jump" was first given this finish (FEATHER_NOTE_S)
     }
 
     reset() {
+        this.featherNoteWt = null;
         this.jumped = false;
         this.jumpTicks = 0;
         this.peak = 0;
@@ -693,7 +703,8 @@ export class SprintCoach {
             else if (toLine <= 60) pu = prep('Holding AERO: fire it when you jump (or at 15 s to go)');
         } else if (held === 'DRAFTBOOST') {
             if ((toLine <= VAN_S || this.jumped) && g.size >= 2) pu = fire('VAN');
-            else if (toLine <= VAN_S + 30) pu = prep(`Holding the van: fire at 40 s to go (in ${left(VAN_S)} s) or when you jump, on a wheel`);
+            else if (toLine <= VAN_S + VAN_SOON_S) pu = {...prep(`Holding the van: fire it in ${left(VAN_S)} s (${VAN_S} s to go) or when you jump, on a wheel`), priority: SPRINT_PRIORITY.puSoon};
+            else if (toLine <= VAN_S + 30) pu = prep(`Holding the van: fire at ${VAN_S} s to go (in ${left(VAN_S)} s) or when you jump, on a wheel`);
         } else if (held === 'NINJA') {
             if (remaining > GHOST_LAST_M[0] && (remaining <= GHOST_LAST_M[1] || this.jumped)) pu = fire('GHOST');
             else if (remaining > GHOST_LAST_M[0] && remaining <= 1200) pu = prep('Holding the ghost: fire just before 400 m to go, or on your jump');
@@ -708,7 +719,12 @@ export class SprintCoach {
             // 78 kg from 42 to 57 km/h (Urumaze 2026-10-06), ~50 W over a 10 s wind-up, + ~4 W rolling; air drag
             // unchanged. Small, but at the finish there's nothing to keep it for (the user, 2026-10-16): on your jump.
             if (this.jumped) pu = fire('FEATHER');
-            else if (remaining <= 1200) pu = prep('Holding the feather: fire it on your jump (it helps the acceleration)');
+            else if (remaining <= 1200) {
+                if (this.featherNoteWt == null && wt != null) this.featherNoteWt = wt;
+                const fresh = this.featherNoteWt != null && wt - this.featherNoteWt <= FEATHER_NOTE_S * 1000;
+                pu = prep('Holding the feather: fire it on your jump (it helps the acceleration)');
+                if (fresh) pu.priority = SPRINT_PRIORITY.puSoon;
+            }
         }
         if (pu.state && pu.state.startsWith('fire')) return pu;
         const b = this.budget = x.frc ? sprintBudget({leftJ: x.frc.leftJ, ftpW: x.ftpW, remainingM: remaining, v}) : null;
@@ -771,6 +787,8 @@ export class SprintCoach {
             return {id: 'sprint', state: 'window', priority: SPRINT_PRIORITY.window, text: `You can go from here${hold}`};
         }
         if (windup) return {id: 'sprint', state: 'windup', priority: SPRINT_PRIORITY.windup, text: 'They are going: get on a wheel'};
+        // the van's countdown (VAN_SOON_S), the feather's note (FEATHER_NOTE_S): over "jump in N" and "sprint in N"
+        if (pu.priority === SPRINT_PRIORITY.puSoon) return pu;
         // the window ahead: "jump in 20"
         const openM = !this.jumped && b && remaining <= WINDUP_M ? sprintWindowM({leftJ: x.frc.leftJ, ftpW: x.ftpW, v}) : null;
         // seconds along the road ahead when known (a rise before the line is slow: that ride's 28 km/h at 600 m)

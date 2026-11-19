@@ -38,7 +38,7 @@ test('a rider alongside (wheels overlapping) is not a wheel unless right in line
     assert.equal(new WheelPick().update([me, rider(2, 0.8, 0.2), rider(3, 9)], me).id, 2, 'in line: your wheel');
 });
 
-test('v0.67.0 (2026-11-14, "wheel gap went to -4.x"): a rider level with you is no wheel; the one ahead of them is', () => {
+test('v0.67.1 (2026-11-14, "wheel gap went to -4.x"): a rider level with you is no wheel; the one ahead of them is', () => {
     assert.equal(new WheelPick().update([me, rider(2, 0.1, 0.1), rider(3, 3)], me).id, 3);
     assert.equal(new WheelPick().update([me, rider(2, 0.4, 0)], me), null, 'nobody else ahead: no wheel');
     assert.equal(new WheelPick().update([me, rider(2, 0.6, 0)], me).id, 2, 'from 0.5 m: overlapping wheels, your wheel');

@@ -8,7 +8,7 @@
  * to wheel) at 41 km/h for ~15 s, no call: the spoken "close up" (meter-engine OFF_BACK) needs 10 m, and in watts a
  * seat 5 m back costs little (Position read 6–7 W). But the last wheel of a line at race speed is where you get gapped
  * when it snaps: staying in the pack outranks efficiency (call order). So: last in a group of DANGLE.minGroup+, at
- * DANGLE.minKmh+, the wheel DANGLE.minM+ ahead center to center (4 m wheel to wheel: past the 2–3.5 m best seat), not
+ * DANGLE.minKmh+, the wheel DANGLE.minM+ ahead center to center (4 m wheel to wheel; v0.68.0: the top of the 3–4 m best seat, kept: the last wheel's risk is the gap), not
  * closing it (DANGLE.closeMps over 2 s), for DANGLE.holdS: the same off-back call ("close up", and the Wheel gap red).
  * Once per dangle: armed again after DANGLE.rearmS within DANGLE.rearmM.
  * research/2026-11-09/dangle.mjs, 3.9 h of events since 11-05: 4.6 an hour; 11-09 it calls at 17:06, the user closed

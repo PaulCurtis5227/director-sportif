@@ -67,12 +67,12 @@ test('units follow Sauce\'s imperial switch (help text)', () => {
 test('delivery: per call type; the old voice switch carries over, being passed gets the chime alone', () => {
     const chimesOn = ['callPaceChime', 'callGapChime', 'callTuckChime', 'callMoveUpChime', 'callSprintChime', 'callWheelChime',
                       'callPowerupChime', 'callCardChime', 'callBurritoChime', 'callTeamHrChime', 'callBridgeChime', 'callFlyerChime',
-                      'callJoinChime'];   // v0.67.0: join the race
+                      'callJoinChime'];   // v0.67.1: join the race
     // a fresh install: the main calls spoken, the same chimes (v0.43.0); v0.57.0: not ease off, drop back (pass), being passed, stuck alongside, shattering; step out yes
     const fresh = deliveryDefaults({});
     const voiceOn = ['callPaceVoice', 'callGapVoice', 'callStepVoice', 'callMoveUpVoice', 'callBridgeVoice', 'callPacingVoice',
                      'callSprintVoice', 'callPowerupVoice', 'callCardVoice', 'callSurfaceVoice', 'callBurritoVoice', 'callTeamHrVoice',
-                     'callFlyerVoice', 'callJoinVoice'];   // v0.65.0: the flyer (the user asked for it); v0.67.0 join
+                     'callFlyerVoice', 'callJoinVoice'];   // v0.65.0: the flyer (the user asked for it); v0.67.1 join
     assert.ok(Object.entries(fresh).every(([k, v]) => v === (chimesOn.includes(k) || voiceOn.includes(k))), JSON.stringify(fresh));
     assert.deepEqual(deliveryFor(fresh, 'passed'), {chime: false, voice: false}, 'being passed: nothing until chosen');
     assert.deepEqual(deliveryFor(fresh, 'wheel'), {chime: true, voice: false}, 'take the wheel: a chime only');
@@ -187,7 +187,7 @@ test('the finish: words, seconds to the line where they help, power-ups by Zwift
     // firing: the coach's own names; holding: Zwift's name and when to fire
     assert.deepEqual(sprint('fire-AERO', {p: 'fire'})[0], {id: 'powerup', state: 'fire-aero', word: 'AERO now', in: null,
                                                           for: null, priority: 95});
-    assert.deepEqual([sprint('prep', {held: 'DRAFTBOOST'})[0].word, sprint('prep', {held: 'DRAFTBOOST'})[0].in], ['VAN', 80]);
+    assert.deepEqual([sprint('prep', {held: 'DRAFTBOOST'})[0].word, sprint('prep', {held: 'DRAFTBOOST'})[0].in], ['VAN', 75], 'called at 45 s to go (2026-11-14)');
     assert.equal(sprint('prep', {held: 'AERO'})[0].in, 105, '15 s to go');
     assert.equal(sprint('prep', {held: 'NINJA', toLineS: 60, remainingM: 1000})[0].in, 35, 'just before 400 m');
     assert.deepEqual([sprint('prep', {held: 'LIGHTNESS'})[0].word, sprint('prep', {held: 'LIGHTNESS'})[0].in],
@@ -205,12 +205,28 @@ test('nudges: a habit worth changing, in a word; the lowest priority; voice only
     const {NUDGE} = await import('../pages/src/engine/director.mjs');
     const nudge = state => directorCalls({nudge: {state, priority: NUDGE[state].priority}})[0];
     assert.deepEqual(nudge('wheel'), {id: 'nudge', state: 'wheel', word: 'ease off', in: null, for: null, priority: 20});
-    assert.equal(nudge('middle').word, 'use edge');
+    assert.equal(directorCalls({nudge: {state: 'middle', priority: 22}}).length, 0, 'v0.67.1: no "use edge"');
     assert.equal(nudge('front').word, 'sit in');
     assert.equal(nudge('line').word, 'get in line');
     // everything else goes first: being passed (60), a climb's prep (40), the tuck (40)
-    assert.equal(dsCall(defend, [nudge('middle')]).id, 'passed');
-    assert.equal(dsCall(data({}), [nudge('middle')]).word, 'use edge');
+    assert.equal(dsCall(defend, [nudge('front')]).id, 'passed');
+    assert.equal(dsCall(data({}), [nudge('front')]).word, 'sit in');
     assert.deepEqual(deliveryFor(deliveryDefaults({}), 'nudge'), {chime: false, voice: false});
     assert.deepEqual(deliveryFor(deliveryDefaults({speakCalls: true}), 'nudge'), {chime: false, voice: true});
+});
+
+test('the voice says the seconds left when the number is heard: chime, start and the words before it taken off (v0.67.3)', async () => {
+    const {spokenWords, Announcer} = await import('../pages/src/calls.mjs');
+    const bend = {id: 'bend', state: 'open-right', word: 'right', in: 10, for: null, priority: 45};
+    // chime 0.38 + start 0.3 + "right in" 2 × 0.33 = 1.34 s: the number lands with ~8.7 left
+    assert.equal(spokenWords(bend, {chime: true}), 'right in 9');
+    assert.equal(spokenWords(bend), 'right in 9');                       // 0.96 s: 9.04
+    assert.equal(spokenWords({...bend, word: 'move right'}, {chime: true}), 'move right in 8');   // the old words: 1.67 s
+    assert.equal(spokenWords({...bend, in: 1}, {chime: true}), 'right');   // would reach 0: no number
+    assert.equal(spokenWords({word: 'climb', in: 90}), 'climb in 90');    // over 20 s: rounded to 5 s anyway, left alone
+    assert.equal(spokenWords({word: 'ease off', in: null}), 'ease off');
+    assert.equal(spokenWords(null), '');
+    for (const junk of [{word: 'x', in: NaN}, {in: 5}, {word: '', in: 3}]) assert.equal(typeof spokenWords(junk), 'string');
+    const said = new Announcer().offer(bend, {chime: true, voice: true}, 0);
+    assert.equal(said.say, 'right in 9');
 });

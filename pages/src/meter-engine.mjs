@@ -70,7 +70,7 @@
  *   frc           your anaerobic reserve (engine/frc-live.mjs, the Data Tap's model): {leftJ, frac, lowJ} or null
  *                 (needs your FTP: the settings', else your Zwift profile's)
  *   nudge         a habit worth changing (engine/director.mjs NudgeCoach, from the Data Tap): {state: 'wheel' (pushing
- *                 into the wheel for nothing, 30 s) | 'middle' (moving up through the middle, 10 s) | 'front' (on the
+ *                 into the wheel for nothing, 30 s) | 'front' (on the
  *                 front of a group of 6+, 20 s) | 'line' (off the wheel in a small group, 15 s), priority} or null;
  *                 each kind then rests 5 min, all nudges 1 min; quiet before a climb, in the finish, under a power-up
  *   cda           the CdA in use; cdaSource says where it comes from
@@ -168,6 +168,25 @@ const BEND_MOVED_S = 10;    // ...or in this long before it
 const BEND_SAME_CM = 1500;  // a bend starting within 15 m of one called before is that bend (v0.73.0)...
 const BEND_SAME_S = 60;     // ...within this long
 const BEND_MIN_WARN_S = 4;  // a bend call starts only with this much warning: less is too late to act on (v0.73.0)
+const BEND_RUN_END_S = 0.5; // a called bend's countdown ends this close to its start (v0.67.2)
+
+/*
+ * How far along the road ahead (m) the point xy (world, cm) is: projected on the nearest stretch of pts
+ * ([{d, xy}], road-map.mjs profileAheadOnMap), within maxCm of it; null when it isn't on the road ahead.
+ */
+export function distanceAlong(pts, xy, maxCm = BEND_SAME_CM) {
+    if (!Array.isArray(pts) || !xy) return null;
+    let best = null;
+    for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        if (!a.xy || !b.xy) continue;
+        const ux = b.xy[0] - a.xy[0], uy = b.xy[1] - a.xy[1], L2 = ux * ux + uy * uy;
+        const f = L2 > 0 ? Math.max(0, Math.min(1, ((xy[0] - a.xy[0]) * ux + (xy[1] - a.xy[1]) * uy) / L2)) : 0;
+        const off = Math.hypot(a.xy[0] + f * ux - xy[0], a.xy[1] + f * uy - xy[1]);
+        if (off <= maxCm && (!best || off < best.off)) best = {off, d: a.d + f * (b.d - a.d)};
+    }
+    return best ? best.d : null;
+}
 /*
  * Off the back (v0.60.0; the user, 2026-11-07: "close up" read as "I'm drifting off the back", shown 30 s+ and never
  * spoken): Position's close-up with the wheel ahead OFF_BACK.minM+ away (out of its draft) for OFF_BACK.holdS is a
@@ -475,7 +494,7 @@ export class MeterEngine {
                                                              groupSize: L.size, groupAhead: L.ahead, gapM: L.gapAhead, kmh: s.speed || 0});
         const offBack = (offNow && s.worldTime - this.offBackFrom >= OFF_BACK.holdS * 1000) || dangling;
         if (settling) this.block.reset();
-        const blkRead = this.block.update({wt: s.worldTime, v, massKg: model.massKg, box: sit ? sit.box : null,   // v0.67.0: the box
+        const blkRead = this.block.update({wt: s.worldTime, v, massKg: model.massKg, draftW: s.draft || 0, airW: model.cda * 0.5 * 1.225 * v ** 3, box: sit ? sit.box : null,   // v0.67.0: the box
                                            powerUp: s.activePowerUp, coffee: s.coffeeStop});
         // the measured loss stays (blockedW); only the cue goes while they ride away
         const blk = (away || drop || bridging || flyer) && blkRead.blocked ? {...blkRead, blocked: false} : blkRead;
@@ -665,6 +684,7 @@ export class MeterEngine {
         let bend = null;
         this.bendDebug = null;   // research: what the bend finder saw this tick (research/2026-11-13/bend-late.mjs)
         const self3 = this.bendMap.self;
+        if (!(me.self && !settling && v > 5)) this.bendRun = null;   // no bend calls now: a called one's countdown ends too
         if (me.self && !settling && v > 5 && self3.length >= 3) {
             const [p0, p1, p2] = self3;
             const L0 = Math.hypot(p1.x - p0.x, p1.y - p0.y), L1 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
@@ -722,9 +742,33 @@ export class MeterEngine {
                     bend = {state: cue.state, side: b.right ? 'right' : 'left', inS: b.startM / v,
                             moveM: cue.moveM, gainM: cue.gainM, lossM: cue.lossM};
                 }
+                // a called bend counts down to 0 at its start (v0.67.2; 2026-11-15 video, the user: "Turn count down seemed
+                // to hit 0 at apex": "move right in 10, 10, 8, 7, 6, 4", the call gone with ~5 s left (moved over, or the
+                // inside closed) and the screen holding "in 4", research/2026-11-15/bend-stall.mjs). Its start is locked
+                // where it was on the map when called (re-found each tick it can creep along a sweep), distance along the
+                // road ahead to it / your speed. Once its job is done (moved over, the inside closed): "right in 3", the
+                // same call state, so nothing more is said.
+                if (this.bendRun && !fromMap) this.bendRun = null;
+                if (this.bendRun) {
+                    const run = this.bendRun, d = distanceAlong(onMapAhead.pts, run.xy);
+                    if (d == null || d / v < BEND_RUN_END_S) {
+                        this.bendRun = null;   // reached (or off the road ahead: a turn elsewhere)
+                        bend = null;
+                    } else {
+                        // its job done: you moved over since the call, or this same bend's inside is no longer open (a tick
+                        // without the call, or another bend picked, says nothing about it)
+                        const mine = b && startXY && near(startXY, run.xy);
+                        if (this.bendMoved && this.bendMoved.done && this.bendMoved.key === `open-${run.side}`) run.done = true;
+                        if (mine && cue.state !== 'open') run.done = true;
+                        bend = {...run.call, inS: d / v, done: run.done};
+                    }
+                } else if (bend && startXY) {
+                    this.bendRun = {xy: startXY, side: bend.side, call: bend, done: false};
+                }
+                const liveXY = this.bendRun ? this.bendRun.xy : startXY;
                 // the call running now stays live; once it stops, that bend is done
-                for (const x of this.bendsCalled) x.live = !!(bend && startXY && near(x.xy, startXY));
-                if (bend && startXY && !this.bendsCalled.some(x => near(x.xy, startXY))) this.bendsCalled.push({xy: startXY, wt: s.worldTime, live: true});
+                for (const x of this.bendsCalled) x.live = !!(bend && liveXY && near(x.xy, liveXY));
+                if (bend && liveXY && !this.bendsCalled.some(x => near(x.xy, liveXY))) this.bendsCalled.push({xy: liveXY, wt: s.worldTime, live: true});
                 this.bendLast = key;
                 this.bendShown = !!bend;
             }
@@ -741,6 +785,7 @@ export class MeterEngine {
             if (c && inS != null && inS <= S_CURVE.callS) {
                 sCurve = {inS, turnDeg: Math.round(c.turnDeg), s: c.s, dirt: roughAt(c.startM, c.endM)};
                 bend = null;
+                this.bendRun = null;   // the S call takes over (a hidden countdown came back after it, v0.67.2)
             }
         }
         // the feather you hold: at the steepest 30 s ahead

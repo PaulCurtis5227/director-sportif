@@ -48,6 +48,8 @@ test('not when: in the middle of the group, slow, outside an event, settling, no
 
 test('the Wheel gap turns red when off the back or dangling', () => {
     assert.equal(gapLevel(4, null, 'off-back'), 'alarm');
-    assert.equal(gapLevel(4, null, 'good'), null);
-    assert.equal(gapLevel(2.5, null, null), 'good');
+    assert.equal(gapLevel(5, null, 'good'), null);
+    assert.equal(gapLevel(3.5, null, null), 'good');
+    assert.equal(gapLevel(2.5, null, null), null, 'v0.68.0: between too close and the good seat');
+    assert.equal(gapLevel(1.5, null, null), 'warn', 'under 2 m: the box still takes a third of the draft');
 });

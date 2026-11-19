@@ -101,7 +101,8 @@ export function withPowerUp(tick, grade = 0) {
  * v0.73.0 (DS v0.67.0, docs/PLAN.md §26 step 3): Blocked from where the riders are, not from the energy balance. The
  * "spikes" were the ±66 W per-step timing noise in other riders' states over a steady loss (research/2026-11-12/
  * block-shift.mjs); the loss is Zwift's box (pack-box.mjs), on at once and the same however hard you push. So:
- *   lostW = the box's watts at your mass and speed (pack-box.mjs boxW × your share of it), averaged over BLOCK_AVG_S;
+ *   lostW = the box's watts (pack-box.mjs boxW: your share of it × the reported draft Zwift doesn't apply there; v0.74.0,
+ *   was m·v²), averaged over BLOCK_AVG_S;
  *   blocked (the cue) = pushing into a box: closing on its rider at PUSH_KMH+ (under THROUGH_KMH) and in it, or
  *   reaching its full part within APPROACH_S. Sitting in it level is not cued here (Position says back off); dropping
  *   back or coming by at 3+ km/h ends it at once.
@@ -132,7 +133,8 @@ export class BlockWatch {
     }
 
     /*
-     * tick: {wt (ms), v (m/s), massKg (with bike), box (pack-box.mjs boxOf result, or null), powerUp, coffee}.
+     * tick: {wt (ms), v (m/s), massKg (with bike), draftW (Zwift's reported draft, W), airW (your undrafted air drag, W),
+     * box (pack-box.mjs boxOf result, or null), powerUp, coffee}.
      * Returns {lostW (W, null until BLOCK_AVG_S of ticks), blocked (the cue), approaching (true when the cue is for a box
      * still ahead), secsToBox, share (now), beside (always null since v0.73.0)}.
      */
@@ -144,7 +146,7 @@ export class BlockWatch {
         }
         const box = tick.box || null;
         const share = box && box.share > 0 ? box.share : 0;
-        if (!this.pts.length || tick.wt > this.pts.at(-1).wt) this.pts.push({wt: tick.wt, w: boxW(tick.massKg, tick.v, share)});
+        if (!this.pts.length || tick.wt > this.pts.at(-1).wt) this.pts.push({wt: tick.wt, w: boxW(tick.draftW, tick.airW, share)});
         while (this.pts.length && tick.wt - this.pts[0].wt > BLOCK_AVG_S * 1000) this.pts.shift();
         const closing = box && Number.isFinite(box.closingKmh) ? box.closingKmh : null;
         const pushing = share >= 0.5 && closing != null && closing >= PUSH_KMH;

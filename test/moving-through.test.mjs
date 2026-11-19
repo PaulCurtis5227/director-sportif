@@ -89,10 +89,11 @@ test('the Wheel gap tile: red pushing into the wheel, green in the good seat, ye
     assert.equal(gapLevel(GAP_GOOD_M[0], 'clear'), 'good');
     assert.equal(gapLevel(3.5, 'clear'), 'good');
     assert.equal(gapLevel(0.6, 'clear'), 'warn');
-    assert.equal(gapLevel(6, 'clear'), 'warn');
-    assert.equal(gapLevel(1.5, 'clear'), null);
+    assert.equal(gapLevel(6.5, 'clear'), 'warn');
+    assert.equal(gapLevel(1.5, 'clear'), 'warn', 'v0.68.0: under 2 m');
+    assert.equal(gapLevel(2.5, 'clear'), null);
     assert.equal(gapLevel(null, 'blocked'), null, 'no wheel: no color');
-    assert.equal(gapLevel(2.5, 'blocked-left'), 'good', 'stuck alongside is not pushing into the wheel ahead');
+    assert.equal(gapLevel(3.5, 'blocked-left'), 'good', 'stuck alongside is not pushing into the wheel ahead');
 });
 
 test('the engine: your speed over your group, averaged over 3 s, starting over when there is nothing to compare', () => {

@@ -85,7 +85,7 @@ export function allWords(data, hold = null) {
     if (!data) return {text: null, level: ''};
     const now = Number.isFinite(data.ts) ? data.ts : 0;
     const all = [];
-    if (data.call) all.push({src: 'call', word: callWords(data.call), way: wayOf(data.call.word), level: ''});
+    if (data.call) all.push({src: 'call', word: callWords(data.call), way: wayOf(data.call.word), level: '', call: data.call, at: now});
     for (const [k, states] of Object.entries(ADVICE)) {
         const e = data.meters?.[k];
         const w = e && states.includes(e.state) ? e.word || wordOf(k, e.state) : '';   // e.word: a word with a number
@@ -98,6 +98,14 @@ export function allWords(data, hold = null) {
         if (way) for (const [src, x] of hold) if (x.way === -way) hold.delete(src);
         for (const x of said) hold.set(x.src, {...x, until: now + (NO_HOLD.has(x.src) ? 0 : WORDS_HOLD_S * 1000)});
         for (const [src, x] of hold) if (x.until < now) hold.delete(src);
+        // a held countdown keeps counting (v0.67.2; 2026-11-15 video: "move right in 4" stood 4 s after the call ended,
+        // read as the bend's 0): its seconds less the time since it was last said, gone once they run out
+        for (const [src, x] of hold) {
+            if (!x.call || x.at === now || !Number.isFinite(x.call.in)) continue;
+            const left = x.call.in - (now - x.at) / 1000;
+            if (left < 0.5) hold.delete(src);
+            else hold.set(src, {...x, word: callWords({...x.call, in: left})});
+        }
         const order = ['call', ...Object.keys(ADVICE)];
         shown = order.filter(src => hold.has(src)).map(src => hold.get(src));
     }

@@ -21,7 +21,7 @@
  * rider in front (research/2026-11-08/wheel-gap-check.mjs, 4 rides). Now every rider within KEEP of the best draft is a
  * wheel you could be on, and the NEAREST of them is yours (the one between you and the others takes the wind); the
  * wheel you are on stays until another is SWITCH_M nearer.
- * v0.67.0 (2026-11-14: "wheel gap went to -4.x" ft): a rider level with you, under MIN_GAP_M 0.5 m center to center (where
+ * v0.67.1 (2026-11-14: "wheel gap went to -4.x" ft): a rider level with you, under MIN_GAP_M 0.5 m center to center (where
  * the box starts), is on top of you, not a wheel: your draft was 0 W on 23 of 30 such ticks over 4 rides, and the rest came
  * from a rider further up (research/2026-11-14/neg-gap.mjs). The Wheel gap's floor is now -1 m (-3.3 ft), true overlap.
  * Pure: fed the engine's entries each tick.
@@ -79,7 +79,7 @@ export class WheelPick {
             // 1.4 s older 10 m behind you while they were 2.3 m in front (left out); one level with you was clamped to 0 (-5 ft)
             if (!(g.gap > 0)) continue;
             const gap = g.gap;
-            if (gap > o.maxGapM || gap < o.minGapM) continue;   // level with you (v0.67.0): no wheel
+            if (gap > o.maxGapM || gap < o.minGapM) continue;   // level with you (v0.67.1): no wheel
             const lane = (r.state.roadPosition ?? 0) - (me.state.roadPosition ?? 0);
             const asideM = Math.abs(lane) / UNIT_PER_M;
             if (asideM > o.inlineM && gap < o.asideFromM) continue;   // beside you
