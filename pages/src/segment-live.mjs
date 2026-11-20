@@ -23,6 +23,9 @@ export const SEGMENT_LOOK_M = 1500;   // the card's calls start this far before 
 export const SEGMENT_ARM_M = 600;     // a pass begins this far before it (a recording starts)
 export const TURN_MEMORY_S = 180;     // a U-turn this recent means you're on the U-turn card
 export const ARM_TIMEOUT_S = 240;     // armed and no banner: you went somewhere else
+// Riding on this far past the U-turn spot without turning: you're not doing it this time, the pass ends there (2026-11-19:
+// it stayed armed 4 minutes, timed out, and the timeout then kept the next pass, the one with the turn, from recording)
+export const MISSED_TURN_M = 100;
 // A standing start (card 1.2, pacing.start): "stop" puts you on the spot (the user, 2026-11-02: wait at a known place,
 // brakes on). Any moving rider is draftable (the user, 2026-11-03): you gain while you close on one, then pass. So there
 // the director tries going now, in 1 s, in 2 s…, and says go at the first moment that has you passing the most riders
@@ -169,6 +172,8 @@ export class SegmentCards {
             this.went.delete(p.id);
             this._tell('abort', p.entry, p.uturn);
         }
+        // a pass that timed out may arm again once you've gone away: off its road, or well clear of it either way
+        if (this.gaveUp != null && !here.some(x => x.seg.id === this.gaveUp)) this.gaveUp = null;
         if (!road || !here.length) return null;
         let best = null;
         for (const id of new Set(here.map(x => x.seg.id))) {
@@ -177,13 +182,21 @@ export class SegmentCards {
             if (d == null) continue;
             const isTurnCard = x => !!x.item.pacing?.uturn;
             const lengthM = Number(seg.distance) || (Number(cards[0].item.lengthKm) || 0) * 1000;
+            if (this.gaveUp === id && (d > SEGMENT_ARM_M || d < -lengthM - SEGMENT_ARM_M)) this.gaveUp = null;
             if (!!s.reverse !== !!seg.reverse) {
                 // the other way: on the way to the turn
                 const entry = cards.find(isTurnCard);
                 if (!entry || planFor(entry.item, this.planOf(entry.card.id)) === 'skip') continue;
                 if (d > -lengthM - 200) {
                     // you're at -d from the banner, riding toward lower numbers; the turn is at turnAtM (below 0)
-                    const c = uTurnCall(entry.item, {toTurnM: -d - entry.item.pacing.uturn.turnAtM, v, leadS: leadS + turnLeadS});
+                    const toTurnM = -d - entry.item.pacing.uturn.turnAtM;
+                    if (this.pass && this.pass.id === id && this.pass.phase === 'armed' && toTurnM < -MISSED_TURN_M) {
+                        const p = this.pass;
+                        this.pass = null;
+                        this._tell('abort', p.entry, p.uturn);
+                        continue;
+                    }
+                    const c = uTurnCall(entry.item, {toTurnM, v, leadS: leadS + turnLeadS});
                     if (c) {
                         this._armed(id, entry, true, s);
                         if (!best || c.priority > best.priority) best = c;
@@ -195,7 +208,6 @@ export class SegmentCards {
             const isStartCard = x => !!x.item.pacing?.start;
             const entry = (turned ? cards.find(isTurnCard) : cards.find(isStartCard) || cards.find(x => !isTurnCard(x))) || cards[0];
             const plan = this.planOf(entry.card.id) || {};
-            if (this.gaveUp === id && d > SEGMENT_ARM_M) this.gaveUp = null;
             if (planFor(entry.item, plan) === 'skip' || d > SEGMENT_LOOK_M) continue;
             const pass = this.pass && this.pass.id === id ? this.pass : null;
             if (d > 0 && d <= SEGMENT_ARM_M) this._armed(id, entry, isTurnCard(entry), s);

@@ -24,9 +24,11 @@ Each shows a number, and a word under it when there's something to do ("back off
   fast descent, not on the wheel). Blank behind a rider who gives no draft (a hand cycle): "change wheel".
 - **Holding**: watts beyond what keeping your place needs, over 10–12 s. Its word follows the cause: "step left", "step right" or "ease off" when
   you're pushing into the wheel, "moving up" while you move up, "easy" otherwise.
-- **Pack cost**: the watts your spot costs beyond Zwift's draft: the wheel's box (in line within about a bike length of
-  the rider ahead, holding their speed or closing: "box") and, deep in the draft, the part of Zwift's draft number it
-  doesn't really give (above about a quarter of your air drag it counts about 60%).
+- **Pack cost**: the draft Zwift shows you but keeps back: the wheel's box (right behind the rider ahead, holding their
+  speed or closing: "box"), about 60–70 W at 40 km/h on the wheel, fading out by a 3.5 m Wheel gap. Only the wheel's
+  own draft is cut: the extra from riders further ahead and a van get through.
+- **Net draft**: the draft you really get, Zwift's draft less the Pack cost (van included). Off the wheel it matches
+  Sauce's draft; tucked in close behind one rider it's about a quarter of it.
 - **Blocked**: the watts the wheel's box takes from you now; its word comes a few seconds before you reach the box, so
   you can ease off or step out of its line first.
 - **Passing**: the closing speed when you creep up on a rider at the speed that gets you held (1–3 km/h; 3+ goes
@@ -55,7 +57,7 @@ windows always show it. Times are in seconds, never meters.
   closing fast), "keep going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
   hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
-- **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
+- **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. Hear the voice later than the window shows a call (earbuds, a mixer, Bluetooth)? Set **Audio delay** on the Calls tab (1 for a second): spoken countdowns then say the number you'll have when you hear it. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
 - **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "left in 6" (be on the left by the bend, 6 s on) when the
   inside is open and moving over gains ground (alone too, and in the finish), nothing when you're on the inside already; "cut the S in 5" before
   a stretch that twists enough for a steered line to pay (on your route: dirt S curves most, where the best line gains 4–6 m).

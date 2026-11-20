@@ -301,16 +301,17 @@ export function callWords(c) {
  * time is correct at the start of the message, but by the time it gets to the number a second or two has elapsed"):
  * the chime's wait (engine/speech.mjs CHIME.speakAfterMs), the voice starting, and the words before the number.
  * A count of 20 s or under (exact seconds) is said that much lower; one that would reach 0 drops its number. The
- * windows keep the engine's own count.
+ * windows keep the engine's own count. v0.68.1: delayS = your own audio delay on top (the Calls tab's Audio delay; the
+ * user, 2026-11-19: "The time in the audio was one second behind the display ... Others may have a different delay").
  */
 export const SPEECH_START_S = 0.3;   // the browser's voice starting to speak
 export const SPEECH_WORD_S = 0.33;   // a short word at the voice's rate (1.05)
 export const CHIME_WAIT_S = 0.38;    // the chime before the words (speech.mjs CHIME.speakAfterMs)
-export function spokenWords(c, {chime = false} = {}) {
+export function spokenWords(c, {chime = false, delayS = 0} = {}) {
     if (!c) return '';
     if (!Number.isFinite(c.in) || c.in > 20) return callWords(c);
     const before = String(c.word || '').trim().split(/\s+/).filter(Boolean).length + 1;   // the words, then "in"
-    const leadS = (chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + before * SPEECH_WORD_S;
+    const leadS = (chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + before * SPEECH_WORD_S + (Number.isFinite(delayS) && delayS > 0 ? delayS : 0);
     const n = Math.round(c.in - leadS);
     return callWords({...c, in: n >= 1 ? n : null});
 }
@@ -325,7 +326,8 @@ export function spokenWords(c, {chime = false} = {}) {
 export const CROSS_GAP_S = 2.5;   // a short call said: the other lane waits this long
 export const BEND_LANE = {minGapS: 3, repeatS: 10, perKey: true};
 export class Announcer {
-    constructor({minGapS = MIN_GAP_S, repeatS = CALL_REPEAT_S, typeNewS = TYPE_NEW_S, perKey = false, guard = null, crossGapS = CROSS_GAP_S} = {}) {
+    constructor({minGapS = MIN_GAP_S, repeatS = CALL_REPEAT_S, typeNewS = TYPE_NEW_S, perKey = false, guard = null, crossGapS = CROSS_GAP_S, delayS = 0} = {}) {
+        this.delayS = delayS;   // a number, or a function read at each call (the setting can change mid-ride)
         this.minGapMs = minGapS * 1000;
         this.typeNewMs = typeNewS * 1000;
         this.repeatMs = repeatS * 1000;
@@ -359,6 +361,6 @@ export class Announcer {
         if (!byKey) this.typeAt.set(call.id, now);
         const type = CALL_TYPES.find(t => t.id === call.id);
         const tones = delivery.chime && type ? type.tones : null;
-        return {tones, say: delivery.voice ? speechText(spokenWords(call, {chime: !!tones}) || call.say || call.text) : null};
+        return {tones, say: delivery.voice ? speechText(spokenWords(call, {chime: !!tones, delayS: typeof this.delayS === 'function' ? this.delayS() : this.delayS}) || call.say || call.text) : null};
     }
 }

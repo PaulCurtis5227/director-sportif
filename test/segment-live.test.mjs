@@ -169,3 +169,41 @@ test('RaceCards hands a free ride to the segment cards, with your lead times, an
     cards.refresh();
     assert.equal(sc.entries, null, 'an import or a removal looks again');
 });
+
+test('2026-11-19: a U-turn not taken ends the pass past the spot; the next time through, the turn records its pass', async () => {
+    const turn = {pacing: {parts: [{atM: -70, say: 'go, 700'}], uturn: {kmh: 24, topAtM: -35, turnAtM: -110}}};
+    const {sc, passes} = await make([card('normal'), card('turn', turn)]);
+    const v = 10;
+    const back = (m, wt) => sc.call(state(m, {reverse: true, roadCompletion: (1 - percentAt(m)) * 1e6, worldTime: wt}), {v, leadS: 1.5, turnLeadS: 2.5});
+    // first time: called, ridden on past the spot (road 4890)
+    back(5100, 1e9);
+    back(4990, 1e9 + 10000);
+    assert.deepEqual(passes, ['arm uturn']);
+    back(4850, 1e9 + 25000);
+    assert.equal(back(4770, 1e9 + 33000), null, '120 m past the spot: over');
+    assert.deepEqual(passes, ['arm uturn', 'abort uturn'], 'not 4 minutes later');
+    assert.equal(back(4700, 1e9 + 40000), null);
+    assert.deepEqual(passes, ['arm uturn', 'abort uturn'], 'not armed again on the way away');
+    // second time: called, turned at the spot, the sprint ridden
+    back(5100, 1e9 + 600000);
+    back(4990, 1e9 + 610000);
+    back(4900, 1e9 + 619000);
+    const fwd = (m, wt) => sc.call(state(m, {worldTime: wt}), {v});
+    fwd(4895, 1e9 + 622000);
+    fwd(5010, 1e9 + 634000);
+    fwd(5210, 1e9 + 654000);
+    assert.deepEqual(passes.slice(2), ['arm uturn', 'banner uturn', 'line uturn']);
+});
+
+test('2026-11-19: a timed-out pass arms again once you leave its road or ride well clear of it, either way', async () => {
+    const {sc, passes} = await make([card('a')]);
+    const ride = (m, wt, over = {}) => sc.call(state(m, {worldTime: wt, ...over}), {v: 12});
+    ride(4600, 1e9);
+    ride(4600, 1e9 + 400000);
+    assert.deepEqual(passes, ['arm', 'abort']);
+    ride(4610, 1e9 + 401000);
+    assert.deepEqual(passes, ['arm', 'abort'], 'still there: not again');
+    ride(4610, 1e9 + 402000, {roadId: 8});
+    ride(4700, 1e9 + 500000);
+    assert.deepEqual(passes, ['arm', 'abort', 'arm'], 'left the road and came back');
+});

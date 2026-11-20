@@ -16,10 +16,10 @@
 import {TeleportGuard} from './teleport.mjs';
 import {leads} from './wheels.mjs';
 import {packSituation, packCostW, DEFAULT_RIDER} from './pack-cost.mjs';
-import {boxShare, BOX_FLOOR} from './pack-box.mjs';
+import {boxShare, BOX_FLOOR, BOX_WHEEL_TOP} from './pack-box.mjs';
 /* v0.74.0 (DS v0.68.0): the share of air the draft really saves at a reported share x, in share b of the box: the box
    applies only BOX_FLOOR of air (pack-box.mjs); out of it the reported draft is what you get (no discount). */
-const appliedShare = (x, b = 0) => x - b * Math.max(0, x - BOX_FLOOR);
+const appliedShare = (x, b = 0) => x - b * Math.max(0, Math.min(x, BOX_WHEEL_TOP) - BOX_FLOOR);   // v0.76.0: one wheel's draft only
 
 // v0.74.0 / DS v0.68.0 (docs/FINDINGS.md 2026-11-16): the "too close" penalty is Zwift's box as a draft cut (pack-box.mjs) for a typical
 // rider holding the wheel's speed: full 1.0–2.25 m center to center, fading to nothing by 5.25 m, ~8% of air applied. The

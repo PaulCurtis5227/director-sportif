@@ -20,7 +20,7 @@ import {callWords} from './calls.mjs';
 
 /* Field id -> the meter in the data object it reads (for the meter's own level). */
 export const METER_OF = {
-    'ds-position': 'position', 'ds-holding': 'holding', 'ds-pack': 'pack', 'ds-blocked': 'blocked',
+    'ds-position': 'position', 'ds-holding': 'holding', 'ds-pack': 'pack', 'ds-net': 'net', 'ds-blocked': 'blocked',
     'ds-pass': 'passing', 'ds-gap': 'gap', 'ds-side': 'side', 'ds-tuck': 'tuck', 'ds-group': 'group', 'ds-cda': 'cda',
     'ds-surface': 'surface', 'ds-frc': 'frc', 'ds-demand': 'demand', 'ds-burrito': 'burrito'
 };

@@ -17,7 +17,7 @@ test('data object v1: every meter present, basics, no call yet', () => {
     assert.equal(d.ts, 1234);
     assert.equal(d.self, true);
     assert.deepEqual(Object.keys(d.meters).sort(),
-        ['blocked', 'burrito', 'cda', 'demand', 'frc', 'gap', 'group', 'holding', 'pack', 'passing', 'position', 'side', 'surface', 'tuck']);
+        ['blocked', 'burrito', 'cda', 'demand', 'frc', 'gap', 'group', 'holding', 'net', 'pack', 'passing', 'position', 'side', 'surface', 'tuck']);
     for (const [k, m] of Object.entries(d.meters)) {
         assert.ok('value' in m && 'state' in m && 'level' in m, `${k} has value, state, level`);
         assert.ok(k in VOCAB, `${k} has words`);

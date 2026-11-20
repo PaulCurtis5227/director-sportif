@@ -110,18 +110,25 @@ export const VOCAB = {
         front: {word: 'front', help: 'Front of the group.'},
         // v0.67.0 (docs/PLAN.md §26): Zwift's box + the draft near its cap, not the old table's tight / boxed / crowded
         room: {word: 'room', help: "Clear of the wheel's box with room ahead: the cheapest spot."},
-        box: {word: 'box', help: "In the wheel's box: within about a bike length of it, in line, holding its speed. Zwift slows you " +
-             '(about 40 W at 40 km/h). Drop back a meter, move half a lane over, or come by 3+ km/h faster.'},
+        box: {word: 'box', help: "In the wheel's box: within about a bike length of it, in line, holding its speed. Zwift keeps back " +
+             'most of the draft it shows you (about 60 W at 40 km/h). Drop back a meter, move half a lane over, or come by 3+ km/h faster.'},
         edge: {word: 'edge', help: "At the edge of the wheel's box: part of its cost."},
         group: {word: '', help: 'In the group.'},
+    },
+    // v0.69.0: the draft you really get, Zwift's draft less the box's cut; no words, it only reports
+    net: {
+        ...COMMON,
+        ok: {word: '', help: ''},
     },
     blocked: {
         ...COMMON,
         // v0.67.0 (docs/PLAN.md §26): from where the riders are (pack-box.mjs), said before you reach the box; the value is
         // the box's watts now (5 s), not spikes
         clear: {word: '', help: "Not in a wheel's box."},
-        blocked: {word: 'ease off', help: "Closing on the wheel's box, or pushing into it: within about a bike length of their wheel, " +
-                 'in line, Zwift slows you (about 40 W at 40 km/h). No room to move over here: ease off. Coming by 3+ km/h faster skips it.'},
+        blocked: {word: 'ease off', help: "Closing on the wheel's box, or pushing into it: right behind their wheel, " +
+                 'in line, Zwift keeps back most of the draft it shows you (about 60 W at 40 km/h on the wheel). No room to move over here: ease off. Coming by 3+ km/h faster skips it.'},
+        // v0.68.1: already moving out of the wheel's line toward the free side: nothing to say
+        stepping: {word: '', help: "Moving out of the wheel's line already: keep going."},
         'step-left': {word: 'step left', help: "Closing on the wheel's box: half a meter to the left, out of its line, and it costs nothing."},
         'step-right': {word: 'step right', help: "Closing on the wheel's box: half a meter to the right, out of its line, and it costs nothing."},
         'blocked-left': {word: 'drop back', help: 'Stuck alongside a rider on your left: drop back, pass where there is room.'},
@@ -375,7 +382,7 @@ export function directorCalls(ds) {
 export const wordOf = (key, state) => VOCAB[key]?.[state]?.word ?? '';
 export const helpOf = (key, state) => VOCAB[key]?.[state]?.help ?? '';
 
-const WATT_METERS = new Set(['position', 'holding', 'pack', 'blocked', 'surface']);
+const WATT_METERS = new Set(['position', 'holding', 'pack', 'net', 'blocked', 'surface']);
 const fin = x => (Number.isFinite(x) ? x : null);
 
 /* One meter entry: watt meters read 0 with nothing to read, the rest null (docs/DS-DATA.md). */
@@ -404,7 +411,7 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
     const pack = x => (draftless ? null : x);
 
     const blockedState = common || (!ds.blocked ? 'clear' : ds.blockedSide ? `blocked-${ds.blockedSide}` :
-        ds.blockedStep ? `step-${ds.blockedStep}` : 'blocked');
+        ds.blockedStep ? (ds.blockedStepping ? 'stepping' : `step-${ds.blockedStep}`) : 'blocked');
     let passState = 'none';
     if (ds.passKind === 'attack') passState = ds.passAtWheel ? 'drop-back' : ds.passWide ? 'too-slow' : 'go-wide';
     else if (ds.passKind === 'defend') passState = DEFEND_STATE[ds.passWhere] || 'none';
@@ -435,6 +442,7 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
             holding: meter('holding', pack(ds.holdingW), common || ds.holdingState || 'warming',
                            ds.holdingState === 'blocked' && ds.blockedStep ? {word: `step ${ds.blockedStep}`} : {}),   // the same words as Blocked
             pack: meter('pack', pack(ds.packW), draftless ? common : ds.packState || common || 'none'),
+            net: meter('net', pack(ds.netDraftW), draftless ? common : settling ? 'settling' : 'ok'),
             blocked: meter('blocked', pack(ds.blockedW), blockedState),
             passing: meter('passing', pack(ds.passKmh) ?? (common ? null : 0), passState),
             // below 0 = overlapping wheels: no word of its own (Blocked says "ease off" when it costs; the user, 2026-10-30)

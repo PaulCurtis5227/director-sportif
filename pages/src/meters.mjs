@@ -240,7 +240,7 @@ import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY}
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
 import {JoinWatch, ServerClock, upcomingSignups} from './join-watch.mjs';
 
-export const DS_VERSION = '0.68.0';
+export const DS_VERSION = '0.69.0';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -315,6 +315,7 @@ export const SETTING_DEFAULTS = {
     recordAlways: false,       // and record all the time outside events (a file per free ride; you turn it on)
     recordSegments: true,      // a segment card in a free ride records each pass, a short file of its own, if nothing's recording
     callLeadS: 1.5,            // say a jump this long before the spot: your reaction
+    audioDelayS: 0,            // the voice reaches your ears this long after the windows show it (v0.68.1: earbuds, a mixer, Bluetooth; the user: 1 s)
     uturnHoldS: 2.5,           // and a U-turn this much earlier still: how long your button takes (keyboard or Stream Deck 0, Companion, Play, Ride about 2.5)
     practiceRace: false,       // every ride counts as a race: the race-only calls on, the not-a-race ones off
     outcomeChime: true,        // a chime when step, block and ease off worked or failed (outcome.mjs; the word is colored either way)
@@ -657,8 +658,9 @@ export async function main() {
     });
     const speaker = new Speaker();
     const speechGuard = {lastAt: -Infinity};   // the two lanes never talk over each other (calls.mjs CROSS_GAP_S)
-    const announcer = new Announcer({guard: speechGuard});
-    const bendAnnouncer = new Announcer({...BEND_LANE, guard: speechGuard});
+    const audioDelayS = () => Math.max(0, Math.min(5, Number(settings.audioDelayS) || 0));
+    const announcer = new Announcer({guard: speechGuard, delayS: audioDelayS});
+    const bendAnnouncer = new Announcer({...BEND_LANE, guard: speechGuard, delayS: audioDelayS});
     const bikeCheck = bikeChecker({speak: text => { if (anyVoice) speaker.utter(text); }, onBike: id => { settings.bike = id; },
                                    refit: () => requestAnimationFrame(fitWindow)});
     // The data object goes out to the Grid and any other window of ours: docs/DS-DATA.md "Transport"

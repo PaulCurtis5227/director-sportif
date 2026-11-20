@@ -89,13 +89,23 @@ export function meterFields({sideUnit = 'ft', imperial = false, current = () => 
         id: 'ds-pack',
         shortName: 'Pack cost',
         longName: "Pack cost: what your spot costs beyond Zwift's draft",
-        tooltip: tip('pack', "Watts your spot in the bunch costs on top of what Zwift's draft says, read from where " +
-            "you are now: the wheel's box (in line within about a bike length of it, holding its speed or closing: about " +
-            "38 W at 40 km/h, more for heavier riders and at speed) and, deep in the draft, the part of Zwift's draft " +
-            "number it doesn't really give (above about a quarter of your air drag it counts about 60%). Drop back a " +
-            'meter, move half a lane over, or come by 3+ km/h faster to leave the box.'),
+        tooltip: tip('pack', "Watts of Zwift's draft your spot in the bunch doesn't really give you, read from where " +
+            "you are now: the wheel's box (in line within about a bike length of it, holding its speed or closing). " +
+            "There Zwift shows the full draft but keeps back most of what one wheel gives: about 60–70 W at 40 km/h, " +
+            'more at speed and for bigger riders and bikes. Draft from riders further ahead, and a van, still gets ' +
+            'through. Drop back a meter, move half a lane over, or come by 3+ km/h faster to leave the box.'),
         format: watts('pack'),
         label: word('pack'),
+        suffix: 'W',
+    }, {
+        id: 'ds-net',
+        shortName: 'Net draft',
+        longName: "Net draft: the draft you really get, Zwift's draft less the box",
+        tooltip: tip('net', "The watts the draft really saves you now: Zwift's draft (with a van's boost) less what " +
+            "the wheel's box keeps back (Pack cost). Out of the box it matches Zwift's draft meter; close on a wheel " +
+            'it drops well below it. Highest at about 3–4 m of wheel gap. 0 alone.'),
+        format: watts('net'),
+        label: () => '',
         suffix: 'W',
     }, {
         id: 'ds-position',

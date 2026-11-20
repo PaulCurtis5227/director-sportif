@@ -18,6 +18,8 @@
  *   beside        sideM is measured to a rider beside you (no wheel in line)
  *   packW         watts your spot costs beyond Zwift's draft (pack-cost.mjs); null alone, in a pair or settling
  *   packNote      one line: what makes the spot cost that
+ *   netDraftW     v0.69.0: the draft you really get (W): Zwift's draft (a van's boost in it) less the box's cut (packW
+ *                 as computed, a pair too); null settling
  *   positionW     what your spot costs against the best-placed rider in your group (position.mjs), 10 s; null alone,
  *                 coasting or settling
  *   positionNote  the move that saves the most from where you sit
@@ -157,6 +159,11 @@ import {aroundYou} from './outcome.mjs';
 
 const STEP_KEEP_S = 10;   // the way out of a block stays the same side this long
 const STEP_SWITCH_S = 2;  // ...and changes only when that side has been taken this long in a row (v0.66.0)
+// v0.68.1 (the user, 2026-11-19 5:29: "a step left message when I was on the left rail"): you were already steering left at
+// 0.7 m/s (road 119, 85.0 -> 88.0 in 6 s) when the call came, and heard it about a second later at the rail. Moving that
+// way at this speed already (over the last LANE_V_S) = stepping: no call, the state 'stepping'
+export const STEP_DOING_MS = 0.3;
+export const LANE_V_S = 1.5;
 import {FrcBalance, FRC_DEFAULT_KJ} from './engine/frc-live.mjs';
 import {remainingOnSurface, profileAheadOnMap, RoadTraffic} from './engine/road-map.mjs';
 import {SURFACES} from './engine/surfaces.mjs';
@@ -353,6 +360,7 @@ export class MeterEngine {
         this.nudgeCoach = new NudgeCoach();
         this.pace = null;     // {wt, vFlat, power}: your flat speed and effort, smoothed, for the seconds ahead
         this.holdClass = 0;   // 1 = alone, 2 = with one rider, 3 = group of 3+: Holding restarts when it changes
+        this.laneHist = []; this.laneKey = null;   // your sideways track (v0.68.1: stepping already)
     }
 
     /* One tick: the meter rider's entry and their meters, or null with nobody to read. */
@@ -812,6 +820,17 @@ export class MeterEngine {
         const feather = fc && fc.state ? {state: fc.state, grade: fc.grade,
                                           inS: Math.max(secsAlong(featherRoad, fc.startM, this.pace.vFlat ?? v) || 0,
                                                         (s.grade || 0) >= 0.015 ? fc.startM / Math.max(v, 2) : 0)} : null;
+        // your sideways speed (m/s, + = toward your right) over the last LANE_V_S: a road change starts it over
+        const laneNow = (s.roadPosition ?? 0) / UNIT_PER_M * (s.reverse ? -1 : 1);
+        const laneKey = `${s.roadId}|${s.reverse ? 1 : 0}`;
+        if (this.laneKey !== laneKey) { this.laneKey = laneKey; this.laneHist = []; }
+        if (Number.isFinite(s.worldTime) && Number.isFinite(laneNow) && !(this.laneHist.length && s.worldTime <= this.laneHist.at(-1).wt)) {
+            this.laneHist.push({wt: s.worldTime, lane: laneNow});
+        }
+        while (this.laneHist.length > 2 && s.worldTime - this.laneHist[1].wt >= LANE_V_S * 1000) this.laneHist.shift();
+        const h0 = this.laneHist[0], h1 = this.laneHist.at(-1);
+        const laneV = h0 && h1 && h1.wt - h0.wt >= 500 ? (h1.lane - h0.lane) / ((h1.wt - h0.wt) / 1000) : 0;
+        const stepNow = !settling && L.size >= 2 && blk.blocked && !blk.beside ? this.stepFor(entries, me) : null;
         const ds = {
             ts: s.worldTime,
             gapM: inline ? inline.gap : null,
@@ -828,6 +847,7 @@ export class MeterEngine {
             beside: !!(wheel && !inline),
             packW: !settling && L.size >= 3 ? packW : null,
             packNote: settling ? SETTLING_NOTE : packCostNote(sit, L),
+            netDraftW: settling ? null : Math.max(0, (s.draft || 0) - packW),
             positionW: pos.w,
             positionNote: pos.note,
             holdingW: hold.w,
@@ -843,7 +863,8 @@ export class MeterEngine {
             passAtWheel: !!pass.attack?.atWheel,
             passWide: !!pass.attack && Math.abs(pass.attack.latM ?? 0) >= WIDE_M,
             blockedSide: !settling && L.size >= 2 && blk.blocked && blk.beside ? blk.beside.side : null,
-            blockedStep: !settling && L.size >= 2 && blk.blocked && !blk.beside ? this.stepFor(entries, me) : null,
+            blockedStep: stepNow,
+            blockedStepping: !!stepNow && (stepNow === 'left' ? laneV <= -STEP_DOING_MS : laneV >= STEP_DOING_MS),
             surface,
             tuck: tuck && {...tuck, race: this.raceFor(me) ?? null, drag: this.tuckDrag.result()},
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,

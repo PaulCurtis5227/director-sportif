@@ -199,7 +199,7 @@ test('fields: gap, side and pack cost format for the Grid, with the meter\'s wor
     }
     // nothing to read: watt meters 0, the rest blank (docs/DS-DATA.md, like Sauce's draft gauge)
     const alone = shown({groupSize: 1});
-    for (const id of ['ds-position', 'ds-holding', 'ds-pack', 'ds-blocked']) {
+    for (const id of ['ds-position', 'ds-holding', 'ds-pack', 'ds-net', 'ds-blocked']) {
         assert.equal(field(id).format(alone), '0', `${id} reads 0 alone`);
         assert.equal(field(id).label(alone), '', `${id}: no word alone`);
     }
@@ -546,4 +546,14 @@ test('a segment card\'s pacing reaches the call: the plan\'s words, through the 
     assert.equal(ds.card.say, 'go, 730');
     const c = engineCall({meters: {}}, ds);
     assert.deepEqual([c.id, c.word, c.in], ['pace', 'go, 730', null]);
+});
+
+test('Net draft (v0.69.0): Zwift draft less the box, from the engine; 0 with nothing to read', async () => {
+    const x = shown({netDraftW: 41.4, groupSize: 6});
+    assert.equal(field('ds-net').format(x), '41');
+    assert.equal(field('ds-net').label(x), '');
+    assert.equal(field('ds-net').format(shown({groupSize: 6, settling: true})), '0');
+    // the engine: holding a wheel 2 m back (center to center) costs the box; Net = draft − packW, never below 0
+    const {ds} = new MeterEngine().update([rider(1, 0, 0, {self: true}), rider(2, 2, 0), rider(3, 6, 0)]);
+    if (ds.netDraftW != null) assert.ok(ds.netDraftW >= 0 && Number.isFinite(ds.netDraftW), String(ds.netDraftW));
 });

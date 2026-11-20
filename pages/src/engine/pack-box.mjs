@@ -12,6 +12,10 @@
  * none (you get the full reported draft). v0.74.0 (DS v0.68.0); was 0.0036·m·v², full 1.25–3.0 m, gone at 3.25 m: that
  * fit mixed holding and dropping-back seconds and took the tail for a draft discount. The blocked "spikes" before the
  * box were timing noise in other riders' states (±66 W a second).
+ * v0.76.0 (DS v0.69.0, docs/FINDINGS.md 2026-11-19 "the van in the pack"): the box cuts only the draft ONE wheel gives,
+ * up to BOX_WHEEL_TOP (34%) of air: draft from riders further ahead, and a van's extra, gets through. In the full box
+ * (research/2026-11-19/van-box.mjs, steady, holding) 1 rider ahead: 35% shown, 10% got; 2–3: 42 -> 16; 4+: 45 -> 22 (the
+ * old rule cut all of them to 8%: 37 points in a pack, measured ~23); a van there: +5.8 points shown, +5.4 got.
  * Read from where the riders are, no energy balance needed: so it can also say when you are about to enter it.
  *
  * Distances are center to center along the road (wheels.mjs leads, states aligned to one moment); the meters show Wheel
@@ -24,6 +28,8 @@ export const UNIT_PER_M = 113513;      // roadPosition units per meter sideways
 export const BIKE_LENGTH_M = 1.5;      // center to center − wheel gap
 export const BOX_FLOOR = 0.08;         // the draft Zwift applies in the full box, share of your air drag (research/2026-11-16/
                                        // box-fit.mjs: one rider ahead, holding, 1–2.5 m c-c: 31–37% shown, 8–9% applied)
+export const BOX_WHEEL_TOP = 0.34;     // v0.76.0: the box cuts the draft only up to this share of air (one wheel's draft);
+                                       // above it (riders further ahead, a van) the draft gets through
 // the shape, free (box-fit.mjs: 943k steady steps, 93k holding one rider's speed, zero = riders in the same groups with
 // nobody ahead; the share of (shown − BOX_FLOOR) not applied): along, center to center
 export const BOX_ALONG = [[0, 0], [0.25, 0.7], [0.5, 0.75], [1.0, 1], [2.25, 1], [2.5, 0.9], [3.0, 0.63], [3.5, 0.36],
@@ -54,9 +60,10 @@ export function boxShare(along, aside) {
     return lengthwise * (BOX_NONE_SIDE_M - a) / (BOX_NONE_SIDE_M - BOX_FULL_SIDE_M);
 }
 
-/* The box's cost (W): the draft not applied, for Zwift's reported draftW (W) and your undrafted air drag airW (W). */
+/* The box's cost (W): the draft not applied, for Zwift's reported draftW (W) and your undrafted air drag airW (W): the
+   draft between BOX_FLOOR and BOX_WHEEL_TOP of air (v0.76.0: draft above the top gets through). */
 export const boxW = (draftW, airW, share = 1) => (Number.isFinite(draftW) && Number.isFinite(airW) && airW > 0 && share > 0 ?
-    share * Math.max(0, draftW - BOX_FLOOR * airW) : 0);
+    share * Math.max(0, Math.min(draftW, BOX_WHEEL_TOP * airW) - BOX_FLOOR * airW) : 0);
 
 /*
  * You against the riders ahead on your road and direction: {share (0..1, the box you are in now), rider (the rider whose

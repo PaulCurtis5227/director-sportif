@@ -47,7 +47,13 @@ export const BEND_MIN_DEG = 30;        // smaller bends aren't worth steering fo
 // in this is not likely to be required"): on that race 49 calls offered 112 m; the 10 with 3 m+, 1.5 m+ from the inside and
 // 4 s+ of warning carried 48 m (was 1.0 m and 0.5 m: the last half meter of road is worth ~0.6 m on a 90° bend)
 export const BEND_MIN_GAIN_M = 3.0;    // …nor is less than this much road
-export const BEND_START_DEG = 5;       // the road has turned this much -> the bend has started
+export const BEND_START_DEG = 5;       // the road has turned this much -> a bend is there (bendsAlong: its start is walked back)
+// v0.75.0 (DS v0.68.1; the user, 2026-11-19: "You pick where it starts turning a lot, I pick when I see it start bending. Use
+// your detector to figure out it is worth mentioning. Then work backwards to find when it starts."): on that ride's tags the
+// rider marked where the road's turning first reached ~1 deg per 10 m; the 5 deg point came 1–5 s later. A found bend's start
+// moves back along the road while the turning (toward the bend) stays at BEND_ONSET_PER10M or more, at most BEND_BACK_MAX_M.
+export const BEND_ONSET_PER10M = 1.0;
+export const BEND_BACK_MAX_M = 150;
 export const INSIDE_MAX_M = 1.5;       // never suggest moving further than this (in a bunch, the road's edge not known)
 export const ROAD_ROOM_MAX_M = 3;      // with the road's edge known: up to it, at most this
 export const ALREADY_INSIDE_M = 1.5;   // this close to the inside edge: close enough (v0.73.0, was 0.5)
@@ -374,14 +380,24 @@ export function bendsAlong(pts, {minM = 0} = {}) {
     if (seg.length < 2) return [];
     const out = [];
     let ref = seg[0].a, cur = null;
+    // the turning (deg per 10 m) into segment j, + = the bend's way
+    const rateAt = (j, sign) => {
+        if (j < 1) return 0;
+        const dd = seg[j].d - seg[j - 1].d;
+        return dd > 0 ? wrapDeg(seg[j].a - seg[j - 1].a) / dd * 10 * sign : 0;
+    };
     const close = () => {
-        if (cur.startM >= minM) out.push({startM: cur.startM, endM: cur.endM, angleDeg: cur.best, right: XY_CCW_IS_RIGHT ? cur.best > 0 : cur.best < 0});
+        const sign = Math.sign(cur.best) || 1;
+        let j = cur.i;
+        while (j > 0 && rateAt(j, sign) >= BEND_ONSET_PER10M && cur.turnM - seg[j - 1].d <= BEND_BACK_MAX_M) j--;
+        const startM = Math.min(cur.turnM, seg[j].d);
+        if (startM >= minM) out.push({startM, turnM: cur.turnM, endM: cur.endM, angleDeg: cur.best, right: XY_CCW_IS_RIGHT ? cur.best > 0 : cur.best < 0});
         cur = null;
     };
-    for (const p of seg) {
+    for (const [i, p] of seg.entries()) {
         const rel = wrapDeg(p.a - ref);
         if (!cur) {
-            if (Math.abs(rel) >= BEND_START_DEG) cur = {startM: p.d, endM: p.d, best: rel};
+            if (Math.abs(rel) >= BEND_START_DEG) cur = {turnM: p.d, endM: p.d, best: rel, i};
             else ref = wrapDeg(ref + 0.2 * rel);   // follow a slowly drifting straight
             continue;
         }
