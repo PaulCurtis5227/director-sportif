@@ -57,7 +57,7 @@ windows always show it. Times are in seconds, never meters.
   closing fast), "keep going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
   hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
-- **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. Hear the voice later than the window shows a call (earbuds, a mixer, Bluetooth)? Set **Audio delay** on the Calls tab (1 for a second): spoken countdowns then say the number you'll have when you hear it. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
+- **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. Hear the voice later than the window shows a call (earbuds, a mixer, Bluetooth)? Set **Audio delay** on the Calls tab (1 for a second; negative, say -0.5, if the spoken numbers come out too low): spoken countdowns then say the number you'll have when you hear it. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
 - **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "left in 6" (be on the left by the bend, 6 s on) when the
   inside is open and moving over gains ground (alone too, and in the finish), nothing when you're on the inside already; "cut the S in 5" before
   a stretch that twists enough for a steered line to pay (on your route: dirt S curves most, where the best line gains 4–6 m).
@@ -106,7 +106,12 @@ Sauce quit.
    with a route, the end of the route (each lap) is the finish line for the finish calls. Tick **Bridge button** for a
    **Bridge** button in the window: press it when you want to go across to the riders up the road, and the director
    says when and where it costs you the least FRC (a climb ahead is cheap, a descent dear), the watts to hold on the
-   way, and "made it" (the button turns itself off).
+   way, and "made it" (the button turns itself off). Tick **Swap button** for a **Swap** button, to practice a bike
+   swap (or coach a real one): press it and the director says "coast to a stop", "swap now" once you've stopped (press
+   your own swap key then), and "go go go" after **Swap: go after** seconds. At "go" it switches its bike to **Swap
+   to** (and **Swap wheels**), so the meters use the right drag, and the next swap goes back. With OBS connected and
+   not already recording, the press starts OBS recording and it stops 10 s after "go". Your own key does the swap:
+   nothing is sent to Zwift.
 2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
    use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
    Zwift profile's FTP and 15 kJ).

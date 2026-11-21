@@ -206,6 +206,7 @@
  * v0.55.1: bridge calls speak in the finish (calls.mjs FINALE_CALLS; ds-data.mjs BRIDGE_FINISH_PRIORITY: going or about to, over the finish advice).
  * v0.54.1: the Grid keeps its size ride to ride (grid.mjs: fitted once per layout, tiles.mjs fitKey, setting fittedFor; the
  * "waiting" line over the tiles, not above them); a tile's text is centered (meters.css).
+ * v0.70.0: the Swap button (setting swapButton; swap.mjs SwapCoach): "coast to a stop", "swap now", "go go go", the bike setting traded for swapBike at go, each step in the recording, OBS started for it.
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -215,7 +216,8 @@ import {riderModel, BIKES, DEFAULT_BIKE, WHEELS, DEFAULT_WHEELS} from './rider-m
 import {setStyles, windowFitter, options} from './window-ui.mjs';
 import {Speaker} from './engine/speech.mjs';
 import {bikeCheckText} from './engine/bike-check.mjs';
-import {engineCall, engineCalls, Announcer, BEND_LANE, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor}
+import {engineCall, engineCalls, Announcer, BEND_LANE, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor,
+    audioDelayOf, CHIME_WAIT_S, SPEECH_START_S}
     from './calls.mjs';
 import {buildData, CHANNEL} from './ds-data.mjs';
 import {allWords} from './grid-fields.mjs';
@@ -239,8 +241,9 @@ import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
 import {JoinWatch, ServerClock, upcomingSignups} from './join-watch.mjs';
+import {SwapCoach, goSOf} from './swap.mjs';
 
-export const DS_VERSION = '0.69.0';
+export const DS_VERSION = '0.70.0';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -315,11 +318,15 @@ export const SETTING_DEFAULTS = {
     recordAlways: false,       // and record all the time outside events (a file per free ride; you turn it on)
     recordSegments: true,      // a segment card in a free ride records each pass, a short file of its own, if nothing's recording
     callLeadS: 1.5,            // say a jump this long before the spot: your reaction
-    audioDelayS: 0,            // the voice reaches your ears this long after the windows show it (v0.68.1: earbuds, a mixer, Bluetooth; the user: 1 s)
+    audioDelayS: 0,            // the voice reaches your ears this long after the windows show it (v0.68.1: earbuds, a mixer, Bluetooth; the user: 1 s); negative = before (v0.69.1)
     uturnHoldS: 2.5,           // and a U-turn this much earlier still: how long your button takes (keyboard or Stream Deck 0, Companion, Play, Ride about 2.5)
     practiceRace: false,       // every ride counts as a race: the race-only calls on, the not-a-race ones off
     outcomeChime: true,        // a chime when step, block and ease off worked or failed (outcome.mjs; the word is colored either way)
     bridgeButton: false,       // a Bridge button in the window (you say you want to bridge; bridge.mjs)
+    swapButton: false,         // a Swap button in the window: the coached bike swap, to practice (v0.70.0; swap.mjs)
+    swapBike: '',              // the bike you swap to ('' = the meters keep the bike they have); traded with bike at "go"
+    swapWheels: '',            // and its wheels ('' = the same wheels)
+    swapGoS: 3,                // "go go go" this long after "swap now" (learn it from practice)
     obsEnabled: false,         // connect to OBS (its WebSocket server) for the video clocks
     obsUrl: 'ws://127.0.0.1:4455',
     obsPassword: '',           // OBS's WebSocket password: kept in this window's settings on this computer
@@ -654,11 +661,13 @@ export async function main() {
             obsReconnect();
         } else if (key === 'bridgeButton') {
             showBridge();
+        } else if (key === 'swapButton') {
+            showSwap();
         }
     });
     const speaker = new Speaker();
     const speechGuard = {lastAt: -Infinity};   // the two lanes never talk over each other (calls.mjs CROSS_GAP_S)
-    const audioDelayS = () => Math.max(0, Math.min(5, Number(settings.audioDelayS) || 0));
+    const audioDelayS = () => audioDelayOf(settings.audioDelayS);   // v0.69.1: may be negative (the voice early)
     const announcer = new Announcer({guard: speechGuard, delayS: audioDelayS});
     const bendAnnouncer = new Announcer({...BEND_LANE, guard: speechGuard, delayS: audioDelayS});
     const bikeCheck = bikeChecker({speak: text => { if (anyVoice) speaker.utter(text); }, onBike: id => { settings.bike = id; },
@@ -1022,6 +1031,64 @@ export async function main() {
         showBridge();
     });
     showBridge();
+    // Swap (swap.mjs, v0.70.0): the coached bike swap. Your own key does the swap; the DS calls the steps, then at "go"
+    // trades its bike setting for the swap bike so the meters' drag is right (and the next swap goes back)
+    // a call reaches you leadS after it starts: the chime's wait, the voice starting, your Audio delay (swap.mjs predicts by it)
+    const swapLeadS = () => {
+        const how = delivery.swap || {};
+        return how.voice ? (how.chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + audioDelayS() : audioDelayS();
+    };
+    const swapCoach = new SwapCoach({goS: () => goSOf(Common.settingsStore.get('swapGoS')), leadS: swapLeadS});
+    const swapBtn = content.querySelector('button.swap');
+    const showSwap = () => {
+        const on = !!Common.settingsStore.get('swapButton');
+        swapBtn.hidden = !on;
+        swapBtn.classList.toggle('on', on && swapCoach.active);
+        requestAnimationFrame(fitWindow);
+    };
+    // OBS records the swap when it's there (the user, 2026-11-20: "The button should start OBS if it is available"):
+    // started by the press if it isn't recording already (no title card: a practice clip), stopped SWAP_OBS_TAIL_S
+    // after the swap is complete (go go go) or called off, if we started it and no race recording has taken OBS over since (obsSg)
+    const SWAP_OBS_TAIL_S = 10;   // the user: "the completed swap + 10 seconds should stop it"
+    let swapObs = false, swapObsStopAt = null;
+    const swapObsCheck = () => {
+        if (!swapObs || swapObsStopAt == null || Date.now() < swapObsStopAt) return;
+        swapObs = false;
+        swapObsStopAt = null;
+        if (obsSg == null && obsStarted.get() && obs && obs.connected) {
+            obs.stopRecord().then(() => obsStarted.set(false)).catch(e => console.warn('OBS stop', e));
+        }
+    };
+    swapBtn.addEventListener('click', () => {
+        const starting = !swapCoach.active;
+        swapCoach.press();
+        swapBtn.classList.toggle('on', starting);
+        if (!starting) return;
+        swapObsStopAt = null;
+        if (Common.settingsStore.get('obsEnabled') && obs && obs.connected && clock.starts.record == null && !rehearsal) {
+            swapObs = true;
+            obs.startRecord().then(() => obsStarted.set(true))
+                .catch(e => { swapObs = false; obsNote(`OBS would not start recording: ${e.message || e}`); });
+        }
+    });
+    const tradeBike = () => {
+        const st = Common.settingsStore;
+        const to = st.get('swapBike'), toWheels = st.get('swapWheels');
+        if (!to || !BIKES.some(b => b.id === to)) return null;
+        const from = st.get('bike') || DEFAULT_BIKE, fromWheels = st.get('wheels') || DEFAULT_WHEELS;
+        st.set('bike', to);
+        st.set('swapBike', from);
+        settings.bike = to;
+        settings.swapBike = from;
+        if (toWheels && WHEELS.some(w => w.id === toWheels)) {
+            st.set('wheels', toWheels);
+            st.set('swapWheels', fromWheels);
+            settings.wheels = toWheels;
+            settings.swapWheels = fromWheels;
+        }
+        return {from, to};
+    };
+    showSwap();
     // recording shows on the button ("● 12:03", red; panel.mjs recButton); what auto-record does is its tooltip
     const showRec = () => {
         const b = recButton({recording: !!rec, startedAt: rec && rec.startedAt, saving, now: Date.now()});
@@ -1200,6 +1267,27 @@ export async function main() {
         // timed by Zwift's clock, not the PC's (v0.67.2: the PC ran 1 s behind; join-watch.mjs ServerClock)
         if (r.me && r.me.self && r.me.state) serverClock.observe(r.me.state.worldTime);
         if (r.ds && r.me && r.me.self) r.ds.join = joinWatch.update({now: serverClock.now(), next: nextJoin, mySg: r.me.state.eventSubgroupId || null});
+        // the bike swap you started (Swap button): each step said the moment it comes (its own sound, not the
+        // announcer's 6 s gap: "go go go" 3 s after "swap now"), logged into the recording to measure the practice
+        if (r.ds && r.me && r.me.self) {
+            const sw = r.ds.swap = swapCoach.update({wt: r.me.state.worldTime, speedKmh: r.me.state.speed});
+            if (sw.step) {
+                const traded = sw.trade ? tradeBike() : null;
+                if (rec) rec.event(Date.now(), {swap: sw.step, n: sw.n, speedKmh: r.me.state.speed, power: r.me.state.power,
+                                                ...(sw.early ? {early: true} : {}), ...(sw.predicted ? {predicted: true, toStopS: +sw.toStopS.toFixed(2)} : {}), ...(traded ? {bike: traded.from, to: traded.to} : {})});
+                const how = delivery.swap;
+                if (sw.word && ['press', 'stopped', 'go'].includes(sw.step) && how && (how.chime || how.voice)) {
+                    const tones = how.chime ? (CALL_TYPES.find(t => t.id === 'swap') || {}).tones : null;
+                    if (how.voice) speaker.utter(sw.word, {chime: !!tones, tones: tones || undefined});
+                    else speaker.ding(tones);
+                    speechGuard.lastAt = Date.now();
+                }
+                if (['go', 'cancel', 'gaveUp'].includes(sw.step) && swapObs) swapObsStopAt = Date.now() + SWAP_OBS_TAIL_S * 1000;
+                if (sw.step === 'press') swapObsStopAt = null;
+                showSwap();
+            }
+            swapObsCheck();
+        }
         const data = buildData(r);
         // v0.60.0: the call shown is one you can hear (a chime or the voice on for its type), like the voice's own pick
         const heard = id => !!(delivery[id] && (delivery[id].chime || delivery[id].voice));
@@ -1313,6 +1401,7 @@ export async function main() {
         // their own; each picks among the calls you can hear (a silent one no longer holds back one you hear)
         const lanes = data.self ? engineCalls(data, r.ds, heard) : {main: null, bend: null};
         for (const [lane, c] of [[announcer, lanes.main], [bendAnnouncer, lanes.bend]]) {
+            if (c && c.id === 'swap') continue;   // said as each step comes (above)
             const sound = lane.offer(c, c ? delivery[c.id] : null);
             if (sound && sound.say) {
                 speaker.utter(sound.say, {chime: !!sound.tones, tones: sound.tones || undefined});
@@ -1453,6 +1542,9 @@ export async function settingsMain() {
     renderDeliveryGrid();
     document.querySelector('select[name="bike"]').innerHTML = options(BIKES, DEFAULT_BIKE);
     document.querySelector('select[name="wheels"]').innerHTML = options(WHEELS, DEFAULT_WHEELS);
+    // the swap bike: '' = keep the bike (the meters don't change at "go")
+    document.querySelector('select[name="swapBike"]').innerHTML = '<option value="">Don\'t change the bike</option>' + options(BIKES, null);
+    document.querySelector('select[name="swapWheels"]').innerHTML = '<option value="">Same wheels</option>' + options(WHEELS, null);
     // one small form per tab (Sauce's own settings window does the same); each binds its fields to the settings
     for (const id of ['you', 'calls', 'record', 'obs', 'look']) {
         await Common.initSettingsForm(`form#${id}`)();

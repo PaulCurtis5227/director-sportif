@@ -90,6 +90,22 @@
                     <key>Bridge button:</key>
                     <input type="checkbox" name="bridgeButton"/>
                 </label>
+                <label title="A Swap button in the Director Sportif window, to practice a bike swap (and to coach a real one): press it, then the director says coast to a stop, swap now once you've stopped (press your own swap key then), and go go go when it's safe to ride off. At go it switches its bike to the swap bike below, so the meters use the right drag; the next swap goes back. Your own key does the swap: nothing is sent to Zwift. Each step goes into the recording.">
+                    <key>Swap button:</key>
+                    <input type="checkbox" name="swapButton"/>
+                </label>
+                <label title="The bike you swap to: at go the Director Sportif's bike setting becomes this one, and this one becomes the bike you left (so the next swap goes back). Don't change = the meters keep their bike.">
+                    <key>Swap to:</key>
+                    <select name="swapBike"></select>
+                </label>
+                <label title="The swap bike's wheels (traded the same way). Same wheels = the wheels setting stays.">
+                    <key>Swap wheels:</key>
+                    <select name="swapWheels"></select>
+                </label>
+                <label title="How long after swap now the director says go go go: how long your swap key and Zwift take before riding off is safe. Practice tells you; 0 to 10 s.">
+                    <key>Swap: go after:</key>
+                    <input type="number" name="swapGoS" min="0" max="10" step="0.5" style="--size: 4"/> s
+                </label>
                 <label title="After step left / right, block left / right and ease off, if you tried (steered the way it said, or lowered your power for ease off): a high chime when it worked, a low chime when it did not. The word turns green or magenta either way.">
                     <key>Done / failed chime:</key>
                     <input type="checkbox" name="outcomeChime"/>
@@ -98,9 +114,9 @@
                     <key>Jump lead:</key>
                     <input type="number" name="callLeadS" min="0" max="5" step="0.1" style="--size: 4"/> s
                 </label>
-                <label title="How long after the window shows a call you hear it: earbuds, a mixer or Bluetooth add a delay. The voice says its seconds that much lower, so the number is right when you hear it. 0 if they arrive together; about 1 if the voice is a second behind the window.">
+                <label title="How long after the window shows a call you hear it: earbuds, a mixer or Bluetooth add a delay. The voice says its seconds that much lower, so the number is right when you hear it. 0 if they arrive together; about 1 if the voice is a second behind the window; negative (say -0.5) if the voice's numbers come out too low.">
                     <key>Audio delay:</key>
-                    <input type="number" name="audioDelayS" min="0" max="5" step="0.1" style="--size: 4"/> s
+                    <input type="number" name="audioDelayS" min="-3" max="5" step="0.1" style="--size: 4"/> s
                 </label>
                 <label title="A U-turn takes this much longer on top of the jump lead: how long your button takes. Keyboard Down arrow or a Stream Deck key sending it: 0. Companion, Zwift Play, Zwift Ride, which you hold: about 2.5 (riders report 2 to 3).">
                     <key>U-turn button:</key>

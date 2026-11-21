@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildData} from '../pages/src/ds-data.mjs';
-import {dsCall, spokenWords, Announcer} from '../pages/src/calls.mjs';
+import {dsCall, spokenWords, Announcer, audioDelayOf} from '../pages/src/calls.mjs';
 import {bendsAlong, BEND_START_DEG, BEND_ONSET_PER10M, BEND_BACK_MAX_M} from '../pages/src/engine/bend-live.mjs';
 
 const me = () => ({athleteId: 1, self: true, state: {athleteId: 1, worldTime: 1000, speed: 30, power: 200}});
@@ -28,7 +28,14 @@ test('your audio delay comes off the spoken seconds, a number or read each time 
     assert.equal(spokenWords(bend, {chime: true}), 'right in 9');
     assert.equal(spokenWords(bend, {chime: true, delayS: 1}), 'right in 8');   // 1.34 + 1 s
     assert.equal(spokenWords({...bend, in: 2}, {chime: true, delayS: 1}), 'right', 'would reach 0: no number');
-    for (const junk of [NaN, -3, null, undefined]) assert.equal(spokenWords(bend, {chime: true, delayS: junk}), 'right in 9', String(junk));
+    for (const junk of [NaN, null, undefined, '1']) assert.equal(spokenWords(bend, {chime: true, delayS: junk}), 'right in 9', String(junk));
+    // v0.69.1: negative = the voice reaches you early; the lead never below 0, clamped to AUDIO_DELAY_RANGE_S
+    assert.equal(spokenWords({...bend, in: 10.4}, {chime: true, delayS: -0.5}), 'right in 10', '1.34 - 0.5 s');
+    assert.equal(spokenWords(bend, {chime: true, delayS: -3}), 'right in 10', 'lead 0: the count the window shows');
+    assert.equal(spokenWords(bend, {chime: true, delayS: -50}), 'right in 10', 'clamped');
+    assert.equal(spokenWords(bend, {chime: true, delayS: 50}), 'right in 4', 'clamped to 5 s');
+    assert.equal(audioDelayOf('-0.5'), -0.5);
+    assert.equal(audioDelayOf('x'), 0);
     let lag = 1;
     const a = new Announcer({delayS: () => lag});
     assert.equal(a.offer(bend, {chime: true, voice: true}, 0).say, 'right in 8');

@@ -55,6 +55,8 @@ export const CALL_TYPES = [
      tones: [440, 440]},
     {id: 'bridge', label: 'Bridge', hint: 'after you press Bridge (the Bridge button setting, below): when to go for the riders up the road for the least FRC ("bridge now", "bridge on the climb in 40", "last chance to bridge", "too far to bridge"), then the watts to hold on the way, and "made it"',
      tones: [660, 990, 1320]},
+    {id: 'swap', label: 'Bike swap', hint: 'after you press Swap (the Swap button setting, below): "coast to a stop", "swap now" once you have stopped (press your own swap key), then "go go go" (v0.70.0, swap.mjs). Said the moment each step comes, over any other call',
+     tones: [990, 660, 990]},
     {id: 'pacing', label: 'Climb pacing', hint: 'a steep part ahead (when and how long), the top of the climb close',
      tones: [600, 800]},
     {id: 'bend', label: 'Bends', hint: 'their own lane (v0.57.0): every bend, not held back by the other calls. A bend ahead: "right in 6" (be on the right by the bend, 6 s on) when the inside is open and moving over ' +
@@ -93,7 +95,7 @@ export function deliveryKey(type, how) {
  * Wheel gap tile turns red when you push into the wheel). Step out is heard. Each one a checkbox away.
  */
 export const FRESH_VOICE = ['gap', 'step', 'moveUp', 'bridge', 'pace', 'pacing', 'sprint', 'powerup', 'card', 'surface', 'burrito', 'teamHr',
-                            'flyer', 'join'];
+                            'flyer', 'join', 'swap'];
 
 /*
  * Defaults for every delivery key, filled in only where a key is missing (meters.mjs applyDefaults), so a rider's own
@@ -122,7 +124,7 @@ export function deliveryDefaults(old = {}) {
         // v0.53.0: only after you press Bridge; v0.55.3: only with a segment card; v0.65.0 flyer (the user asked for it; ~6 an
         // hour of racing): spoken for everyone, existing installs too
         // v0.67.1 join (the user asked for it: "Sometimes I forget/almost forget to join"): spoken for everyone too
-        if (t.id === 'bridge' || t.id === 'pace' || t.id === 'flyer' || t.id === 'join') {
+        if (t.id === 'bridge' || t.id === 'pace' || t.id === 'flyer' || t.id === 'join' || t.id === 'swap') {   // v0.70.0 swap: only after you press Swap
             out[deliveryKey(t.id, 'chime')] = true;
             out[deliveryKey(t.id, 'voice')] = true;
             continue;
@@ -193,7 +195,7 @@ export function localizeUnits(text, imperial) {
 }
 
 /* Call priorities (docs/DS-DATA.md; the director's move-up 80 / sprint 55–93 sit around them). */
-export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace', 'join']);   // Announcer: no wait per type
+export const URGENT_TYPES = new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace', 'join', 'swap']);   // Announcer: no wait per type
 
 export const CALL_PRIORITY = {gap: 75, shatter: 75, pass: 70, blocked: 65, step: 65, alongside: 65, passed: 60, tuck: 40};
 
@@ -224,8 +226,8 @@ const call = (id, state, word, extra = {}) => ({id, state, word, in: null, for: 
 // v0.58.0: bends too, in the run-in and the sprint (the user, 2026-11-06: two hairpins in the last 300 m, ~4 m lost on
 // the first; "steering could really make a difference there"); they have their own lane, so they don't push a finish
 // call out
-export const FINALE_CALLS = {'run-in': new Set(['sprint', 'wheel', 'powerup', 'card', 'gap', 'shatter', 'bridge', 'pace', 'bend']),
-                             sprint: new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace', 'bend']), done: new Set()};
+export const FINALE_CALLS = {'run-in': new Set(['sprint', 'wheel', 'powerup', 'card', 'gap', 'shatter', 'bridge', 'pace', 'bend', 'swap']),
+                             sprint: new Set(['sprint', 'wheel', 'powerup', 'bridge', 'pace', 'bend', 'swap']), done: new Set(['swap'])};
 
 /*
  * Options: finale (FINALE_CALLS); through: you are moving up through the group (no hold calls, isHoldCall); lane:
@@ -303,7 +305,14 @@ export function callWords(c) {
  * A count of 20 s or under (exact seconds) is said that much lower; one that would reach 0 drops its number. The
  * windows keep the engine's own count. v0.68.1: delayS = your own audio delay on top (the Calls tab's Audio delay; the
  * user, 2026-11-19: "The time in the audio was one second behind the display ... Others may have a different delay").
+ * v0.69.1: negative too (the user, 2026-11-20: "make it so that it can go negative"): the voice reaching you early takes
+ * that much back, AUDIO_DELAY_RANGE_S; the whole lead never below 0 (never a count higher than the window's).
  */
+export const AUDIO_DELAY_RANGE_S = [-3, 5];
+export const audioDelayOf = x => {
+    const n = Number(x);
+    return Number.isFinite(n) ? Math.max(AUDIO_DELAY_RANGE_S[0], Math.min(AUDIO_DELAY_RANGE_S[1], n)) : 0;
+};
 export const SPEECH_START_S = 0.3;   // the browser's voice starting to speak
 export const SPEECH_WORD_S = 0.33;   // a short word at the voice's rate (1.05)
 export const CHIME_WAIT_S = 0.38;    // the chime before the words (speech.mjs CHIME.speakAfterMs)
@@ -311,7 +320,8 @@ export function spokenWords(c, {chime = false, delayS = 0} = {}) {
     if (!c) return '';
     if (!Number.isFinite(c.in) || c.in > 20) return callWords(c);
     const before = String(c.word || '').trim().split(/\s+/).filter(Boolean).length + 1;   // the words, then "in"
-    const leadS = (chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + before * SPEECH_WORD_S + (Number.isFinite(delayS) && delayS > 0 ? delayS : 0);
+    const leadS = Math.max(0, (chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + before * SPEECH_WORD_S +
+        (typeof delayS === 'number' ? audioDelayOf(delayS) : 0));
     const n = Math.round(c.in - leadS);
     return callWords({...c, in: n >= 1 ? n : null});
 }

@@ -253,6 +253,10 @@ const WHEEL_SPRINT = new Set(['windup', 'last', 'last-go', 'take-wheel', 'take-w
 export function directorCalls(ds) {
     const out = [];
     // join the race you signed up for (v0.67.1, join-watch.mjs: set by the DS window from Sauce's event list)
+    // a bike swap you started (the Swap button, v0.70.0; swap.mjs): over everything, it is what you are doing now
+    if (ds && ds.swap && ds.swap.state && ds.swap.word) {
+        out.push({id: 'swap', state: `${ds.swap.state}-${ds.swap.n}`, word: ds.swap.word, in: null, for: null, priority: 98});
+    }
     if (ds && ds.join && ds.join.word) out.push({id: 'join', state: ds.join.state, word: ds.join.word, in: null, for: null, priority: 97});
     const draftless = !!(ds && ds.draftless);   // no draft at all: no move up, habits or wheel calls (v0.40.0)
     const m = !draftless && ds && ds.moveUp;
