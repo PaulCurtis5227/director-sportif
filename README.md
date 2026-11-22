@@ -111,7 +111,11 @@ Sauce quit.
    your own swap key then), and "go go go" after **Swap: go after** seconds. At "go" it switches its bike to **Swap
    to** (and **Swap wheels**), so the meters use the right drag, and the next swap goes back. With OBS connected and
    not already recording, the press starts OBS recording and it stops 10 s after "go". Your own key does the swap:
-   nothing is sent to Zwift.
+   nothing is sent to Zwift. Swap with a **Stream Deck** key (no stop needed in a free ride)? Add one step to its
+   multi-action: a web request (a plugin that sends GET requests, such as API Ninja; Stream Deck's own Website action
+   opens a browser tab) to `http://localhost:1080/api/rpc/v2/updateAthleteData/InNlbGYi/eyJkc1N3YXAiOjJ9` (for your
+   other swap key, `eyJkc1N3YXAiOjN9` at the end). Sauce's web server must be on (its default port, 1080). Each press
+   switches the director's bike the same way, so the meters keep the right drag.
 2. **Tell it about you.** Gear ▸ **You**: your **bike** and **wheels** (Sauce doesn't say which you ride: the meters
    use them for your drag), and your **FTP** and **FRC** (for the FRC meter and the finish calls; left blank, your
    Zwift profile's FTP and 15 kJ).

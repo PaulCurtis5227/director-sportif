@@ -113,6 +113,9 @@ export function steepestAhead(pts, {vNow = 5, lookM = FEATHER_LOOK_M, sec = FEAT
  * dip between two ramps stays one climb). The profile's end when it never drops that far (or no climb in it).
  * Checked on the map export's KOMs: Epic KOM both ways, Volcano KOM (3.5 m dip), Itza, Jarvis, Titans Grove, Alpe du
  * Zwift, Ventoux, Innsbruck: each one climb, start to banner.
+ * The last meters of a climb you're on (under CLIMB_RISE_M still to rise, then the road drops CLIMB_DROP_M below its
+ * highest point): that point is the top (v0.76.1, DS v0.70.1; 2026-11-21 Watopia road 77 after the wooden bridge: "FEATHER in 80 …
+ * 40", then 10 m below the top this read "no climb", gave the profile's end, and topUnseen held the feather unused).
  */
 export function climbTopM(pts) {
     const p = (pts || []).filter(x => Number.isFinite(x.alt) && Number.isFinite(x.d));
@@ -121,11 +124,15 @@ export function climbTopM(pts) {
     }
     let lo = Infinity;
     let top = null;
+    let hi = null;   // the highest point so far, before any CLIMB_RISE_M rise
     for (const x of p) {
         if (!top) {
             lo = Math.min(lo, x.alt);
+            if (!hi || x.alt > hi.alt) hi = x;
             if (x.alt - lo >= CLIMB_RISE_M) {
                 top = {alt: x.alt, d: x.d};
+            } else if (hi !== p[0] && x.alt <= hi.alt - CLIMB_DROP_M) {
+                return hi.d;   // you're climbing to it (not on a descent from where you are)
             }
         } else if (x.alt > top.alt) {
             top = {alt: x.alt, d: x.d};

@@ -207,6 +207,8 @@
  * v0.54.1: the Grid keeps its size ride to ride (grid.mjs: fitted once per layout, tiles.mjs fitKey, setting fittedFor; the
  * "waiting" line over the tiles, not above them); a tile's text is centered (meters.css).
  * v0.70.0: the Swap button (setting swapButton; swap.mjs SwapCoach): "coast to a stop", "swap now", "go go go", the bike setting traded for swapBike at go, each step in the recording, OBS started for it.
+ * v0.70.1 (EM v0.76.1, 2026-11-21 ride): Watopia roads 93 / 94 (INVISIBLE_DIRT in the map) dirt only by road 77 (road-map ROAD_STYLE_FIXES patches; INVISIBLE_* rolls as pavement); the feather fires in the last 10 m of a climb before a drop (powerup-cue climbTopM: was "the top isn't in sight").
+ * v0.71.0 (2026-11-21, the user: "make something in the stream deck tell the ds that a swap happened"): deck-swap.mjs: a Stream Deck web request to Sauce (updateAthleteData self {dsSwap: slot}) = a swap: the bike traded like the Swap button's go, the draftless watch reset, rec.event {swap: 'deck', slot}; a full stop also resets draftless (draftless.mjs).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -242,8 +244,9 @@ import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY}
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
 import {JoinWatch, ServerClock, upcomingSignups} from './join-watch.mjs';
 import {SwapCoach, goSOf} from './swap.mjs';
+import {DeckSwap, DECK_SWAP_KEY} from './deck-swap.mjs';
 
-export const DS_VERSION = '0.70.0';
+export const DS_VERSION = '0.71.0';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -1039,6 +1042,8 @@ export async function main() {
         return how.voice ? (how.chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + audioDelayS() : audioDelayS();
     };
     const swapCoach = new SwapCoach({goS: () => goSOf(Common.settingsStore.get('swapGoS')), leadS: swapLeadS});
+    const deckSwap = new DeckSwap();   // your Stream Deck's "a swap happened" (deck-swap.mjs)
+    let deckTradedN = null;            // the coached swap whose bike the Stream Deck already traded
     const swapBtn = content.querySelector('button.swap');
     const showSwap = () => {
         const on = !!Common.settingsStore.get('swapButton');
@@ -1270,9 +1275,24 @@ export async function main() {
         // the bike swap you started (Swap button): each step said the moment it comes (its own sound, not the
         // announcer's 6 s gap: "go go go" 3 s after "swap now"), logged into the recording to measure the practice
         if (r.ds && r.me && r.me.self) {
+            // your Stream Deck says a swap happened (deck-swap.mjs): the bike traded now, the no-draft watch starts over;
+            // inside a coached swap its "go" then trades nothing more
+            const deck = deckSwap.update(r.me);
+            if (deck) {
+                Promise.resolve().then(() => Common.rpc.updateAthleteData('self', {[DECK_SWAP_KEY]: 0}))
+                    .catch(e => console.warn('deck swap clear', e));
+                if (!deck.stale) {
+                    const traded = tradeBike();
+                    engine.draftlessWatch.reset();
+                    if (swapCoach.active) deckTradedN = swapCoach.n;
+                    if (rec) rec.event(Date.now(), {swap: 'deck', slot: deck.slot, n: swapCoach.active ? swapCoach.n : null,
+                                                    speedKmh: r.me.state.speed, power: r.me.state.power,
+                                                    ...(traded ? {bike: traded.from, to: traded.to} : {})});
+                }
+            }
             const sw = r.ds.swap = swapCoach.update({wt: r.me.state.worldTime, speedKmh: r.me.state.speed});
             if (sw.step) {
-                const traded = sw.trade ? tradeBike() : null;
+                const traded = sw.trade && sw.n !== deckTradedN ? tradeBike() : null;
                 if (rec) rec.event(Date.now(), {swap: sw.step, n: sw.n, speedKmh: r.me.state.speed, power: r.me.state.power,
                                                 ...(sw.early ? {early: true} : {}), ...(sw.predicted ? {predicted: true, toStopS: +sw.toStopS.toFixed(2)} : {}), ...(traded ? {bike: traded.from, to: traded.to} : {})});
                 const how = delivery.swap;

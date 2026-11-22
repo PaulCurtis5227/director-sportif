@@ -19,6 +19,7 @@ export const DRAFTLESS_MIN_KMH = 25;    // ticks slower than this don't count
 export const DRAFTLESS_WHEEL_M = [0.5, 6];   // the wheel: in line, this close (you'd draft from it on a road bike)
 export const DRAFT_ZERO_W = 1;          // a draft this small is none
 export const DRAFT_SOME_W = 5;          // a draft this big: you do get it (back to the pack calls at once)
+export const STOPPED_KMH = 1;           // slower than this = stopped (a bike swap may follow)
 const MAX_DT_S = 2;                     // a longer hole in the ticks counts this much
 
 export class DraftlessWatch {
@@ -40,7 +41,11 @@ export class DraftlessWatch {
         const dt = this.lastWt == null || wt <= this.lastWt ? 0 : Math.min(MAX_DT_S, (wt - this.lastWt) / 1000);
         if (this.lastWt == null || wt > this.lastWt) this.lastWt = wt;
         const d = Number.isFinite(draft) ? draft : 0;
-        if (d > DRAFT_SOME_W) {
+        // a full stop may be a bike swap (Zwift swaps only while stopped): start over (v0.70.1; 2026-11-21: swapped from
+        // the Hanzo to the P74 at the top, alone on the descent: "no tuck" for 4.5 min, until a draft at 40:20)
+        if (Number.isFinite(kmh) && kmh < STOPPED_KMH) {
+            this.zeroS = 0;
+        } else if (d > DRAFT_SOME_W) {
             this.zeroS = 0;
         } else if (d <= DRAFT_ZERO_W && !noDraftWheel && kmh >= DRAFTLESS_MIN_KMH && Number.isFinite(gapM) &&
                    gapM >= DRAFTLESS_WHEEL_M[0] && gapM <= DRAFTLESS_WHEEL_M[1]) {

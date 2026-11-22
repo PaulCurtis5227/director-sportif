@@ -22,6 +22,14 @@ test('no draft on a wheel for 10 s: you get none; any draft brings the pack back
     assert.equal(w.update({wt: 200000, draft: 40, gapM: 2}), false, 'draft again');
 });
 
+test('v0.70.1: a full stop (a bike swap may follow) starts over: the P74 alone on the descent is not a TT', () => {
+    const w = new DraftlessWatch();
+    assert.equal(feed(w, DRAFTLESS_S + 5, {draft: 0, gapM: 2, kmh: 30}), true, 'the Hanzo on a wheel');
+    assert.equal(feed(w, 1, {draft: 0, gapM: null, kmh: 0}, 100), false, 'stopped to swap');
+    assert.equal(feed(w, 60, {draft: 0, gapM: null, kmh: 60}, 101), false, 'alone down the descent: nothing to prove it');
+    assert.equal(feed(w, DRAFTLESS_S + 1, {draft: 0, gapM: 2, kmh: 30}, 200), true, 'a TT again on a wheel: back within 10 s');
+});
+
 test('v0.60.1: slow ticks (a road bike\'s draft can be ~1 W) and estimated gaps (half) count less', () => {
     const w = new DraftlessWatch();
     assert.equal(feed(w, 60, {draft: 0, gapM: 2, kmh: 15}), false, 'a slow climb proves nothing');

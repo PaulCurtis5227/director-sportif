@@ -31,6 +31,11 @@ export function surfaceExtraCrr(surface, tyre = 'road') {
 /* Map surface name -> SURFACES id (pavement, wood, brick, cobbles, dirt, gravel, grass, sand, snow). */
 export function styleCategory(style) {
     const s = String(style || '').toUpperCase();
+    // INVISIBLE_DIRT (Watopia's short link roads): not rolled as dirt (2026-11-21: road 79, 1.4 km, at pavement Crr;
+    // roads 93 / 94 only by road 77, fixed above)
+    if (/INVISIBLE/.test(s)) {
+        return 'pavement';
+    }
     if (/WOOD/.test(s)) {
         return 'wood';
     }
@@ -71,13 +76,25 @@ export function roadPercent(s) {
  * surface style to use for the whole road. Drop one once Sauce's data agrees.
  *   Watopia road 135 = Repack Rush, the only route on it: GRASS end to end in the map (the old Repack Ridge MTB
  *   singletrack); paved since the rework (the user rode it, 2026-11-07; Zwift Insider's route page: "paved").
+ * A fix is a style for the whole road, or {defaultStyle, styles: [{start, end, style}]} (road percents) for a patch.
+ *   Watopia roads 93 / 94 (INVISIBLE_DIRT end to end in the map; the two one-way links between road 6 and road 77's
+ *   wooden bridge): Zwift rolls only ~50–60 m by road 77 as dirt, the rest as pavement (2026-11-21, 20 passes, Crr from
+ *   the energy balance: 0.015 vs 0.003; research/2026-11-21/invisible-dirt.mjs, patch-spots.mjs; the user: "called much
+ *   longer than it was", "2 or 3 seconds long, then it goes to wood"). Road 94 is entered from 77 at p 0.38, road 93
+ *   left onto 77 at p 0.35.
  */
-export const ROAD_STYLE_FIXES = Object.freeze({6: Object.freeze({135: 'NORMAL'})});
+export const ROAD_STYLE_FIXES = Object.freeze({6: Object.freeze({
+    135: 'NORMAL',
+    93: Object.freeze({defaultStyle: 'NORMAL', styles: Object.freeze([Object.freeze({start: 0.3, end: 0.62, style: 'DIRT'})])}),
+    94: Object.freeze({defaultStyle: 'NORMAL', styles: Object.freeze([Object.freeze({start: 0.3, end: 0.6, style: 'DIRT'})])}),
+})});
 
 /* A road from Sauce with any fix above applied (a copy; the original is left alone). */
 export function fixRoad(courseId, road) {
-    const style = ROAD_STYLE_FIXES[courseId]?.[road?.id];
-    return style ? {...road, defaultStyle: style, styles: []} : road;
+    const fix = ROAD_STYLE_FIXES[courseId]?.[road?.id];
+    if (!fix) return road;
+    return typeof fix === 'string' ? {...road, defaultStyle: fix, styles: []} :
+        {...road, defaultStyle: fix.defaultStyle, styles: fix.styles.map(x => ({...x}))};
 }
 
 /* The style at road percent p: later sections override earlier ones (e.g. CITY −1..2 with cobbles on top). */
