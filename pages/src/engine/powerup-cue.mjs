@@ -238,3 +238,149 @@ export class FeatherPick {
                 text: `Feather: fire in ${Math.round(toM)} m, at the steepest part (${pct}% for ~30 s)`};
     }
 }
+
+/*
+ * The anvil (v0.77.0 / DS v0.72.0; the user, 2026-11-22: "Add the anvil power up to ds"). Measured in the 2026-11-22
+ * race (docs/FINDINGS.md, research/2026-11-22 anvils.mjs, anvil-field.mjs): for 15 s on road dropping 1.5% or more, its
+ * kilos (ZI's sliding scale, blocking.mjs anvilKg) act as a PUSH: you get the energy of those kilos dropping down the
+ * hill (anvil kg × g × the meters dropped) without having to speed them up. So the best 15 s is where you drop the most
+ * meters: steep AND fast (the caffecter anvil page's rule of thumb). Look ahead to the bottom of the descent you're on or
+ * coming to (descentEndM), or the next arch that gives a power-up, whichever comes first; a 15 s that drops ANVIL_BETTER_M
+ * more further down is worth keeping it for ('wait', no call, until it comes within ANVIL_LOOK_M).
+ */
+export const ANVIL_SEC = 15;
+export const ANVIL_MIN_GRADE = 0.015;   // it does nothing on road dropping less than this
+export const ANVIL_MIN_DROP_M = 5;      // a 15 s worth calling: at least this many meters of drop (~1.5 kJ for a 75 kg rider)
+export const ANVIL_LOOK_M = 1000;       // the countdown starts when the best 15 s is this close
+export const ANVIL_FAR_M = 6000;        // how far down a descent it looks for a better 15 s
+export const ANVIL_BETTER_M = 2;        // a 15 s further down this many meters' drop better: keep it for that one
+export const ANVIL_FIRE_M = 20;         // this close to the best 15 s = fire now
+export const ANVIL_FIRE_AFTER_S = 3;    // AnvilPick: "fire" up to this far into it, then spent
+
+/* Meters to the bottom of the descent you're on or coming to: climbTopM on the road upside down. */
+export function descentEndM(pts) {
+    return climbTopM((pts || []).map(x => ({...x, alt: Number.isFinite(x.alt) ? -x.alt : x.alt})));
+}
+
+/*
+ * The 15 s ahead that drops the most, from the road profile [{d, alt, v}]: {startM, dropM, secs, endM} or null. Only road
+ * dropping ANVIL_MIN_GRADE or more counts (the anvil is off elsewhere); time per step from the riders' speed there, else vNow.
+ * It starts on road already dropping that much (2026-11-22 replay: the whole Jarvis descent fits in 15 s at its speed, every
+ * start tied and the first won: "ANVIL now" on the -0.5% approach, 50 s early; the top of the drop is the moment).
+ */
+export function mostDropAhead(pts, {vNow = 10, lookM = ANVIL_LOOK_M, sec = ANVIL_SEC} = {}) {
+    const p = (pts || []).filter(x => Number.isFinite(x.alt) && Number.isFinite(x.d));
+    if (p.length < 3) {
+        return null;
+    }
+    let best = null;
+    for (let i = 0; i + 1 < p.length && p[i].d <= lookM; i++) {
+        const d0 = p[i + 1].d - p[i].d;
+        if (!(d0 > 0) || (p[i].alt - p[i + 1].alt) / d0 < ANVIL_MIN_GRADE) continue;
+        let t = 0;
+        let drop = 0;
+        let j = i;
+        for (; j + 1 < p.length && t < sec; j++) {
+            const dd = p[j + 1].d - p[j].d;
+            if (dd <= 0) {
+                continue;
+            }
+            const vs = Math.max(2, ((p[j].v ?? vNow) + (p[j + 1].v ?? vNow)) / 2);
+            const dt = Math.min(dd / vs, sec - t);   // the last step only as far as the 15 s reach
+            const dh = p[j].alt - p[j + 1].alt;
+            if (dh / dd >= ANVIL_MIN_GRADE) drop += dh * dt / (dd / vs);
+            t += dt;
+        }
+        if (t >= sec * 0.66 && (!best || drop > best.dropM + 1e-6)) {   // a tie (an even slope): the first
+            best = {startM: p[i].d, dropM: drop, secs: t, endM: p[Math.min(j, p.length - 1)].d};
+        }
+    }
+    return best;
+}
+
+/*
+ * held: availablePowerUp; profile: the road ahead [{d, alt, v}] (to the bottom of the descent, ideally); v: m/s;
+ * archM: meters to the next arch that gives a power-up (null: not known); open: the road past the profile is unknown.
+ */
+export function anvilCue({held, profile, v, archM = null, open = false}) {
+    if (held !== 'ANVIL') {
+        return none;
+    }
+    const arch = Number.isFinite(archM) && archM > 0 ? archM : Infinity;
+    const p = profile || [];
+    const known = p.at(-1)?.d ?? 0;
+    // fired before the next arch (ANVIL_FIRE_M short of it), so that arch gives you a new power-up
+    const limitM = Math.min(descentEndM(p), arch - ANVIL_FIRE_M, ANVIL_FAR_M);
+    const near = mostDropAhead(p, {vNow: v, lookM: Math.min(ANVIL_LOOK_M, limitM)});
+    const far = mostDropAhead(p, {vNow: v, lookM: limitM});
+    // the bottom out of sight (the road still dropping at its end, nothing known past it): keep it only while less than
+    // ANVIL_LOOK_M of road is known. Not the feather's "wait for the top": off a route the map's road ends at the next
+    // junction, mid-descent on Jarvis (2026-11-22 replay: "wait" all the way down every lap, where the user fired it right),
+    // and a descent is short: waiting past the steep part throws the anvil away
+    if (open && known < ANVIL_LOOK_M && p.length >= 2 && descentEndM(p) >= known - 1 && !(arch <= known) && far && far.dropM >= ANVIL_MIN_DROP_M) {
+        return {state: 'wait', startM: null, dropM: null, text: "Anvil: keep it, the bottom isn't in sight yet"};
+    }
+    if (far && far.startM > ANVIL_LOOK_M && far.dropM >= ANVIL_MIN_DROP_M &&
+        (!near || far.dropM >= near.dropM + ANVIL_BETTER_M || near.endM >= far.startM)) {
+        return {state: 'wait', startM: far.startM, dropM: far.dropM,
+                text: `Anvil: keep it for ${Math.round(far.dropM)} m of drop in ${Math.round(far.startM)} m`};
+    }
+    if (!near || near.dropM < ANVIL_MIN_DROP_M) {
+        return none;
+    }
+    if (near.startM <= ANVIL_FIRE_M) {
+        return {state: 'fire', startM: near.startM, dropM: near.dropM, text: `FIRE ANVIL NOW — ${Math.round(near.dropM)} m of drop in 15 s`};
+    }
+    return {state: 'ready', startM: near.startM, dropM: near.dropM,
+            text: `Anvil: fire in ${Math.round(near.startM)} m, for ${Math.round(near.dropM)} m of drop in 15 s`};
+}
+
+/*
+ * The anvil cue held still, like FeatherPick: the target kept where it is on the road (odoM = your distance ridden), "fire"
+ * from ANVIL_FIRE_M before it to ANVIL_FIRE_AFTER_S into it. Passed unused, unlike the feather, the next drop still counts
+ * (2026-11-22 replay: Jarvis comes in two drops, the first called, let go, and the second, where the user fired, got
+ * nothing): a 15 s that starts past the passed one's (ANVIL_SEC at your speed) and drops ANVIL_AGAIN_SHARE of it is
+ * called; inside that, only one ANVIL_BETTER_M better (the best 15 s sliding along an even descent: not fire, ready, fire).
+ */
+export const ANVIL_AGAIN_SHARE = 0.8;
+export class AnvilPick {
+    constructor() {
+        this.reset();
+    }
+
+    reset() {
+        this.target = null;   // {atM (odo), dropM}
+        this.spent = null;    // a target passed unused: {dropM, untilM (odo): where a next one may start}
+    }
+
+    update(cue, {odoM, v = 10} = {}) {
+        if (!cue || !cue.state || !Number.isFinite(odoM)) {
+            this.reset();
+            return cue || none;
+        }
+        if (cue.state === 'wait') {
+            this.target = null;
+            return cue;
+        }
+        if (this.spent) {
+            const atM = odoM + cue.startM;
+            const again = atM >= this.spent.untilM && cue.dropM >= ANVIL_AGAIN_SHARE * this.spent.dropM;
+            if (!again && cue.dropM < this.spent.dropM + ANVIL_BETTER_M) return none;
+        }
+        if (!this.target || cue.dropM >= this.target.dropM + ANVIL_BETTER_M) {
+            this.target = {atM: odoM + cue.startM, dropM: cue.dropM};
+            this.spent = null;
+        }
+        const toM = this.target.atM - odoM;
+        if (toM < -ANVIL_FIRE_AFTER_S * Math.max(v, 2)) {
+            this.spent = {dropM: this.target.dropM, untilM: this.target.atM + ANVIL_SEC * Math.max(v, 2)};
+            this.target = null;
+            return none;
+        }
+        const dm = Math.round(this.target.dropM);
+        if (toM <= ANVIL_FIRE_M) {
+            return {state: 'fire', startM: Math.max(0, toM), dropM: this.target.dropM, text: `FIRE ANVIL NOW — ${dm} m of drop in 15 s`};
+        }
+        return {state: 'ready', startM: toM, dropM: this.target.dropM, text: `Anvil: fire in ${Math.round(toM)} m, for ${dm} m of drop in 15 s`};
+    }
+}

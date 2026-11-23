@@ -226,7 +226,7 @@ export const CALL_WORDS = {
  * launch, the launch from the pack getting jumpy, the race card or your learned launch distance (docs/PLAN.md §6).
  */
 export const POWERUP_NAMES = {AERO: 'AERO', DRAFTBOOST: 'VAN', NINJA: 'GHOST', UNDRAFTABLE: 'BURRITO', BOOST: 'ARROWS',
-                              LIGHTNESS: 'FEATHER'};
+                              LIGHTNESS: 'FEATHER', ANVIL: 'ANVIL'};
 const FIRE_AT_S = {AERO: 15, DRAFTBOOST: 45, UNDRAFTABLE: 20};   // the van called at 45 s (engine/director.mjs VAN_S)
 const GHOST_AT_M = 400;
 
@@ -238,6 +238,7 @@ export const FEATHER_FIRE_PRIORITY = 86.5;   // over the finish's "jump in N" (8
 export const FEATHER_SOON_PRIORITY = 87.5;
 export const FEATHER_SOON_S = 12;
 export const FEATHER_SOON_FOR_S = 4;
+export const ANVIL_CALL_S = 60;   // the anvil's countdown is called from this many seconds out (v0.72.0)
 
 /* Seconds for a call: to 5 s above 20 s, whole seconds below (docs/DS-DATA.md). */
 export function roundIn(secs) {
@@ -346,6 +347,16 @@ export function directorCalls(ds) {
                   in: f.state === 'ready' ? (soon ? 10 : roundIn(f.inS)) : null, for: null,
                   priority: f.state === 'fire' ? FEATHER_FIRE_PRIORITY : soon ? FEATHER_SOON_PRIORITY : 50});
     }
+    // the anvil you hold (v0.72.0): the 15 s ahead that drops the most; the feather's words and priorities ("ANVIL in 20",
+    // "ANVIL in 10" over the finish's calls for a moment, "ANVIL now")
+    // the countdown only inside ANVIL_CALL_S (the 2026-11-22 replay counted "ANVIL in 120" up the whole Jarvis climb)
+    const an = ds && ds.anvil;
+    if (an && (an.state === 'fire' || (an.state === 'ready' && Number.isFinite(an.inS) && an.inS <= ANVIL_CALL_S))) {
+        const soon = an.state === 'ready' && Number.isFinite(an.inS) && an.inS <= FEATHER_SOON_S && an.inS > FEATHER_SOON_S - FEATHER_SOON_FOR_S;
+        out.push({id: 'powerup', state: soon ? 'anvil-soon' : `anvil-${an.state}`, word: an.state === 'fire' ? 'ANVIL now' : 'ANVIL',
+                  in: an.state === 'ready' ? (soon ? 10 : roundIn(an.inS)) : null, for: null,
+                  priority: an.state === 'fire' ? FEATHER_FIRE_PRIORITY : soon ? FEATHER_SOON_PRIORITY : 50});
+    }
     const n = !draftless && ds && ds.nudge;
     if (n && CALL_WORDS.nudge[n.state]) {
         out.push({id: 'nudge', state: n.state, word: CALL_WORDS.nudge[n.state], in: null, for: null, priority: n.priority});
@@ -365,7 +376,8 @@ export function directorCalls(ds) {
             const name = sp.state.slice(5);   // SprintCoach's own names: AERO, VAN, GHOST, BURRITO, ARROWS
             out.push({id: 'powerup', state: `fire-${name.toLowerCase()}`, word: `${name} now`, in: null, for: null,
                       priority: sp.priority});
-        } else if (sp.state === 'prep' && sp.held && POWERUP_NAMES[sp.held] && !(sp.held === 'LIGHTNESS' && f && f.state)) {
+        } else if (sp.state === 'prep' && sp.held && POWERUP_NAMES[sp.held] && sp.held !== 'ANVIL' && !(sp.held === 'LIGHTNESS' && f && f.state)) {
+            // (not the anvil, v0.72.0: it does nothing on a flat finish; a descent ahead times it, above)
             // (a climb ahead times the feather, above: Spiral Summit 2026-10-27 said "FEATHER at jump" 1.2 km out on the
             // Volcano, and it went there; the 9% kick at 320 m was the place)
             // holding one for the finish: when to fire it (the arrows and the feather: on your jump, no seconds)

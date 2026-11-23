@@ -117,3 +117,18 @@ test('group shattering (2026-10-25) is its own call (v0.57.0: was a gap call)', 
     assert.equal(c.id, 'shatter');
     assert.equal(c.word, 'group shattering');
 });
+
+test('v0.72.0: the anvil: "ANVIL in N", "ANVIL in 10" briefly over the finish, "ANVIL now"; never "ANVIL at jump"', () => {
+    const at = inS => directorCalls({anvil: {state: 'ready', inS}}).find(c => c.id === 'powerup');
+    assert.equal(at(60).state, 'anvil-ready');
+    assert.equal(at(60).word, 'ANVIL');
+    assert.equal(at(60).in, 60);
+    assert.equal(at(11).state, 'anvil-soon');
+    assert.equal(at(11).in, 10);
+    const fire = directorCalls({anvil: {state: 'fire', inS: 0}}).find(c => c.id === 'powerup');
+    assert.equal(fire.word, 'ANVIL now');
+    assert.ok(fire.priority > 86, 'over "jump in N"');
+    assert.equal(directorCalls({anvil: {state: 'wait'}}).find(c => c.id === 'powerup'), undefined, 'keeping it: no call');
+    assert.equal(directorCalls({sprint: {state: 'prep', held: 'ANVIL', priority: 80}}).find(c => c.id === 'powerup'), undefined,
+                 'a flat finish: the anvil does nothing there');
+});

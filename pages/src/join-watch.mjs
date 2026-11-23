@@ -21,6 +21,24 @@
 export const JOIN_AT_S = [180, 120, 60, 30];
 export const JOIN_HOLD_S = 8;          // a reminder stays up this long (time for the voice to pick it up)
 export const JOIN_LOOK_MS = 30 * 60 * 1000;   // events starting within this are looked at
+/*
+ * On Zwift's countdown, not the listed start (v0.71.1; the user, 2026-11-22: "the calls for the race start were 3 or 4
+ * seconds later than the zwift count down"). Measured on the user's clip: the DS decided "join in 1 minute" at the
+ * listed start (sg.ts) − 60.0 s by Zwift's clock (+0.37 s, the tick), the text on screen within ~1 s (Zwift's elapsed
+ * timer 59:44 = your state's time a second after the decision), and Zwift's countdown read 56 then: it runs ~3–4 s
+ * ahead of the listed start (one sample; part may be the window's own lag). So a reminder goes ZWIFT_AHEAD_S earlier,
+ * plus update's leadS(word): the seconds from the call to its number reaching you (the chime's wait, the voice
+ * starting, the words before the number, your Audio delay; meters.mjs), and on the tick nearest its moment
+ * (JOIN_TICK_S, half the ~1 s nearby tick). NOT the cause of the 3–4 s: the text was late too.
+ */
+export const ZWIFT_AHEAD_S = 3.5;
+export const JOIN_TICK_S = 0.5;
+/* The words said before the number ("join in 2 minutes": 2; "join now: 30 seconds": 2). */
+export function wordsBeforeNumber(word) {
+    const w = String(word || '').trim().split(/\s+/).filter(Boolean);
+    const i = w.findIndex(x => /\d/.test(x));
+    return i < 0 ? w.length : i;
+}
 
 /*
  * Your signed-up starts from Sauce's cached events, soonest first: [{eventId, name, sgId, label, startMs, sgIds (all of
@@ -97,7 +115,7 @@ export class JoinWatch {
      * not in and that hasn't started. Returns {state: 'join-<S>' | 'next-<S>', word, at (s), startMs} while a reminder is
      * up, else null.
      */
-    update({now, next, mySg}) {
+    update({now, next, mySg, leadS = 0}) {
         const list = Array.isArray(next) ? next : next ? [next] : [];
         next = list.find(x => !(mySg != null && x.sgIds.includes(mySg)) && now < x.startMs) || null;
         if (!next) {
@@ -107,11 +125,15 @@ export class JoinWatch {
         const left = (next.startMs - now) / 1000;
         const said = this.said.get(next.eventId) || this.said.set(next.eventId, new Set()).get(next.eventId);
         // the threshold just passed: the smallest JOIN_AT_S at or above the seconds left that hasn't been said
-        const due = JOIN_AT_S.filter(S => left <= S && !said.has(S));
+        const inEvent = mySg != null;   // riding another event: "next event in …"
+        const leadOf = S => {
+            const x = typeof leadS === 'function' ? leadS(joinWord(S, inEvent)) : leadS;
+            return ZWIFT_AHEAD_S + Math.max(0, Number.isFinite(x) ? x : 0) + JOIN_TICK_S;
+        };
+        const due = JOIN_AT_S.filter(S => left <= S + leadOf(S) && !said.has(S));
         if (due.length) {
             const S = Math.min(...due);
             for (const x of due) said.add(x);   // passed ones (the DS opened late) aren't said one after another
-            const inEvent = mySg != null;   // riding another event: "next event in …"
             this.last = {state: `${inEvent ? 'next' : 'join'}-${S}`, word: joinWord(S, inEvent), at: S, startMs: next.startMs, until: now + JOIN_HOLD_S * 1000};
         }
         if (this.last && now > this.last.until) this.last = null;

@@ -65,6 +65,7 @@
  *                 'right', the bend's way), inS, moveM, gainM, lossM} or null; the same state two ticks running
  *   sCurve        a stretch ahead that twists enough to steer a shorter line (route-ahead.mjs curvyStretch, your route's
  *                 geometry; v0.51.0): {inS, turnDeg (over 100 m), s (bends both ways), dirt} or null; replaces bend
+ *   anvil         the anvil you hold (v0.72.0), for the 15 s ahead that drops the most: {state ready / fire / wait, dropM, inS}
  *   feather       the feather power-up you hold, for the steepest 30 s ahead (engine/powerup-cue.mjs featherCue, from
  *                 the Data Tap; v0.41.0): {state: 'ready' | 'fire', inS (to the steepest part), grade} or null
  *   pacing        the climb ahead (engine/pacing-cue.mjs, from the Data Tap): {state: 'steep' (a steep part ahead:
@@ -140,7 +141,7 @@ import {BendMap, RoadRails, lateralSituation, bendCue, bendsAlong, BEND_LOOK_M, 
 import {MoveUpCoach, SprintCoach, IntermediateCoach, NudgeCoach, decelAt, ftpKick, sprintWheels, fastCloser, sprintSettled, SETTLED, KEEP_GOING_M, lateralDepth}
     from './engine/director.mjs';
 import {predictedCap, crowdingCue} from './engine/draft-live.mjs';
-import {featherCue, FeatherPick} from './engine/powerup-cue.mjs';
+import {featherCue, FeatherPick, anvilCue, AnvilPick} from './engine/powerup-cue.mjs';
 import {withSpeeds, secsAlong, curvyStretch, S_CURVE} from './route-ahead.mjs';
 import {pacingCue, climbAhead, ClimbClock} from './engine/pacing-cue.mjs';
 import {DraftlessWatch} from './draftless.mjs';
@@ -351,6 +352,7 @@ export class MeterEngine {
         this.wheelHist = [];   // [{wt, id, gap}]: the wheel in line, ~4 s, for how fast you're really closing on it
         this.moveUpCoach = new MoveUpCoach();
         this.featherPick = new FeatherPick();   // the feather's target held where it is on the road (spent once passed)
+        this.anvilPick = new AnvilPick();       // the anvil's the same (v0.72.0)
         this.climbClock = new ClimbClock();   // how long you've been climbing ("over top" only after a real climb)
         this.wheelPick = new WheelPick();
         this.dangleWatch = new DangleWatch();   // last of your group, the wheel opening: "close up" earlier (v0.61.0)   // your wheel: in line, or up to 1 m aside (v0.60.1)
@@ -799,11 +801,13 @@ export class MeterEngine {
         // the feather you hold: at the steepest 30 s ahead
         // up the whole climb (to the next arch at most): the route's profile further than the 3 km above (Alpe du Zwift 12 km)
         // the map's off a route (2026-11-04: no route for the event; the riders' road ended 650 m up a 6.8 km climb)
+        // v0.72.0: the anvil looks down the whole descent the same way
+        const farHeld = held === 'LIGHTNESS' || held === 'ANVIL';
         let featherRoad = roadAhead, featherOpen = aheadOpen;
-        if (me.self && !settling && held === 'LIGHTNESS' && aheadFrom === 'route') {
+        if (me.self && !settling && farHeld && aheadFrom === 'route') {
             const far = this.routeAhead.ahead(s, FEATHER_ROAD_M);
             if (far && far.length >= 4) featherRoad = speedsOf(far);
-        } else if (me.self && !settling && held === 'LIGHTNESS' && aheadFrom === 'map') {
+        } else if (me.self && !settling && farHeld && aheadFrom === 'map') {
             const far = onMap(FEATHER_ROAD_M);
             if (far && far.pts.length >= 4) {
                 featherRoad = speedsOf(far.pts);
@@ -820,6 +824,12 @@ export class MeterEngine {
         const feather = fc && fc.state ? {state: fc.state, grade: fc.grade,
                                           inS: Math.max(secsAlong(featherRoad, fc.startM, this.pace.vFlat ?? v) || 0,
                                                         (s.grade || 0) >= 0.015 ? fc.startM / Math.max(v, 2) : 0)} : null;
+        // the anvil you hold (v0.72.0): the 15 s ahead that drops the most (to the bottom of the descent or the next arch):
+        // a push of its kilos down the slope (powerup-cue.mjs anvilCue); the seconds at the descent's speeds
+        const anvil0 = me.self && !settling && featherRoad && held === 'ANVIL' ?
+            anvilCue({held, profile: featherRoad, v, open: featherOpen, archM: this.raceCards ? this.raceCards.nextArch(s, {tt}) : null}) : null;
+        const anvilAt = this.anvilPick.update(anvil0, {odoM: s.distance, v});
+        const anvil = anvilAt && anvilAt.state ? {state: anvilAt.state, dropM: anvilAt.dropM, inS: anvilAt.startM == null ? null : secsAlong(featherRoad, anvilAt.startM, v) || 0} : null;
         // your sideways speed (m/s, + = toward your right) over the last LANE_V_S: a road change starts it over
         const laneNow = (s.roadPosition ?? 0) / UNIT_PER_M * (s.reverse ? -1 : 1);
         const laneKey = `${s.roadId}|${s.reverse ? 1 : 0}`;
@@ -870,7 +880,7 @@ export class MeterEngine {
             moveUp: climb && climb.state ? {state: climb.state, secs: climb.secs, priority: climb.priority, source: aheadFrom} : null,
             ahead: aheadFrom,
             nudge: nudge && nudge.state ? {state: nudge.state, priority: nudge.priority} : null,
-            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather, bridge: bridgeCall,
+            surfaceW, surfaceId: surface || null, surfaceAhead, pacing, bend, sCurve, feather, anvil, bridge: bridgeCall,
             burrito,
             flyer: flyer ? {riders: flyer.riders, gapS: flyer.gapS, gapM: flyer.gapM, say: flyer.say} : null,
             teamHr: me.self && this.raceFor(me) === true ? this.teamHrWatch.update(entries, me, s.worldTime) : null,

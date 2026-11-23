@@ -45,7 +45,7 @@ export const CALL_TYPES = [
      tones: [1100, 1320, 1100]},
     {id: 'wheel', label: 'Take the wheel', hint: 'the last km, before you can go to the line: a rider coming past 4–8 km/h faster is a wheel to take; "wheel, jump light / medium / hard" at the moment to go (2–3 s before they are level)',
      tones: [1100, 880]},
-    {id: 'powerup', label: 'Power-up', hint: 'at the finish: when to fire the power-up you hold (advice only)',
+    {id: 'powerup', label: 'Power-up', hint: 'at the finish: when to fire the power-up you hold; a feather before a climb, an anvil before a descent (advice only)',
      tones: [880, 1320, 1760]},
     {id: 'card', label: 'Race card', hint: 'the race card for this route: scored sprints and KOMs ahead and their line, ' +
      'arches that give a power-up, your notes', tones: [740, 990, 740]},

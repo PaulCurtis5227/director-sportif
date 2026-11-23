@@ -55,7 +55,9 @@ windows always show it. Times are in seconds, never meters.
   "over top in 15". From your route: it works alone, from the start.
 - **The finish**: "top ten in 120", "get a wheel", "last wheel, be ready", "jump in 20", "you can go", "dig in" (a rider
   closing fast), "keep going"; power-ups by Zwift's names ("VAN in 25", "AERO now"): advice only, never fired for you. A feather you
-  hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part.
+  hold gets its own call before a climb: "FEATHER in 20", then "FEATHER now" at the steepest part. An anvil you hold gets one before a
+  descent: "ANVIL in 20", then "ANVIL now" where 15 seconds of it drop you the most (the top of the steepest, fastest part; it does
+  nothing on the flat). How the anvil works: caffecter.com/anvil.html.
 - **The race card** for the route you're racing: "sprint in 70", "sprint line in 25", "use VAN in 35", your notes.
 - **Segment cards**: from a card with a plan ([caffecter.com](https://www.caffecter.com/members/segment.html), members' beta), "go in 10", then the plan's own words at each effort ("go, 730", "empty it"). In an event on the card's route, when you contest the segment, and in a free ride on any route that reaches it: there each pass records itself as a short file (setting Record segment passes), and a U-turn card calls the turn. Set your lead times on the Calls tab: about 1.5 s to react, plus how long your U-turn button takes. Hear the voice later than the window shows a call (earbuds, a mixer, Bluetooth)? Set **Audio delay** on the Calls tab (1 for a second; negative, say -0.5, if the spoken numbers come out too low): spoken countdowns then say the number you'll have when you hear it. A standing-start card says "stop" at its spot; wait there (brakes on) and it says "go" when the riders coming up behind will meet you at the banner, or "wait" with nobody coming. Advice only: the turn and the jump are yours.
 - **The road**: "dirt in 15 for 40"; in a race, "supertuck in 6" while you gain speed and "coast" when you're fast enough to supertuck; bends: "left in 6" (be on the left by the bend, 6 s on) when the

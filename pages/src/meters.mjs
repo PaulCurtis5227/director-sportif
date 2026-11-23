@@ -209,6 +209,8 @@
  * v0.70.0: the Swap button (setting swapButton; swap.mjs SwapCoach): "coast to a stop", "swap now", "go go go", the bike setting traded for swapBike at go, each step in the recording, OBS started for it.
  * v0.70.1 (EM v0.76.1, 2026-11-21 ride): Watopia roads 93 / 94 (INVISIBLE_DIRT in the map) dirt only by road 77 (road-map ROAD_STYLE_FIXES patches; INVISIBLE_* rolls as pavement); the feather fires in the last 10 m of a climb before a drop (powerup-cue climbTopM: was "the top isn't in sight").
  * v0.71.0 (2026-11-21, the user: "make something in the stream deck tell the ds that a swap happened"): deck-swap.mjs: a Stream Deck web request to Sauce (updateAthleteData self {dsSwap: slot}) = a swap: the bike traded like the Swap button's go, the draftless watch reset, rec.event {swap: 'deck', slot}; a full stop also resets draftless (draftless.mjs).
+ * v0.71.1 (2026-11-22, the user: "OBS started when I entered pen the first time about 25 minutes before the race", "the calls for the race start were 3 or for seconds later than the zwift count down"): OBS with the race only once it is due (obsDue: AUTO_LEAD_S before the start, the race moving, or the start not known; a start being looked up waits), in startRec too (Record all the time began a free-ride recording in the pen while the start was looked up, and OBS with it); join reminders on Zwift's countdown, ~3.5 s ahead of the listed start (join-watch.mjs ZWIFT_AHEAD_S; the text showed at countdown 56), plus the voice's lead (joinLeadS: chime, voice start, words before the number, Audio delay) and half a tick.
+ * v0.72.0 (2026-11-22, the user: "Add the anvil power up to ds"): the anvil you hold is called before a descent (powerup-cue.mjs anvilCue / AnvilPick, meter-engine ds.anvil, ds-data): "ANVIL in N" from ANVIL_CALL_S 60 s, "ANVIL now" at the start of the 15 s that drops the most (its kilos are a push: the energy of them dropping, docs/FINDINGS.md 2026-11-22), to the bottom of the descent or the next arch; a passed drop doesn't silence the next one (Jarvis comes in two); never "ANVIL at jump" (nothing on a flat finish). Replay 11-22: called on all 4 Jarvis descents, silent on the flat (the user fired 3 there and 2 still climbing). EM v0.77.0: blocking.mjs withPowerUp anvil as a push (mGrav).
  */
 
 import * as Common from '/pages/src/common.mjs';
@@ -219,7 +221,7 @@ import {setStyles, windowFitter, options} from './window-ui.mjs';
 import {Speaker} from './engine/speech.mjs';
 import {bikeCheckText} from './engine/bike-check.mjs';
 import {engineCall, engineCalls, Announcer, BEND_LANE, CALL_TYPES, deliveryGridHTML, deliveryDefaults, deliveryFor,
-    audioDelayOf, CHIME_WAIT_S, SPEECH_START_S}
+    audioDelayOf, CHIME_WAIT_S, SPEECH_START_S, SPEECH_WORD_S}
     from './calls.mjs';
 import {buildData, CHANNEL} from './ds-data.mjs';
 import {allWords} from './grid-fields.mjs';
@@ -242,11 +244,11 @@ import {GapNote} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
-import {JoinWatch, ServerClock, upcomingSignups} from './join-watch.mjs';
+import {JoinWatch, ServerClock, upcomingSignups, wordsBeforeNumber} from './join-watch.mjs';
 import {SwapCoach, goSOf} from './swap.mjs';
 import {DeckSwap, DECK_SWAP_KEY} from './deck-swap.mjs';
 
-export const DS_VERSION = '0.71.0';
+export const DS_VERSION = '0.72.0';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -964,13 +966,19 @@ export async function main() {
     // own recording would (AUTO_LEAD_S before the start, or the race moving) and stops AUTO_TAIL_S after you finish or
     // leave that event, if we started it. obsSg = the event OBS records for us.
     let obsSg = null, obsEndAt = null;
+    // OBS with the race is due: the race moving, or AUTO_LEAD_S before the event's start, or the start not known (the
+    // lookup gave up). v0.71.1 (2026-11-22: into the pen 26 min early, Record all the time started a free-ride recording
+    // while the start was still being looked up, and startRec started OBS with it at once): a start being looked up waits.
+    const obsDue = (moving, now = Date.now()) => {
+        const st = eventStart(mySg);
+        return !!(moving || st === null || (Number.isFinite(st) && now >= st - AUTO_LEAD_S * 1000));
+    };
     const obsRaceCheck = moving => {
         if (!rec || rehearsal || !Common.settingsStore.get('obsRecordWithRace')) return;
         const now = Date.now();
         if (obsSg == null) {
             if (!mySg || auto.hasEnded(mySg) || !(obs && obs.connected) || clock.starts.record != null) return;
-            const st = eventStart(mySg);
-            if (!(moving || st === null || (Number.isFinite(st) && now >= st - AUTO_LEAD_S * 1000))) return;
+            if (!obsDue(moving, now)) return;
             obsSg = mySg;
             obsEndAt = null;
             obsStartWithTitle().catch(e => console.warn('OBS record', e));
@@ -1040,6 +1048,12 @@ export async function main() {
     const swapLeadS = () => {
         const how = delivery.swap || {};
         return how.voice ? (how.chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + audioDelayS() : audioDelayS();
+    };
+    // a join reminder's number reaches you this long after the call (join-watch.mjs): the same, plus the words before it
+    const joinLeadS = word => {
+        const how = delivery.join || {};
+        return how.voice ? (how.chime ? CHIME_WAIT_S : 0) + SPEECH_START_S + wordsBeforeNumber(word) * SPEECH_WORD_S + audioDelayS() :
+            how.chime ? audioDelayS() : 0;
     };
     const swapCoach = new SwapCoach({goS: () => goSOf(Common.settingsStore.get('swapGoS')), leadS: swapLeadS});
     const deckSwap = new DeckSwap();   // your Stream Deck's "a swap happened" (deck-swap.mjs)
@@ -1126,7 +1140,9 @@ export async function main() {
         // record OBS with the race (only stopped later if we started it): only when you're in an event (the user,
         // 2026-10-19: a Record pressed in the warm-up free ride started OBS too), and not one you've finished (2026-10-24:
         // a recording 2 min after the finish, still in the event, started OBS again)
-        const raceOn = mySg && !auto.hasEnded(mySg);
+        // v0.71.1: and only once it's due (obsDue); before that obsRaceCheck starts it on time
+        const meNow = lastMe && lastMe.state, movingNow = !!(meNow && Number.isFinite(meNow.eventDistance) && meNow.eventDistance > 0);
+        const raceOn = mySg && !auto.hasEnded(mySg) && obsDue(movingNow);
         if ((rehearsing || (Common.settingsStore.get('obsRecordWithRace') && raceOn)) && obs && obs.connected && clock.starts.record == null) {
             if (!rehearsing) obsSg = mySg;
             obsStartWithTitle({rehearsing}).catch(e => console.warn('OBS record', e));
@@ -1271,7 +1287,8 @@ export async function main() {
         // join the race you signed up for: reminders before its start while you're not in it (join-watch.mjs)
         // timed by Zwift's clock, not the PC's (v0.67.2: the PC ran 1 s behind; join-watch.mjs ServerClock)
         if (r.me && r.me.self && r.me.state) serverClock.observe(r.me.state.worldTime);
-        if (r.ds && r.me && r.me.self) r.ds.join = joinWatch.update({now: serverClock.now(), next: nextJoin, mySg: r.me.state.eventSubgroupId || null});
+        // on Zwift's countdown, early by the time its number takes to reach you (v0.71.1; join-watch.mjs ZWIFT_AHEAD_S)
+        if (r.ds && r.me && r.me.self) r.ds.join = joinWatch.update({now: serverClock.now(), next: nextJoin, mySg: r.me.state.eventSubgroupId || null, leadS: joinLeadS});
         // the bike swap you started (Swap button): each step said the moment it comes (its own sound, not the
         // announcer's 6 s gap: "go go go" 3 s after "swap now"), logged into the recording to measure the practice
         if (r.ds && r.me && r.me.self) {

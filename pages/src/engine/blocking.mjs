@@ -64,7 +64,8 @@ const RHO = 1.225, G = 9.80665;
 /*
  * What each Zwift power-up does to YOUR physics (zwiftinsider.com/powerups/, /updated-feather-burrito/,
  * /update-1-39-0-110983/): AERO cuts CdA 25%; LIGHTNESS (feather) cuts body weight 10%; STEAMROLLER rolls like a road
- * tire on pavement whatever the tires and surface; ANVIL adds weight only on a descent of 1.5% or more, a share of your
+ * tire on pavement whatever the tires and surface; ANVIL (a push: weight in gravity and rolling only, not mass to speed up,
+ * measured 2026-11-22) adds weight only on a descent of 1.5% or more, a share of your
  * body weight that is bigger for lighter riders (since May 2023, zwiftinsider.com/rebalanced-powerups/: 50 kg rider
  * +40 kg, 100 kg rider +22.6 kg; Zwift publishes no formula, so anvilKg runs a line through those two). DRAFTBOOST is in Zwift's reported draft already; the
  * burrito (UNDRAFTABLE), ghost (NINJA) and XP act on others or on nothing. Not listed (coffee stop, a teleport, a new
@@ -87,14 +88,18 @@ export function anvilKg(bodyKg) {
     return Math.max(0, a0 + (a1 - a0) * (bodyKg - w0) / (w1 - w0));
 }
 
-/* This tick's CdA, Crr and mass with its power-up on; grade = the road over the tick (for the anvil). Null: unknown. */
+/*
+ * This tick's CdA, Crr and mass with its power-up on; grade = the road over the tick (for the anvil). Null: unknown.
+ * m = the mass you speed up; mGrav = the mass gravity and rolling act on. They differ only under the anvil, a PUSH
+ * (v0.77.0; 2026-11-22 race, docs/FINDINGS.md: its kilos pull you downhill but you don't have to speed them up).
+ */
 export function withPowerUp(tick, grade = 0) {
     const eff = tick.powerUp ? POWER_UPS[tick.powerUp] : {};
     if (!eff) return null;
     const body = Number.isFinite(tick.bodyKg) ? tick.bodyKg : tick.massKg - BIKE_KG;
-    let m = tick.massKg - (eff.bodyX ? body * (1 - eff.bodyX) : 0);
-    if (eff.anvil && grade <= -eff.minDescent) m += anvilKg(body);
-    return {cda: tick.cda * (eff.cdaX || 1), crr: eff.roadCrr ? Math.min(tick.crr, ROAD_CRR) : tick.crr, m};
+    const m = tick.massKg - (eff.bodyX ? body * (1 - eff.bodyX) : 0);
+    const mGrav = m + (eff.anvil && grade <= -eff.minDescent ? anvilKg(body) : 0);
+    return {cda: tick.cda * (eff.cdaX || 1), crr: eff.roadCrr ? Math.min(tick.crr, ROAD_CRR) : tick.crr, m, mGrav};
 }
 
 /*

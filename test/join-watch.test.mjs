@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nextSignup, upcomingSignups, JoinWatch, joinWord, JOIN_HOLD_S} from '../pages/src/join-watch.mjs';
+import {nextSignup, upcomingSignups, JoinWatch, joinWord, JOIN_HOLD_S, JOIN_TICK_S, ZWIFT_AHEAD_S, wordsBeforeNumber} from '../pages/src/join-watch.mjs';
 
 const T0 = Date.UTC(2026, 10, 14, 13, 0);   // the race: 13:00
 const events = [
@@ -33,7 +33,7 @@ test('reminders at 3, 2, 1 min and 30 s, each once, held a few seconds, none onc
         const r = w.update({now: start - s * 1000, next, mySg: null});
         if (r && (!said.length || said.at(-1).state !== r.state)) said.push({s, ...r});
     }
-    assert.deepEqual(said.map(x => [x.s, x.word]), [[180, 'join in 3 minutes'], [120, 'join in 2 minutes'], [60, 'join in 1 minute'], [30, 'join now: 30 seconds']]);
+    assert.deepEqual(said.map(x => [x.s, x.word]), [[184, 'join in 3 minutes'], [124, 'join in 2 minutes'], [64, 'join in 1 minute'], [34, 'join now: 30 seconds']], 'on the countdown: ZWIFT_AHEAD_S + half a tick early (v0.71.1)');
     const w2 = new JoinWatch();
     assert.ok(w2.update({now: start - 180000, next, mySg: null}));
     assert.ok(w2.update({now: start - 180000 + (JOIN_HOLD_S - 1) * 1000, next, mySg: null}), 'still up');
@@ -66,4 +66,29 @@ test('two signups (a 7:00 and an 8:00): each in turn; still in the first when th
     // in the 7:00's pen at 6:58 with the 8:00 also signed up: nothing for either yet
     assert.equal(new JoinWatch().update({now: seven - 120000, next: upcomingSignups(evs, seven - 120000), mySg: 70}), null);
     assert.equal(joinWord(120, true), 'next event in 2 minutes');
+});
+
+test("on Zwift's countdown (~3.5 s ahead of the listed start), and early by the time its number takes to reach you (the user, 2026-11-22: 3 or 4 seconds later than the zwift count down)", () => {
+    assert.equal(wordsBeforeNumber('join in 2 minutes'), 2);
+    assert.equal(wordsBeforeNumber('join now: 30 seconds'), 2);
+    assert.equal(wordsBeforeNumber('next event in 3 minutes'), 3);
+    assert.equal(wordsBeforeNumber('no number'), 2);
+    const next = nextSignup(events, T0 - 10 * 60000), start = next.startMs;
+    // chime 0.38 + voice 0.3 + 2 words × 0.33 + Audio delay 1 s = 2.34 s, half a tick more
+    const lead = word => 0.38 + 0.3 + wordsBeforeNumber(word) * 0.33 + 1;
+    const fired = [];
+    const w = new JoinWatch();
+    for (let ms = 300000; ms >= 0; ms -= 100) {
+        const r = w.update({now: start - ms, next, mySg: null, leadS: lead});
+        if (r && (!fired.length || fired.at(-1).state !== r.state)) fired.push({s: ms / 1000, ...r});
+    }
+    assert.deepEqual(fired.map(x => x.state), ['join-180', 'join-120', 'join-60', 'join-30']);
+    for (const x of fired) assert.ok(Math.abs(x.s - (x.at + ZWIFT_AHEAD_S + 2.34 + JOIN_TICK_S)) < 0.11, `${x.state} at ${x.s}`);
+    // no lead given, a negative or junk one: on Zwift's countdown (half a tick early at most), never later
+    for (const leadS of [undefined, -5, 'x', () => NaN]) {
+        const v = new JoinWatch();
+        let at = null;
+        for (let ms = 200000; ms >= 0 && at == null; ms -= 100) if (v.update({now: start - ms, next, mySg: null, leadS})) at = ms / 1000;
+        assert.ok(at >= 180 + ZWIFT_AHEAD_S && at <= 180 + ZWIFT_AHEAD_S + JOIN_TICK_S + 0.01, `${leadS}: ${at}`);
+    }
 });
