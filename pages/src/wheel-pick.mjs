@@ -24,12 +24,18 @@
  * v0.67.1 (2026-11-14: "wheel gap went to -4.x" ft): a rider level with you, under MIN_GAP_M 0.5 m center to center (where
  * the box starts), is on top of you, not a wheel: your draft was 0 W on 23 of 30 such ticks over 4 rides, and the rest came
  * from a rider further up (research/2026-11-14/neg-gap.mjs). The Wheel gap's floor is now -1 m (-3.3 ft), true overlap.
+ * v0.72.2 (2026-11-26 ZRacing stage 3, 1.3 mi at 33 mph: "wheel gap of 2.2 [ft] ... on the screen a ~10 ft gap ahead, a rider a
+ * good distance to the left"): with good draft the pack factor scores a rider 1.5 m aside like one in line, so the nearest
+ * pick took a rider passing 1.5 m to the left at +3 km/h (2.2 m center to center) over the wheel in line 3.8 m ahead. Now
+ * a rider within LINE_M 0.8 m sideways (where the draft and the box reach) and LINE_GAP_M 5 m center to center (the full
+ * draft; a 3.5 m wheel gap) comes first; further up the road the v0.60.1 rule stands (a near wheel a little aside beats
+ * one in line 10 m up) (research/2026-11-26/moment.mjs).
  * Pure: fed the engine's entries each tick.
  */
 import {gapBetween} from './engine/wheels.mjs';
 import {UNIT_PER_M} from './engine/pack-cost.mjs';
 
-export const WHEEL_PICK = {minGapM: 0.5, inlineM: 0.44, asideFromM: 1.5, maxGapM: 25, goodQ: 0.5, keep: 0.8, switchM: 1};
+export const WHEEL_PICK = {minGapM: 0.5, inlineM: 0.44, asideFromM: 1.5, maxGapM: 25, goodQ: 0.5, keep: 0.8, switchM: 1, lineM: 0.8, lineGapM: 5};
 // [m, value] points, linear between, 0 past the last
 const SHARE_PTS = [[0, 0.49], [3.5, 0.49], [5, 0.45], [6, 0.39], [8, 0.30], [10, 0.22], [15, 0.17], [20, 0.08], [25, 0.02]];   // still a wheel at 25 m (GAP_MAX_M)
 const LONE_PTS = [[0, 1], [0.3, 1], [0.45, 0.91], [0.8, 0.66], [1.25, 0.40], [2, 0]];
@@ -85,21 +91,22 @@ export class WheelPick {
             if (asideM > o.inlineM && gap < o.asideFromM) continue;   // beside you
             const score = wheelDraft(gap, asideM, pack);
             if (!(score > 0)) continue;
-            const w = {id: r.athleteId, gap, gapSource: g.source, lane, speed: (r.state.speed || 0) / 3.6, score};
+            const w = {id: r.athleteId, gap, gapSource: g.source, lane, speed: (r.state.speed || 0) / 3.6, score, inLine: asideM <= o.lineM && gap <= o.lineGapM};
             cands.push(w);
             if (!best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && gap < best.gap)) best = w;
         }
         // within KEEP of the best draft: the nearest (the wheel you are on unless another is SWITCH_M nearer)
         let pick = null, prev = null;
-        for (const w of cands) {
-            if (w.score < best.score * o.keep) continue;
+        const keepers = cands.filter(w => w.score >= best.score * o.keep);
+        const lined = keepers.filter(w => w.inLine);
+        for (const w of lined.length ? lined : keepers) {
             if (w.id === this.prevId) prev = w;
             if (!pick || w.gap < pick.gap) pick = w;
         }
         if (prev && pick && pick.gap > prev.gap - o.switchM) pick = prev;
         this.prevId = pick ? pick.id : null;
         if (!pick) return null;
-        const {score, ...out} = pick;
+        const {score, inLine, ...out} = pick;
         return out;
     }
 }

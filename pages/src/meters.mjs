@@ -210,6 +210,8 @@
  * v0.70.1 (EM v0.76.1, 2026-11-21 ride): Watopia roads 93 / 94 (INVISIBLE_DIRT in the map) dirt only by road 77 (road-map ROAD_STYLE_FIXES patches; INVISIBLE_* rolls as pavement); the feather fires in the last 10 m of a climb before a drop (powerup-cue climbTopM: was "the top isn't in sight").
  * v0.71.0 (2026-11-21, the user: "make something in the stream deck tell the ds that a swap happened"): deck-swap.mjs: a Stream Deck web request to Sauce (updateAthleteData self {dsSwap: slot}) = a swap: the bike traded like the Swap button's go, the draftless watch reset, rec.event {swap: 'deck', slot}; a full stop also resets draftless (draftless.mjs).
  * v0.71.1 (2026-11-22, the user: "OBS started when I entered pen the first time about 25 minutes before the race", "the calls for the race start were 3 or for seconds later than the zwift count down"): OBS with the race only once it is due (obsDue: AUTO_LEAD_S before the start, the race moving, or the start not known; a start being looked up waits), in startRec too (Record all the time began a free-ride recording in the pen while the start was looked up, and OBS with it); join reminders on Zwift's countdown, ~3.5 s ahead of the listed start (join-watch.mjs ZWIFT_AHEAD_S; the text showed at countdown 56), plus the voice's lead (joinLeadS: chime, voice start, words before the number, Audio delay) and half a tick.
+ * v0.72.2 (2026-11-26 ZRacing stage 3, 5 laps on Watopia Islands; the user: "Didn't hear the call that the race was decided", "The last thing I want to hear near the end of a sprint is empty"): the distance left from Zwift's progress in lap races too (progress-left.mjs: progress runs over the whole event, within 8 m; one-lap only before, so no finish calls at all); no FRC "low" / "empty" in the finish (ds-data); after your jump All words is the call only, past the line nothing (grid-fields allWords, data.finale); no "keep going" once told to ease (EM v0.77.1 director.mjs SprintCoach eased). Replay: "top ten in 105", "jump in 45", "AERO now", "keep going", "ease to FTP" at 51 m, silent after the line.
+ * v0.72.1 (2026-11-24 ZRL, Sauce gave no other riders all race; the user: "yes, add that to the DS"): an event whose organizer turned Sauce off (#nooverlays / #hidethehud: Sauce sends no other riders for the event) says so at once in the gap note, until "I know" (gap-note.mjs sauceOffTag); the recording's event record carries sauceOff: the tag.
  * v0.72.0 (2026-11-22, the user: "Add the anvil power up to ds"): the anvil you hold is called before a descent (powerup-cue.mjs anvilCue / AnvilPick, meter-engine ds.anvil, ds-data): "ANVIL in N" from ANVIL_CALL_S 60 s, "ANVIL now" at the start of the 15 s that drops the most (its kilos are a push: the energy of them dropping, docs/FINDINGS.md 2026-11-22), to the bottom of the descent or the next arch; a passed drop doesn't silence the next one (Jarvis comes in two); never "ANVIL at jump" (nothing on a flat finish). Replay 11-22: called on all 4 Jarvis descents, silent on the flat (the user fired 3 there and 2 still climbing). EM v0.77.0: blocking.mjs withPowerUp anvil as a push (mGrav).
  */
 
@@ -240,7 +242,7 @@ import {rehearsalPlan} from './engine/chapters.mjs';
 import {RaceIndex} from './race-index.mjs';
 import {ProgressLeft} from './progress-left.mjs';
 import {hrAckText} from './team-hr.mjs';
-import {GapNote} from './gap-note.mjs';
+import {GapNote, sauceOffTag} from './gap-note.mjs';
 import {OutcomeWatch, OUTCOME, OUTCOME_TONES} from './outcome.mjs';
 import {LinkFlow, readLink, writeLink, linkCheck, unlinkSelf, siteUrl, LINK_KEY} from './caffecter-link.mjs';
 import {RideSender, idbSendStore, SEND_STATUS_KEY} from './ride-sender.mjs';
@@ -248,7 +250,7 @@ import {JoinWatch, ServerClock, upcomingSignups, wordsBeforeNumber} from './join
 import {SwapCoach, goSOf} from './swap.mjs';
 import {DeckSwap, DECK_SWAP_KEY} from './deck-swap.mjs';
 
-export const DS_VERSION = '0.72.0';
+export const DS_VERSION = '0.72.2';
 const SEGMENT_TAIL_S = 15;   // a pass's recording runs this long past the line
 const RESULT_TRIES = 4, RESULT_WAIT_MS = 3000;   // your result: asked up to 4 times, 3 s apart, when the recording stops
 // Zwift's event types with race physics (Sauce src/stats.mjs eventRaceTypes)
@@ -516,6 +518,8 @@ function gapNoter({refit}) {
         try { return localStorage.getItem(GAP_ACKED_KEY); } catch (e) { return null; }
     };
     const note = new GapNote({acked: stored()});
+    const text = box.querySelector('.text'), plain = {text: text.textContent, title: box.title};
+    let offTag = null;
     const show = on => {
         if (box.hidden !== on) return;
         box.hidden = !on;
@@ -527,10 +531,17 @@ function gapNoter({refit}) {
         show(false);
     });
     return {
-        update(me, source) {
+        // off: the tag the organizer turned Sauce off with for this event (#nooverlays / #hidethehud), else null
+        update(me, source, off = null) {
             const s = me && me.self && me.state;
             if (!s || !source) return;
-            show(note.update(source, s.eventSubgroupId ? `sg ${s.eventSubgroupId}` : `day ${new Date().toDateString()}`, s.worldTime));
+            if (off !== offTag) {
+                offTag = off;
+                text.textContent = off ? `The organizer turned Sauce off for this race (#${off}): no other riders, so no gaps, wheels or pack calls. Your own numbers still work` : plain.text;
+                box.title = off ? 'A tag in the event description makes Sauce hide every other rider for the whole event, on any computer' : plain.title;
+                if (!box.hidden) refit();
+            }
+            show(note.update(source, s.eventSubgroupId ? `sg ${s.eventSubgroupId}` : `day ${new Date().toDateString()}`, s.worldTime, !!off));
         },
     };
 }
@@ -733,7 +744,7 @@ export async function main() {
             const e = x && x.eventId != null ? await Common.rpc.getEvent(x.eventId).catch(() => null) : null;
             const startMs = x && (Number.isFinite(x.ts) ? x.ts : Date.parse(x.eventSubgroupStart));
             return {eventName: (e && e.name) || null, subgroup: (x && x.subgroupLabel) || null, eventType: (e && e.eventType) || null,
-                    startMs: Number.isFinite(startMs) ? startMs : null, laps: eventLapsOf(x)};
+                    startMs: Number.isFinite(startMs) ? startMs : null, laps: eventLapsOf(x), sauceOff: sauceOffTag(x)};
         }).catch(e => {
             console.warn('event for the title', e);
             return null;
@@ -1271,10 +1282,9 @@ export async function main() {
     // Sauce's distance to the finish missing (a route it has no length for): from Zwift's own progress (progress-left.mjs);
     // the recording keeps the list as Sauce gave it
     const progressLeft = new ProgressLeft();
-    const eventLaps = sg => (evInfo.sg === sg && evInfo.done && evInfo.value ? evInfo.value.laps : undefined);
     Common.subscribe('nearby', list => {
         const i = Array.isArray(list) ? list.findIndex(o => o && o.self) : -1;
-        const mine = i >= 0 ? progressLeft.fill(list[i], {laps: eventLaps(list[i].state && list[i].state.eventSubgroupId)}) : null;
+        const mine = i >= 0 ? progressLeft.fill(list[i]) : null;
         const r = engine.update(mine && mine !== list[i] ? list.map((o, k) => (k === i ? mine : o)) : list);
         if (!r) {
             return;
@@ -1283,7 +1293,8 @@ export async function main() {
         if (bridgeBtn.classList.contains('on') !== !!engine.bridgeArmed) showBridge();   // made it: the engine turned it off
         bikeCheck.update(r.me);
         hrCheck.update(r.me, r.ds && r.ds.teamHr);
-        gapNote.update(r.me, r.ds && r.ds.gapSource);
+        const sgNow = r.me && r.me.state && r.me.state.eventSubgroupId;
+        gapNote.update(r.me, r.ds && r.ds.gapSource, sgNow && evInfo.sg === sgNow && evInfo.value ? evInfo.value.sauceOff : null);
         // join the race you signed up for: reminders before its start while you're not in it (join-watch.mjs)
         // timed by Zwift's clock, not the PC's (v0.67.2: the PC ran 1 s behind; join-watch.mjs ServerClock)
         if (r.me && r.me.self && r.me.state) serverClock.observe(r.me.state.worldTime);
@@ -1354,7 +1365,8 @@ export async function main() {
                 if (keep) recPromised = true;
                 evInfo.ready.then(v => {
                     if (rec === into) into.event(Date.now(), {sg, name: (v && v.eventName) || null, subgroup: (v && v.subgroup) || null,
-                                                              type: (v && v.eventType) || null, ...(keep ? {keep: true} : {})});
+                                                              type: (v && v.eventType) || null, ...(keep ? {keep: true} : {}),
+                                                              ...(v && v.sauceOff ? {sauceOff: v.sauceOff} : {})});
                 });
             }
             if (mySg && rehearsal) endRehearsal('rehearsal ended: you joined an event').catch(e => console.error('rehearsal', e));

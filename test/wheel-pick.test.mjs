@@ -99,3 +99,10 @@ test('v0.60.1: Position is quiet on a fast descent (it read 65–104 W "close up
     const flat = e.readPosition({speed: 52, grade: 0, worldTime: T + 1000}, spot, {size: 5, ahead: 2, gapAhead: 7.5}, false, 150);
     assert.notEqual(flat.state, 'coasting', 'fast on the flat: Position reads');
 });
+
+test('v0.72.2 (2026-11-26, 1.3 mi at 33 mph): a rider passing 1.5 m aside is not your wheel while one sits in line 3.8 m ahead', () => {
+    const riders = [me, rider(2, 2.2, 1.5, 39), rider(3, 3.8, 0.05)];
+    assert.equal(new WheelPick().update(riders, me, {q: 0.8}).id, 3, 'good draft');
+    assert.equal(new WheelPick().update(riders, me).id, 3, 'draft unknown');
+    assert.equal(new WheelPick().update([me, rider(2, 2.2, 1.5, 39), rider(3, 7, 0)], me, {q: 0.8}).id, 2, 'the one in line 7 m up: v0.60.1 stands');
+});

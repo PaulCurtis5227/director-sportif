@@ -11,11 +11,14 @@
  * ridden in it. So the event's length = eventDistance / progress, read the moment progress steps (the tick it changes).
  * Measured (research: 2026-10-31 capture, the line at 54,144 m): 10–25 m off from 10% on; on the 10-27 race against
  * Sauce's own remaining: 1–13 m. Before PROGRESS_LEFT.minProgress the first steps are 100+ m off: no estimate.
- * Only for an event of one lap (or a distance): whether progress restarts each lap is not checked.
+ * Laps (v0.72.2): progress runs over the WHOLE event, not each lap. 2026-11-26 ZRacing stage 3 (5 laps of Seafoam
+ * Circuit, Watopia Islands): progress 0.2275 / 0.4196 / 0.6118 / 0.8039 / 0.9961 at the lap lines, 1 at the finish
+ * (18,131 m); the length from each step 0–8 m off from 15% on, the last 2 km within 7 m (research/2026-11-26/
+ * progress-laps.mjs). Until then the estimate was one-lap only, so that race had no finish calls at all ("Didn't hear
+ * the call that the race was decided"). Should progress ever fall (a restart per lap), the estimate is dropped.
  *
- *   new ProgressLeft().fill(me, {laps}) -> me, or a copy with remaining / remainingMetric 'distance' / remainingType
- *   'event' and remainingEst true; laps = the event's laps (auto-record eventLapsOf: null for a distance event,
- *   undefined while not known yet: no estimate)
+ *   new ProgressLeft().fill(me) -> me, or a copy with remaining / remainingMetric 'distance' / remainingType 'event'
+ *   and remainingEst true
  */
 
 export const PROGRESS_LEFT = {minProgress: 0.05};
@@ -27,7 +30,7 @@ export class ProgressLeft {
         this.total = null;   // the event's length (m), from the last step
     }
 
-    fill(me, {laps} = {}) {
+    fill(me) {
         const s = me && me.state;
         if (!s || !s.eventSubgroupId) return me;
         if (s.eventSubgroupId !== this.sg) {
@@ -36,10 +39,11 @@ export class ProgressLeft {
         }
         const p = s.progress, ed = s.eventDistance;
         if (Number.isFinite(p) && Number.isFinite(ed)) {
+            if (this.p != null && p < this.p - 0.01) this.total = null;   // progress went back: not one count over the event
             if (this.p != null && p > this.p && p >= PROGRESS_LEFT.minProgress && p < 1) this.total = ed / p;
             this.p = p;
         }
-        if (me.remaining != null || laps === undefined || laps > 1 || this.total == null || !Number.isFinite(ed)) return me;
+        if (me.remaining != null || this.total == null || !Number.isFinite(ed)) return me;
         if (me.remainingType != null && me.remainingType !== 'event') return me;
         return {...me, remaining: this.total - ed, remainingMetric: 'distance', remainingType: 'event', remainingEst: true};
     }

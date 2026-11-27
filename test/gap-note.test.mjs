@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GapNote, GAP_NOTE} from '../pages/src/gap-note.mjs';
+import {GapNote, GAP_NOTE, sauceOffTag} from '../pages/src/gap-note.mjs';
 
 const S = GAP_NOTE.showS * 1000;
 
@@ -38,4 +38,21 @@ test('a reopened window remembers the press; another event doesn\'t', () => {
     assert.equal(n.update('road', 'a', 2 * S), false);
     n.update('road', 'b', 2 * S);
     assert.equal(n.update('road', 'b', 4 * S), true);
+});
+
+test('an event the organizer turned Sauce off for: the tag, from the event or the subgroup', () => {
+    assert.equal(sauceOffTag({allTags: ['ranked', 'nooverlays']}), 'nooverlays');
+    assert.equal(sauceOffTag({allTags: ['HideTheHud']}), 'hidethehud');
+    assert.equal(sauceOffTag({allTags: ['hidewbal', 'hideftp']}), null, 'these only hide numbers');
+    assert.equal(sauceOffTag({allTags: []}), null);
+    assert.equal(sauceOffTag(null), null);
+    assert.equal(sauceOffTag({allTags: 'nooverlays'}), null, 'junk: not a list');
+});
+
+test('Sauce turned off: the note shows at once, until pressed, for that event only', () => {
+    const n = new GapNote();
+    assert.equal(n.update('sauce', 'a', 0, true), true, 'no wait');
+    n.ack();
+    assert.equal(n.update('none', 'a', 1000, true), false);
+    assert.equal(n.update('none', 'b', 2000, true), true, 'the next event says it again');
 });

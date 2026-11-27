@@ -156,3 +156,15 @@ test('give room (a habit call) and the feather call before the steepest part', a
     assert.equal(ready.id, 'powerup');
     assert.equal(callWords(directorCalls({feather: {state: 'fire', inS: 1}})[0]), 'FEATHER now');
 });
+
+test('the finish: no FRC "low" / "empty", and after your jump only the call in All words (2026-11-26)', async () => {
+    const {allWords} = await import('../pages/src/grid-fields.mjs');
+    const meters = {frc: {state: 'empty', level: 'alarm'}, position: {state: 'sit-in', level: 'warn'}};
+    const call = {id: 'sprint', state: 'keep-going', word: 'keep going'};
+    assert.match(allWords({ts: 1, meters, call: null, finale: null}).text, /empty/);
+    assert.equal(allWords({ts: 1, meters, call, finale: 'sprint'}).text, 'keep going');
+    assert.equal(allWords({ts: 1, meters, call: null, finale: 'done'}).text || '', '');
+    const hold = new Map();
+    allWords({ts: 1000, meters, call: null, finale: null}, hold);
+    assert.equal(allWords({ts: 2000, meters, call: null, finale: 'sprint'}, hold).text || '', '', 'held words go at the jump');
+});

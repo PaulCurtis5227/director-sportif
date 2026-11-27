@@ -452,6 +452,8 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
         v: DATA_VERSION,
         ts: now,
         self: !!(me && me.self),
+        // the finish (v0.72.2): 'run-in' (last 1.5 km), 'sprint' (after your jump), 'done' (past the line), else null
+        finale: ds.finale || null,
         meters: {
             // losing the group (v0.58.0) is said once you're out of it too: alone is exactly where it happens
             position: meter('position', pack(ds.positionW), (common === 'alone' && ds.positionState === 'dropping' && !ds.draftless ? null : common) || ds.positionState || 'none'),
@@ -479,9 +481,11 @@ export function buildData({me, ds}, {now = Date.now()} = {}) {
             demand: Number.isFinite(ds.demandW) ? {value: ds.demandW, state: 'ok', level: null,
                 pctFtp: ds.demandFtpW > 0 ? Math.round(ds.demandW / ds.demandFtpW * 100) : null} :
                 {value: null, state: common || 'none', level: null},
+            // no "low" / "empty" in the finish (v0.72.2; the user, 2026-11-26: "The last thing I want to hear near the end
+            // of a sprint is empty. It's not like I didn't know"): the number stays
             frc: ds.frc ? {value: Math.max(0, ds.frc.leftJ) / 1000,
-                           state: ds.frc.frac < 0.1 ? 'empty' : ds.frc.frac < 0.3 ? 'low' : 'ok',
-                           level: ds.frc.frac < 0.1 ? 'alarm' : ds.frc.frac < 0.3 ? 'warn' : null,
+                           state: ds.finale ? 'ok' : ds.frc.frac < 0.1 ? 'empty' : ds.frc.frac < 0.3 ? 'low' : 'ok',
+                           level: ds.finale ? null : ds.frc.frac < 0.1 ? 'alarm' : ds.frc.frac < 0.3 ? 'warn' : null,
                            frac: ds.frc.frac, lowKJ: Math.max(0, ds.frc.lowJ) / 1000} :
                 {value: null, state: 'none', level: null},
         },

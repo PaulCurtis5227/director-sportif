@@ -86,7 +86,10 @@ export function allWords(data, hold = null) {
     const now = Number.isFinite(data.ts) ? data.ts : 0;
     const all = [];
     if (data.call) all.push({src: 'call', word: callWords(data.call), way: wayOf(data.call.word), level: '', call: data.call, at: now});
-    for (const [k, states] of Object.entries(ADVICE)) {
+    // after your jump only the director's call; past the line nothing (v0.72.2; 2026-11-26 replay: "sit in · empty",
+    // "back off", "close up" through the sprint, "losing group" and "shattering" after the line)
+    const quietMeters = data.finale === 'sprint' || data.finale === 'done';
+    for (const [k, states] of Object.entries(quietMeters ? {} : ADVICE)) {
         const e = data.meters?.[k];
         const w = e && states.includes(e.state) ? e.word || wordOf(k, e.state) : '';   // e.word: a word with a number
         if (w) all.push({src: k, word: w, way: wayOf(w), level: e.level || ''});
@@ -95,6 +98,7 @@ export function allWords(data, hold = null) {
     const said = all.filter(x => x.way !== -way || !way);
     let shown = said;
     if (hold) {
+        if (quietMeters) for (const src of [...hold.keys()]) if (src !== 'call') hold.delete(src);
         if (way) for (const [src, x] of hold) if (x.way === -way) hold.delete(src);
         for (const x of said) hold.set(x.src, {...x, until: now + (NO_HOLD.has(x.src) ? 0 : WORDS_HOLD_S * 1000)});
         for (const [src, x] of hold) if (x.until < now) hold.delete(src);

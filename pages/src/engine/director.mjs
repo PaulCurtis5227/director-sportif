@@ -652,10 +652,12 @@ export class SprintCoach {
         this.budget = null;    // sprintBudget: {targetW, secs, open} this tick
         this.wheelCall = null; // the last "wheel, jump …": {wt, call} (held WHEEL_JUMP.holdS)
         this.featherNoteWt = null; // when "FEATHER at jump" was first given this finish (FEATHER_NOTE_S)
+        this.eased = false;    // "ease off" / "ease to FTP" said this finish: no "keep going" after it
     }
 
     reset() {
         this.featherNoteWt = null;
+        this.eased = false;
         this.jumped = false;
         this.jumpTicks = 0;
         this.peak = 0;
@@ -755,9 +757,13 @@ export class SprintCoach {
         // no place can change any more: after your jump ease off / ease to FTP; without one, the all-clear (easeCall noJump)
         const ease = easeCall({jumped: this.jumped, power, ftpW: x.ftpW, peak: this.peak, settled: x.settled, settledFtp: x.settledFtp,
                                secsToLine: remaining / Math.max(v || 0, 4), noJump: true});
-        if (ease) return ease;
-        // easing off before the line after your jump: a reminder (you may be giving it away on purpose)
-        if (this.jumped && !x.settled && remaining <= KEEP_GOING_M && this.peak > 0 && power < KEEP_GOING_RATIO * this.peak &&
+        if (ease) {
+            if (ease.state === 'ease' || ease.state === 'ease-ftp') this.eased = true;
+            return ease;
+        }
+        // easing off before the line after your jump: a reminder (you may be giving it away on purpose). Not once told to
+        // ease (v0.72.2; 2026-11-26 replay: "ease to FTP" at 51 m, then "keep going" at 26 m once you had eased)
+        if (this.jumped && !x.settled && !this.eased && remaining <= KEEP_GOING_M && this.peak > 0 && power < KEEP_GOING_RATIO * this.peak &&
             !(x.ftpW > 0 && power >= KEEP_GOING_FTP * x.ftpW)) {
             return {id: 'sprint', state: 'keep-going', priority: SPRINT_PRIORITY.keep,
                     text: `${Math.round(remaining)} m to go — keep going to the line`};
